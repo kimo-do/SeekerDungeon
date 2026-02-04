@@ -94,40 +94,6 @@ Remove:
 
 ---
 
-### Code Honesty
-
-Never mislead the reader:
-
-- Names must match behavior
-- Instructions ≠ transactions
-- Workarounds must be labeled with `TODO(<condition to remove>)`
-
----
-
-### Variable Naming
-
-Prefer clarity over brevity.
-
-**Bad**
-```ts
-// Foo
-const shlerg = getFoo();
-```
-
-**Good**
-```ts
-const foo = getFoo();
-```
-
-Rules:
-- Arrays are plural, items singular
-- Functions are verbs
-- No abbreviations (`context`, not `ctx`)
-- Never throw or name something `e`
-- Instructions must be named as instructions
-
----
-
 ### Code Quality Rules
 
 - Extract repeated logic into functions

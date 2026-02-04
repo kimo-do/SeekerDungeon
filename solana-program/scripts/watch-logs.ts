@@ -1,19 +1,20 @@
 /**
  * Watch ChainDepth program logs in real-time
  * Subscribes to program logs via WebSocket and writes to logs/program.log
- * 
- * Usage: npx ts-node scripts/watch-logs.ts
+ *
+ * Usage: npm run watch-logs
  */
 
-import { Connection, PublicKey } from "@solana/web3.js";
+import { connect } from "solana-kite";
+import { address, type Address } from "@solana/kit";
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath } from "url";
 
-const PROGRAM_ID = "3Ctc2FgnNHQtGAcZftMS4ykLhJYjLzBD3hELKy55DnKo";
-const RPC_URL = "https://api.devnet.solana.com";
-const WS_URL = "wss://api.devnet.solana.com";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+import { PROGRAM_ID, DEVNET_RPC_URL, DEVNET_WS_URL } from "./constants";
 
-// Create logs directory
 const logsDir = path.join(__dirname, "..", "logs");
 if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
@@ -21,25 +22,15 @@ if (!fs.existsSync(logsDir)) {
 
 const logFile = path.join(logsDir, "program.log");
 
-function log(message: string) {
+function log(message: string): void {
   const timestamp = new Date().toISOString();
   const line = `[${timestamp}] ${message}\n`;
-  
-  // Write to console
+
   process.stdout.write(line);
-  
-  // Append to file
   fs.appendFileSync(logFile, line);
 }
 
-function formatLogs(logs: string[]): string {
-  return logs
-    .filter(l => !l.includes("consumed") && !l.includes("success"))
-    .map(l => "  " + l)
-    .join("\n");
-}
-
-async function main() {
+async function main(): Promise<void> {
   log("=".repeat(60));
   log("ChainDepth Log Watcher");
   log(`Program: ${PROGRAM_ID}`);
@@ -50,79 +41,85 @@ async function main() {
   log("Listening for transactions... (Ctrl+C to stop)");
   log("");
 
-  const connection = new Connection(RPC_URL, {
-    wsEndpoint: WS_URL,
-    commitment: "confirmed",
+  const connection = connect(DEVNET_RPC_URL, DEVNET_WS_URL);
+  const programAddress = address(PROGRAM_ID);
+
+  // Subscribe to program logs using Kite's RPC subscriptions
+  const rpcSubscriptions = connection.rpcSubscriptions;
+
+  const logsSubscription = await rpcSubscriptions
+    .logsNotifications({ mentions: [programAddress] }, { commitment: "confirmed" })
+    .subscribe();
+
+  log("Subscription active");
+
+  // Handle graceful shutdown
+  process.on("SIGINT", async () => {
+    log("");
+    log("Stopping log watcher...");
+    logsSubscription.abort();
+    process.exit(0);
   });
 
-  const programId = new PublicKey(PROGRAM_ID);
+  // Process incoming logs
+  try {
+    for await (const notification of logsSubscription) {
+      const { value, context } = notification;
+      const { signature, logs, err } = value;
 
-  // Subscribe to program logs
-  const subscriptionId = connection.onLogs(
-    programId,
-    (logInfo, context) => {
-      const { signature, logs, err } = logInfo;
-      
       log("-".repeat(60));
       log(`TX: ${signature}`);
       log(`Slot: ${context.slot}`);
-      
+
       if (err) {
         log(`ERROR: ${JSON.stringify(err)}`);
       }
-      
+
       // Parse instruction type from logs
-      const instructionLog = logs.find(l => l.includes("Instruction:"));
+      const instructionLog = logs.find((l) => l.includes("Instruction:"));
       if (instructionLog) {
         const instruction = instructionLog.split("Instruction:")[1]?.trim();
         log(`Instruction: ${instruction}`);
       }
-      
+
       // Parse any program logs (custom messages)
-      const programLogs = logs.filter(l => 
-        l.includes("Program log:") && 
-        !l.includes("Instruction:")
+      const programLogs = logs.filter(
+        (l) => l.includes("Program log:") && !l.includes("Instruction:")
       );
-      
+
       if (programLogs.length > 0) {
         log("Logs:");
-        programLogs.forEach(l => {
+        for (const l of programLogs) {
           const msg = l.replace("Program log:", "").trim();
           log(`  ${msg}`);
-        });
+        }
       }
-      
+
       // Check for events (Anchor events start with specific patterns)
-      const eventLogs = logs.filter(l => 
-        l.includes("Program data:") || 
-        l.includes("Event:")
+      const eventLogs = logs.filter(
+        (l) => l.includes("Program data:") || l.includes("Event:")
       );
-      
+
       if (eventLogs.length > 0) {
         log("Events:");
-        eventLogs.forEach(l => log(`  ${l}`));
+        for (const l of eventLogs) {
+          log(`  ${l}`);
+        }
       }
-      
+
       log("");
-    },
-    "confirmed"
-  );
-
-  log(`Subscription ID: ${subscriptionId}`);
-
-  // Keep the process running
-  process.on("SIGINT", async () => {
-    log("");
-    log("Stopping log watcher...");
-    await connection.removeOnLogsListener(subscriptionId);
-    process.exit(0);
-  });
-
-  // Keep alive
-  await new Promise(() => {});
+    }
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      // Normal shutdown
+    } else {
+      throw error;
+    }
+  }
 }
 
-main().catch((e) => {
-  log(`Fatal error: ${e.message}`);
+main().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  log(`Fatal error: ${message}`);
   process.exit(1);
 });

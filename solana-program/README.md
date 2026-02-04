@@ -76,11 +76,42 @@ wsl -d Ubuntu -- bash /mnt/e/Github2/SeekerDungeon/solana-program/scripts/wsl/ru
 wsl -d Ubuntu -- bash /mnt/e/Github2/SeekerDungeon/solana-program/scripts/wsl/run.sh "solana program deploy target/deploy/chaindepth.so --program-id 3Ctc2FgnNHQtGAcZftMS4ykLhJYjLzBD3hELKy55DnKo --url devnet -k devnet-wallet.json"
 ```
 
-### Initialize Game (After Fresh Deploy)
+### Install Dependencies
 
 ```powershell
-wsl -d Ubuntu -- bash /mnt/e/Github2/SeekerDungeon/solana-program/scripts/wsl/run.sh "export ANCHOR_PROVIDER_URL=https://api.devnet.solana.com && export ANCHOR_WALLET=devnet-wallet.json && npx ts-node scripts/init-devnet.ts"
+cd solana-program
+npm install
 ```
+
+### Scripts
+
+All scripts use [Solana Kite](https://solanakite.org) for standard operations and constants from `scripts/constants.ts`.
+
+```powershell
+# Initialize game state on devnet
+npm run init-devnet
+
+# Check current game state
+npm run check-state
+
+# Mint test tokens to a wallet
+npm run mint-tokens <wallet_address> [amount]
+
+# Watch program logs in real-time
+npm run watch-logs
+```
+
+Scripts require `ANCHOR_PROVIDER_URL` and `ANCHOR_WALLET` environment variables to be set (or use default Solana CLI config).
+
+### Generate Codama Client (Optional)
+
+After building the program, generate a type-safe client:
+
+```powershell
+npm run codama
+```
+
+This creates a client in `generated/client/` that can replace the Anchor TypeScript client.
 
 ## Game Mechanics
 
@@ -125,3 +156,5 @@ public const string RPC_URL = "https://api.devnet.solana.com";
 | Solana CLI | 3.0.13 (Agave) |
 | Anchor | 0.32.1 |
 | Node.js | 20.x |
+| Solana Kite | ^0.6.0 |
+| Solana Kit | ^2.1.0 |

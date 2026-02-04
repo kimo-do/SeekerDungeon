@@ -1,0 +1,16 @@
+{
+  "$schema": "https://codama.dev/schema.json",
+  "idl": "./target/idl/chaindepth.json",
+  "before": [
+    {
+      "type": "setProgram",
+      "name": "chaindepth",
+      "publicKey": "3Ctc2FgnNHQtGAcZftMS4ykLhJYjLzBD3hELKy55DnKo"
+    }
+  ],
+  "renderers": {
+    "js": {
+      "outputDir": "./generated/client"
+    }
+  }
+}

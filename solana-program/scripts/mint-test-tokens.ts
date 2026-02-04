@@ -1,83 +1,77 @@
 /**
  * Mint test SKR tokens to a wallet
- * 
- * Usage: npx ts-node scripts/mint-test-tokens.ts <wallet_address> [amount]
- * Example: npx ts-node scripts/mint-test-tokens.ts 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU 100
+ *
+ * Usage: npm run mint-tokens <wallet_address> [amount]
+ * Example: npm run mint-tokens 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU 100
  */
 
-import * as anchor from "@coral-xyz/anchor";
-import {
-  createAssociatedTokenAccount,
-  getAssociatedTokenAddress,
-  mintTo,
-} from "@solana/spl-token";
+import { connect } from "solana-kite";
+import { address, type Address } from "@solana/kit";
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath } from "url";
 import dotenv from "dotenv";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+import { SKR_MULTIPLIER, DEFAULT_TEST_MINT_AMOUNT } from "./constants";
 
 dotenv.config();
 
-async function main() {
+interface DevnetConfig {
+  skrMint: string;
+  programId: string;
+  globalPda: string;
+  prizePoolPda: string;
+  network: string;
+  rpcUrl: string;
+}
+
+async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  
+
   if (args.length < 1) {
-    console.log("Usage: npx ts-node scripts/mint-test-tokens.ts <wallet_address> [amount]");
-    console.log("Example: npx ts-node scripts/mint-test-tokens.ts 7xKXtg... 100");
+    console.log("Usage: npm run mint-tokens <wallet_address> [amount]");
+    console.log("Example: npm run mint-tokens 7xKXtg... 100");
     process.exit(1);
   }
 
-  const targetWallet = new anchor.web3.PublicKey(args[0]);
-  const amount = parseFloat(args[1] || "10") * 10 ** 9; // Default 10 SKR
+  const targetWalletAddress = address(args[0]);
+  const amountInput = args[1] ? parseFloat(args[1]) : DEFAULT_TEST_MINT_AMOUNT / SKR_MULTIPLIER;
+  const amount = BigInt(Math.floor(amountInput * SKR_MULTIPLIER));
 
   // Load config
   const configPath = path.join(__dirname, "..", "devnet-config.json");
   if (!fs.existsSync(configPath)) {
-    console.error("Error: devnet-config.json not found. Run init-devnet.ts first.");
+    console.error("Error: devnet-config.json not found. Run init-devnet first.");
     process.exit(1);
   }
 
-  const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-  const skrMint = new anchor.web3.PublicKey(config.skrMint);
+  const config: DevnetConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+  const skrMintAddress = address(config.skrMint);
 
-  // Setup provider
-  const provider = anchor.AnchorProvider.env();
-  anchor.setProvider(provider);
-  const admin = provider.wallet;
+  // Setup Kite connection
+  const connection = connect("devnet");
+  const admin = await connection.loadWalletFromFile();
 
   console.log("=== Mint Test SKR Tokens ===");
-  console.log("Target wallet:", targetWallet.toBase58());
-  console.log("Amount:", amount / 10 ** 9, "SKR");
-  console.log("SKR Mint:", skrMint.toBase58());
+  console.log("Target wallet:", targetWalletAddress);
+  console.log("Amount:", Number(amount) / SKR_MULTIPLIER, "SKR");
+  console.log("SKR Mint:", skrMintAddress);
 
-  // Get or create target's ATA
-  const targetAta = await getAssociatedTokenAddress(skrMint, targetWallet);
-  
-  try {
-    await createAssociatedTokenAccount(
-      provider.connection,
-      (admin as any).payer,
-      skrMint,
-      targetWallet
-    );
-    console.log("Created ATA:", targetAta.toBase58());
-  } catch (e) {
-    console.log("ATA already exists:", targetAta.toBase58());
-  }
+  // Mint tokens using Kite
+  await connection.mintTokens({
+    mint: skrMintAddress,
+    mintAuthority: admin,
+    destination: targetWalletAddress,
+    amount: amount,
+  });
 
-  // Mint tokens
-  await mintTo(
-    provider.connection,
-    (admin as any).payer,
-    skrMint,
-    targetAta,
-    admin.publicKey,
-    amount
-  );
-
-  console.log("✅ Minted", amount / 10 ** 9, "SKR to", targetWallet.toBase58());
+  console.log("✅ Minted", Number(amount) / SKR_MULTIPLIER, "SKR to", targetWalletAddress);
 }
 
-main().catch((e) => {
-  console.error("Error:", e.message);
+main().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error("Error:", message);
   process.exit(1);
 });
