@@ -83,8 +83,14 @@ Use JSON keypair files (`devnet-wallet.json`) to avoid confusion.
 | WSL scripts | `scripts/wsl/` |
 | TS scripts | `scripts/*.ts` |
 | Constants | `scripts/constants.ts` |
+| Unity Generated | `../Assets/Scripts/Solana/Generated/` |
+| Unity Codegen (PS) | `../scripts/generate-unity-client.ps1` |
+| Unity Codegen (Bash) | `scripts/generate-unity-client.sh` |
+| VS Code Tasks | `../.vscode/tasks.json` |
 
 ## Libraries Used
+
+### TypeScript (Node.js scripts)
 
 | Library | Purpose |
 |---------|---------|
@@ -93,7 +99,29 @@ Use JSON keypair files (`devnet-wallet.json`) to avoid confusion.
 | `@coral-xyz/anchor` | Program calls and account fetching (until Codama client generated) |
 | `tsx` | ESM-compatible TypeScript runner |
 
-## Common Commands
+### Unity (C# game client)
+
+| Library | Purpose |
+|---------|---------|
+| [Solana.Unity-SDK](https://github.com/magicblock-labs/Solana.Unity-SDK) | Full Solana SDK for Unity (RPC, wallets, NFTs) |
+| UniTask | Async/await for Unity |
+
+## VS Code Tasks (Recommended)
+
+Use **Ctrl+Shift+P** → "Tasks: Run Task" to access these:
+
+| Task | What it does |
+|------|--------------|
+| **🚀 Build & Generate (Full Workflow)** | Anchor build + regenerate Unity C# client (default build task) |
+| Anchor: Build (WSL) | Just run `anchor build` via WSL |
+| Generate: Unity C# Client | Just regenerate C# from IDL |
+| Anchor: Deploy to Devnet | Deploy program to devnet |
+| Solana: Check State | Query current game state |
+| Solana: Watch Logs | Watch program logs (background) |
+
+**Tip:** Press **Ctrl+Shift+B** to run the default build task (Full Workflow).
+
+## Common Commands (Manual)
 
 ```bash
 # Build
@@ -136,3 +164,109 @@ wsl -d Ubuntu -- bash scripts/wsl/run.sh "export ANCHOR_PROVIDER_URL=https://api
 - Season resets create new room PDAs (old ones orphaned)
 - Escrow accounts hold staked SKR during jobs
 - Prize pool is a token account owned by global PDA
+
+## Unity Integration
+
+### Solana Unity SDK
+
+We use the **Magicblock Solana.Unity-SDK**:
+- **GitHub**: https://github.com/magicblock-labs/Solana.Unity-SDK
+- **Docs**: https://solana.unity-sdk.gg
+- **Install via Git URL**: `https://github.com/magicblock-labs/Solana.Unity-SDK.git`
+
+Key SDK classes:
+- `Web3` - Main entry point for wallet/RPC operations
+- `Web3.Instance.LoginInGameWallet(password)` - Create local test wallet
+- `Web3.Instance.LoginWalletAdapter()` - Connect via Phantom/Solflare/etc.
+- `Web3.Wallet.Account.PublicKey` - Current connected wallet address
+
+### Unity Scripts
+
+Unity scripts are in `Assets/Scripts/Solana/`:
+
+| File | Purpose |
+|------|---------|
+| `ChainDepthConfig.cs` | Constants (addresses, seeds, game values) |
+| `ChainDepthManager.cs` | Main manager for Solana interactions |
+| `ChainDepthTestUI.cs` | Test UI using UI Toolkit |
+| `UI/ChainDepthTestUI.uxml` | UI Toolkit layout |
+| `UI/ChainDepthTestUI.uss` | UI Toolkit styles |
+| `Generated/ChainDepthClient.cs` | **Auto-generated** IDL client (do not edit) |
+
+### IDL to C# Code Generation
+
+We use `Solana.Unity.Anchor.Tool` to generate type-safe C# client code from the Anchor IDL.
+
+**Install the tool (once):**
+```bash
+dotnet tool install -g Solana.Unity.Anchor.Tool
+```
+
+**Regenerate after Anchor program changes:**
+
+Windows (PowerShell):
+```powershell
+.\scripts\generate-unity-client.ps1
+```
+
+WSL (Bash):
+```bash
+bash scripts/generate-unity-client.sh
+```
+
+Manual command:
+```bash
+dotnet anchorgen -i solana-program/target/idl/chaindepth.json -o Assets/Scripts/Solana/Generated/ChainDepthClient.cs
+```
+
+**Workflow after changing the Rust program:**
+1. `anchor build` - Generates new IDL in `target/idl/chaindepth.json`
+2. Run regeneration script - Updates `ChainDepthClient.cs`
+3. Unity automatically picks up changes
+
+**Generated code provides:**
+- `ChaindepthProgram.InitPlayer()`, `ChaindepthProgram.MovePlayer()`, etc. - Type-safe instruction builders
+- `InitPlayerAccounts`, `MovePlayerAccounts`, etc. - Strongly-typed account structs
+- Account discriminators and serialization handled automatically
+
+**Example usage in ChainDepthManager.cs:**
+```csharp
+using Chaindepth.Program;
+
+var instruction = ChaindepthProgram.InitPlayer(
+    new InitPlayerAccounts
+    {
+        Player = Web3.Wallet.Account.PublicKey,
+        Global = _globalPda,
+        PlayerAccount = playerPda,
+        SystemProgram = SystemProgram.ProgramIdKey
+    },
+    _programId
+);
+```
+
+### Setup in Unity
+
+1. Import the Solana Unity SDK via Package Manager (Git URL above)
+2. Add `Web3` component to scene (from SDK samples or create manually)
+3. Add `ChainDepthManager` to a GameObject (it's a singleton)
+4. For Test UI:
+   - Create Panel Settings asset (Create > UI Toolkit > Panel Settings Asset)
+   - Create GameObject with `UIDocument` component
+   - Assign `ChainDepthTestUI.uxml` as Source Asset
+   - Add `ChainDepthTestUI` script component
+5. Configure Web3 component with devnet RPC URL
+
+### Key Unity Classes
+
+- `GlobalState` - Parsed global account data
+- `PlayerState` - Parsed player account data  
+- `RoomState` - Parsed room account data
+
+### Note on Instruction Building
+
+The Unity scripts use generated instruction builders from `ChainDepthClient.cs`. For instructions requiring token accounts (join_job, complete_job, etc.), additional setup is needed:
+1. Token account setup for escrow
+2. Associated token account creation
+
+See the TypeScript scripts for reference on account structure.

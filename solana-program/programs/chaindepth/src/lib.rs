@@ -28,6 +28,11 @@ pub mod chaindepth {
         instructions::reset_season::handler(ctx)
     }
 
+    /// Initialize a new player at the spawn point
+    pub fn init_player(ctx: Context<InitPlayer>) -> Result<()> {
+        instructions::move_player::init_player_handler(ctx)
+    }
+
     /// Move player to an adjacent room
     pub fn move_player(ctx: Context<MovePlayer>, new_x: i8, new_y: i8) -> Result<()> {
         instructions::move_player::handler(ctx, new_x, new_y)

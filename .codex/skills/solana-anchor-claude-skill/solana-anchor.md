@@ -268,8 +268,3 @@ Clock::get()?;
 
 ---
 
-## Required Acknowledgment
-
-When starting work:
-
-> **Acknowledged:** These Anchor/Solana guidelines are applied for this project.

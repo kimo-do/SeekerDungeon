@@ -1,0 +1,113 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
+    <Style src="ChainDepthTestUI.uss" />
+    
+    <ui:VisualElement name="root" class="root-container">
+        <!-- Header -->
+        <ui:VisualElement name="header" class="header">
+            <ui:Label text="ChainDepth Test Panel" class="title" />
+            <ui:Label name="status-label" text="Status: Not Connected" class="status" />
+        </ui:VisualElement>
+        
+        <!-- Wallet Section -->
+        <ui:VisualElement name="wallet-section" class="section">
+            <ui:Label text="Wallet" class="section-title" />
+            <ui:Label name="wallet-address" text="Address: Not Connected" class="info-label" />
+            <ui:Label name="balance-label" text="Balance: --" class="info-label" />
+            <ui:VisualElement class="button-row">
+                <ui:Button name="btn-connect-ingame" text="In-Game Wallet" class="button primary" tooltip="Create a local test wallet" />
+                <ui:Button name="btn-airdrop" text="Airdrop 1 SOL" class="button" tooltip="Request devnet SOL airdrop" />
+                <ui:Button name="btn-disconnect" text="Disconnect" class="button danger" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        
+        <!-- State Section -->
+        <ui:VisualElement name="state-section" class="section">
+            <ui:Label text="Game State" class="section-title" />
+            
+            <ui:VisualElement class="info-box">
+                <ui:Label name="global-info" text="Global: Loading..." class="info-label" />
+                <ui:Label name="player-info" text="Player: Not initialized" class="info-label" />
+                <ui:Label name="room-info" text="Room: Loading..." class="info-label" />
+            </ui:VisualElement>
+            
+            <ui:VisualElement class="button-row">
+                <ui:Button name="btn-fetch-global" text="Fetch Global" class="button" />
+                <ui:Button name="btn-fetch-player" text="Fetch Player" class="button" />
+                <ui:Button name="btn-fetch-room" text="Fetch Room" class="button" />
+                <ui:Button name="btn-refresh-all" text="Refresh All" class="button primary" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        
+        <!-- Player Actions Section -->
+        <ui:VisualElement name="player-actions-section" class="section">
+            <ui:Label text="Player Actions" class="section-title" />
+            <ui:Label name="player-status" text="Player: Not Initialized" class="info-label" />
+            <ui:VisualElement class="button-row">
+                <ui:Button name="btn-init-player" text="Initialize Player" class="button primary" tooltip="Create player account at spawn (5,5)" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        
+        <!-- Movement Section -->
+        <ui:VisualElement name="movement-section" class="section">
+            <ui:Label text="Movement" class="section-title" />
+            <ui:Label name="position-label" text="Position: (?, ?)" class="info-label center" />
+            
+            <ui:VisualElement class="direction-grid">
+                <ui:VisualElement class="direction-row">
+                    <ui:VisualElement class="spacer" />
+                    <ui:Button name="btn-move-north" text="↑ North" class="button direction" />
+                    <ui:VisualElement class="spacer" />
+                </ui:VisualElement>
+                <ui:VisualElement class="direction-row">
+                    <ui:Button name="btn-move-west" text="← West" class="button direction" />
+                    <ui:VisualElement class="center-indicator">
+                        <ui:Label name="current-pos" text="(5,5)" class="position-text" />
+                    </ui:VisualElement>
+                    <ui:Button name="btn-move-east" text="East →" class="button direction" />
+                </ui:VisualElement>
+                <ui:VisualElement class="direction-row">
+                    <ui:VisualElement class="spacer" />
+                    <ui:Button name="btn-move-south" text="↓ South" class="button direction" />
+                    <ui:VisualElement class="spacer" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+        
+        <!-- Room Walls Section -->
+        <ui:VisualElement name="walls-section" class="section">
+            <ui:Label text="Room Walls" class="section-title" />
+            
+            <ui:VisualElement class="walls-grid">
+                <ui:VisualElement class="wall-row">
+                    <ui:Label name="wall-north" text="North: ?" class="wall-label" />
+                    <ui:Button name="btn-job-north" text="Join Job" class="button small" />
+                </ui:VisualElement>
+                <ui:VisualElement class="wall-row">
+                    <ui:Label name="wall-south" text="South: ?" class="wall-label" />
+                    <ui:Button name="btn-job-south" text="Join Job" class="button small" />
+                </ui:VisualElement>
+                <ui:VisualElement class="wall-row">
+                    <ui:Label name="wall-east" text="East: ?" class="wall-label" />
+                    <ui:Button name="btn-job-east" text="Join Job" class="button small" />
+                </ui:VisualElement>
+                <ui:VisualElement class="wall-row">
+                    <ui:Label name="wall-west" text="West: ?" class="wall-label" />
+                    <ui:Button name="btn-job-west" text="Join Job" class="button small" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+            
+            <ui:VisualElement class="chest-info">
+                <ui:Label name="chest-label" text="Chest: None" class="info-label" />
+                <ui:Button name="btn-loot-chest" text="Loot Chest" class="button" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        
+        <!-- Console/Log Section -->
+        <ui:VisualElement name="log-section" class="section">
+            <ui:Label text="Log" class="section-title" />
+            <ui:ScrollView name="log-scroll" class="log-scroll">
+                <ui:Label name="log-text" text="Ready..." class="log-text" />
+            </ui:ScrollView>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>
