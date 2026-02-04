@@ -188,3 +188,5 @@ slither-output/
 # Test results
 TestResults/
 test-results/
+
+solana-program/devnet-wallet.json

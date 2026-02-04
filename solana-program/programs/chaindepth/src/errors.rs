@@ -1,0 +1,67 @@
+use anchor_lang::prelude::*;
+
+#[error_code]
+pub enum ChainDepthError {
+    // Movement errors
+    #[msg("Invalid move: target room is not adjacent")]
+    NotAdjacent,
+
+    #[msg("Invalid move: wall is not open")]
+    WallNotOpen,
+
+    #[msg("Invalid move: coordinates out of bounds")]
+    OutOfBounds,
+
+    // Job errors
+    #[msg("Invalid direction: must be 0-3 (N/S/E/W)")]
+    InvalidDirection,
+
+    #[msg("Wall is not rubble: cannot start job")]
+    NotRubble,
+
+    #[msg("Already joined this job")]
+    AlreadyJoined,
+
+    #[msg("Job is full: maximum helpers reached")]
+    JobFull,
+
+    #[msg("Not a helper on this job")]
+    NotHelper,
+
+    #[msg("Job not ready: progress insufficient")]
+    JobNotReady,
+
+    #[msg("No active job at this location")]
+    NoActiveJob,
+
+    #[msg("Too many active jobs: abandon one first")]
+    TooManyActiveJobs,
+
+    // Loot errors
+    #[msg("Room has no chest")]
+    NoChest,
+
+    #[msg("Already looted this chest")]
+    AlreadyLooted,
+
+    #[msg("Player not in this room")]
+    NotInRoom,
+
+    // Season errors
+    #[msg("Season has not ended yet")]
+    SeasonNotEnded,
+
+    #[msg("Unauthorized: only admin can perform this action")]
+    Unauthorized,
+
+    // Token errors
+    #[msg("Insufficient balance for stake")]
+    InsufficientBalance,
+
+    #[msg("Token transfer failed")]
+    TransferFailed,
+
+    // Math errors
+    #[msg("Arithmetic overflow")]
+    Overflow,
+}

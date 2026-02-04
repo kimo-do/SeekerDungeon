@@ -1,0 +1,29 @@
+# Anchor build artifacts
+target/
+.anchor/
+
+# Node modules
+node_modules/
+
+# Environment files (contain secrets)
+.env
+devnet-wallet.json
+*.json.bak
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Test artifacts
+.test-ledger/
+
+# OS files
+.DS_Store
+Thumbs.db

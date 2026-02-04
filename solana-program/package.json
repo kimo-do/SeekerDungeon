@@ -1,0 +1,27 @@
+{
+  "name": "chaindepth-solana",
+  "version": "0.1.0",
+  "description": "ChainDepth Solana program and tests",
+  "scripts": {
+    "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
+    "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check",
+    "test": "anchor test"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.32.1",
+    "@solana/spl-token": "^0.4.6",
+    "@solana/web3.js": "^1.95.2"
+  },
+  "devDependencies": {
+    "@types/bn.js": "^5.1.5",
+    "@types/chai": "^4.3.16",
+    "@types/mocha": "^10.0.7",
+    "chai": "^4.4.1",
+    "mocha": "^10.6.0",
+    "prettier": "^3.3.3",
+    "ts-mocha": "^10.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4",
+    "dotenv": "^16.4.5"
+  }
+}
