@@ -110,6 +110,7 @@ Boss runtime fields are stored in `RoomAccount`:
 Boss instruction flow:
 - `equip_item(item_id)` (0 to unequip)
 - `set_player_skin(skin_id)`
+- `create_player_profile(skin_id, display_name)` (sets profile + grants starter pickaxe once)
 - `join_boss_fight()`
 - `tick_boss_fight()`
 - `loot_boss()` (fighters-only, after defeat)

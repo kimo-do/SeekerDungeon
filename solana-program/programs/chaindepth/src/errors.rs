@@ -86,6 +86,9 @@ pub enum ChainDepthError {
     #[msg("Invalid center type")]
     InvalidCenterType,
 
+    #[msg("Display name is too long")]
+    DisplayNameTooLong,
+
     // Season errors
     #[msg("Season has not ended yet")]
     SeasonNotEnded,

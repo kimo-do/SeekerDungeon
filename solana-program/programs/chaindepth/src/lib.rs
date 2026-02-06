@@ -88,6 +88,15 @@ pub mod chaindepth {
         instructions::set_player_skin::handler(ctx, skin_id)
     }
 
+    /// Create/update player profile and grant starter pickaxe once
+    pub fn create_player_profile(
+        ctx: Context<CreatePlayerProfile>,
+        skin_id: u16,
+        display_name: String,
+    ) -> Result<()> {
+        instructions::create_player_profile::handler(ctx, skin_id, display_name)
+    }
+
     /// Join fight on boss in current room.
     pub fn join_boss_fight(ctx: Context<JoinBossFight>) -> Result<()> {
         instructions::join_boss_fight::handler(ctx)

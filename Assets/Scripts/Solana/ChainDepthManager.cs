@@ -422,8 +422,7 @@ namespace SeekerDungeon.Solana
         /// </summary>
         public PlayerStateView GetCurrentPlayerView(int defaultSkinId = 0)
         {
-            var skinId = CurrentProfileState != null ? CurrentProfileState.SkinId : defaultSkinId;
-            return CurrentPlayerState.ToPlayerView(skinId);
+            return CurrentPlayerState.ToPlayerView(CurrentProfileState, defaultSkinId);
         }
 
         #endregion
@@ -1341,6 +1340,65 @@ namespace SeekerDungeon.Solana
             catch (Exception error)
             {
                 LogError($"SetPlayerSkin failed: {error.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Create/update profile (skin + optional display name) and grant starter pickaxe once.
+        /// </summary>
+        public async UniTask<string> CreatePlayerProfile(ushort skinId, string displayName)
+        {
+            if (Web3.Wallet == null)
+            {
+                LogError("Wallet not connected");
+                return null;
+            }
+
+            if (CurrentPlayerState == null || CurrentGlobalState == null)
+            {
+                LogError("Player or global state not loaded");
+                return null;
+            }
+
+            try
+            {
+                var playerPda = DerivePlayerPda(Web3.Wallet.Account.PublicKey);
+                var profilePda = DeriveProfilePda(Web3.Wallet.Account.PublicKey);
+                var inventoryPda = DeriveInventoryPda(Web3.Wallet.Account.PublicKey);
+                var roomPresencePda = DeriveRoomPresencePda(
+                    CurrentGlobalState.SeasonSeed,
+                    CurrentPlayerState.CurrentRoomX,
+                    CurrentPlayerState.CurrentRoomY,
+                    Web3.Wallet.Account.PublicKey
+                );
+
+                var instruction = ChaindepthProgram.CreatePlayerProfile(
+                    new CreatePlayerProfileAccounts
+                    {
+                        Player = Web3.Wallet.Account.PublicKey,
+                        Global = _globalPda,
+                        PlayerAccount = playerPda,
+                        Profile = profilePda,
+                        Inventory = inventoryPda,
+                        RoomPresence = roomPresencePda,
+                        SystemProgram = SystemProgram.ProgramIdKey
+                    },
+                    skinId,
+                    displayName ?? string.Empty,
+                    _programId
+                );
+
+                var signature = await SendTransaction(instruction);
+                if (signature != null)
+                {
+                    await RefreshAllState();
+                }
+                return signature;
+            }
+            catch (Exception error)
+            {
+                LogError($"CreatePlayerProfile failed: {error.Message}");
                 return null;
             }
         }

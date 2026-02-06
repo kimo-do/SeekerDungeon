@@ -23,6 +23,7 @@ This is the current gameplay logic that exists onchain, translated into Unity-fr
 ### Player Profile (`["profile", wallet]`)
 - Visual profile data, currently:
   - `skin_id`
+  - `display_name`
 
 ### Room (`["room", season_seed, x, y]`)
 - Authoritative state for one map room.
@@ -144,6 +145,7 @@ In `ChainDepthManager.cs`:
   - `FetchRoomOccupants(roomX, roomY)` for occupant rendering
   - `StartRoomOccupantSubscriptions(roomX, roomY)` live updates from room-presence accounts
   - `SetPlayerSkin(skinId)` profile + presence sync
+  - `CreatePlayerProfile(skinId, displayName)` onboarding profile setup + one-time starter bronze pickaxe
 
 Typed Unity wrappers are in:
 - `Assets/Scripts/Solana/ChainDepthDomainModels.cs`

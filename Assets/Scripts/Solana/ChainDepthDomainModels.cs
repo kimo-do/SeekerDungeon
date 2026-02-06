@@ -103,7 +103,24 @@ namespace SeekerDungeon.Solana
         public ulong JobsCompleted { get; init; }
         public ItemId EquippedItemId { get; init; }
         public int SkinId { get; init; }
+        public string DisplayName { get; init; }
         public IReadOnlyList<ActiveJobView> ActiveJobs { get; init; }
+
+        public string GetDisplayNameOrWallet()
+        {
+            if (!string.IsNullOrWhiteSpace(DisplayName))
+            {
+                return DisplayName;
+            }
+
+            var wallet = Owner?.Key;
+            if (string.IsNullOrEmpty(wallet) || wallet.Length < 10)
+            {
+                return "Unknown";
+            }
+
+            return $"{wallet.Substring(0, 4)}...{wallet.Substring(wallet.Length - 4)}";
+        }
     }
 
     public sealed class ActiveJobView
@@ -164,7 +181,10 @@ namespace SeekerDungeon.Solana
             return roomView;
         }
 
-        public static PlayerStateView ToPlayerView(this PlayerAccount player, int defaultSkinId = 0)
+        public static PlayerStateView ToPlayerView(
+            this PlayerAccount player,
+            PlayerProfile profile = null,
+            int defaultSkinId = 0)
         {
             if (player == null)
             {
@@ -187,7 +207,8 @@ namespace SeekerDungeon.Solana
                 RoomY = player.CurrentRoomY,
                 JobsCompleted = player.JobsCompleted,
                 EquippedItemId = ToItemId(player.EquippedItemId),
-                SkinId = defaultSkinId,
+                SkinId = profile != null ? profile.SkinId : defaultSkinId,
+                DisplayName = profile?.DisplayName ?? string.Empty,
                 ActiveJobs = jobs
             };
         }

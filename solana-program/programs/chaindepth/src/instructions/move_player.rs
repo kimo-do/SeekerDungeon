@@ -103,6 +103,8 @@ pub fn handler(ctx: Context<MovePlayer>, new_x: i8, new_y: i8) -> Result<()> {
     if profile.owner == Pubkey::default() {
         profile.owner = player_key;
         profile.skin_id = PlayerProfile::DEFAULT_SKIN_ID;
+        profile.display_name = String::new();
+        profile.starter_pickaxe_granted = false;
         profile.bump = ctx.bumps.profile;
     }
 
@@ -264,6 +266,8 @@ pub fn init_player_handler(ctx: Context<InitPlayer>) -> Result<()> {
 
     profile.owner = player_key;
     profile.skin_id = PlayerProfile::DEFAULT_SKIN_ID;
+    profile.display_name = String::new();
+    profile.starter_pickaxe_granted = false;
     profile.bump = ctx.bumps.profile;
 
     room_presence.player = player_key;

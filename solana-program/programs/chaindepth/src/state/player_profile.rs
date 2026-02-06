@@ -5,6 +5,9 @@ use anchor_lang::prelude::*;
 pub struct PlayerProfile {
     pub owner: Pubkey,
     pub skin_id: u16,
+    #[max_len(24)]
+    pub display_name: String,
+    pub starter_pickaxe_granted: bool,
     pub bump: u8,
 }
 
