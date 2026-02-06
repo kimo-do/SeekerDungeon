@@ -2,12 +2,12 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
 use crate::errors::ChainDepthError;
-use crate::events::JobAbandoned;
+use crate::events::JobRewardClaimed;
 use crate::state::{GlobalAccount, HelperStake, PlayerAccount, RoomAccount, RoomPresence};
 
 #[derive(Accounts)]
 #[instruction(direction: u8)]
-pub struct AbandonJob<'info> {
+pub struct ClaimJobReward<'info> {
     #[account(mut)]
     pub player: Signer<'info>,
 
@@ -24,7 +24,6 @@ pub struct AbandonJob<'info> {
     )]
     pub player_account: Account<'info, PlayerAccount>,
 
-    /// Room with the job to abandon
     #[account(
         mut,
         seeds = [
@@ -50,7 +49,6 @@ pub struct AbandonJob<'info> {
     )]
     pub room_presence: Account<'info, RoomPresence>,
 
-    /// Escrow holding staked SKR
     #[account(
         mut,
         seeds = [b"escrow", room.key().as_ref(), &[direction]],
@@ -58,7 +56,6 @@ pub struct AbandonJob<'info> {
     )]
     pub escrow: Account<'info, TokenAccount>,
 
-    /// Helper's individual stake account
     #[account(
         mut,
         close = player,
@@ -72,14 +69,6 @@ pub struct AbandonJob<'info> {
     )]
     pub helper_stake: Account<'info, HelperStake>,
 
-    /// Prize pool receives slash amount
-    #[account(
-        mut,
-        constraint = prize_pool.key() == global.prize_pool
-    )]
-    pub prize_pool: Account<'info, TokenAccount>,
-
-    /// Player's token account for partial refund
     #[account(
         mut,
         constraint = player_token_account.mint == global.skr_mint,
@@ -90,7 +79,7 @@ pub struct AbandonJob<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-pub fn handler(ctx: Context<AbandonJob>, direction: u8) -> Result<()> {
+pub fn handler(ctx: Context<ClaimJobReward>, direction: u8) -> Result<()> {
     require!(
         RoomAccount::is_valid_direction(direction),
         ChainDepthError::InvalidDirection
@@ -98,26 +87,18 @@ pub fn handler(ctx: Context<AbandonJob>, direction: u8) -> Result<()> {
 
     let room = &mut ctx.accounts.room;
     let player_account = &mut ctx.accounts.player_account;
-    let player_key = ctx.accounts.player.key();
     let dir_idx = direction as usize;
 
-    require!(room.is_rubble(direction), ChainDepthError::NotRubble);
-    require!(
-        !room.job_completed[dir_idx],
-        ChainDepthError::JobAlreadyCompleted
-    );
+    require!(room.job_completed[dir_idx], ChainDepthError::JobNotCompleted);
 
-    let stake = ctx.accounts.helper_stake.amount;
-    let refund_amount = stake
-        .checked_mul(RoomAccount::ABANDON_REFUND_PERCENT)
-        .ok_or(ChainDepthError::Overflow)?
-        / 100;
-    let slash_amount = stake
-        .checked_sub(refund_amount)
+    let stake_amount = ctx.accounts.helper_stake.amount;
+    let bonus_amount = room.bonus_per_helper[dir_idx];
+    let payout_amount = stake_amount
+        .checked_add(bonus_amount)
         .ok_or(ChainDepthError::Overflow)?;
 
     room.total_staked[dir_idx] = room.total_staked[dir_idx]
-        .checked_sub(stake)
+        .checked_sub(stake_amount)
         .ok_or(ChainDepthError::Overflow)?;
     room.helper_counts[dir_idx] = room.helper_counts[dir_idx]
         .checked_sub(1)
@@ -126,8 +107,9 @@ pub fn handler(ctx: Context<AbandonJob>, direction: u8) -> Result<()> {
     if room.helper_counts[dir_idx] == 0 {
         room.progress[dir_idx] = 0;
         room.start_slot[dir_idx] = 0;
-        room.bonus_per_helper[dir_idx] = 0;
+        room.base_slots[dir_idx] = RoomAccount::calculate_base_slots(ctx.accounts.global.depth);
         room.job_completed[dir_idx] = false;
+        room.bonus_per_helper[dir_idx] = 0;
     }
 
     player_account.remove_job(room.x, room.y, direction);
@@ -142,7 +124,7 @@ pub fn handler(ctx: Context<AbandonJob>, direction: u8) -> Result<()> {
     ];
     let escrow_signer = &[&escrow_seeds[..]];
 
-    let refund_ctx = CpiContext::new_with_signer(
+    let payout_ctx = CpiContext::new_with_signer(
         ctx.accounts.token_program.to_account_info(),
         Transfer {
             from: ctx.accounts.escrow.to_account_info(),
@@ -151,25 +133,14 @@ pub fn handler(ctx: Context<AbandonJob>, direction: u8) -> Result<()> {
         },
         escrow_signer,
     );
-    token::transfer(refund_ctx, refund_amount)?;
+    token::transfer(payout_ctx, payout_amount)?;
 
-    let slash_ctx = CpiContext::new_with_signer(
-        ctx.accounts.token_program.to_account_info(),
-        Transfer {
-            from: ctx.accounts.escrow.to_account_info(),
-            to: ctx.accounts.prize_pool.to_account_info(),
-            authority: ctx.accounts.escrow.to_account_info(),
-        },
-        escrow_signer,
-    );
-    token::transfer(slash_ctx, slash_amount)?;
-
-    emit!(JobAbandoned {
+    emit!(JobRewardClaimed {
         room_x: room.x,
         room_y: room.y,
         direction,
-        player: player_key,
-        refund_amount,
+        player: ctx.accounts.player.key(),
+        payout_amount,
     });
 
     Ok(())

@@ -5,6 +5,7 @@ Quick reference for AI assistants working on this project.
 ## TL;DR
 
 - **Build**: `wsl -d Ubuntu -- bash /mnt/e/Github2/SeekerDungeon/solana-program/scripts/wsl/build.sh`
+- **Build fallback (if WSL scripts have CRLF issues)**: `wsl -d Ubuntu -- bash -lc "cd /mnt/e/Github2/SeekerDungeon/solana-program && rm -f Cargo.lock && anchor build"`
 - **Run commands**: `wsl -d Ubuntu -- bash /mnt/e/Github2/SeekerDungeon/solana-program/scripts/wsl/run.sh "your command"`
 - **Program ID**: `3Ctc2FgnNHQtGAcZftMS4ykLhJYjLzBD3hELKy55DnKo`
 - **Network**: Devnet
@@ -31,19 +32,17 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 ```
 
-### 3. Stack Size Limits
+### 3. Room/Job Data Model (PDA-based helpers)
 
-Solana programs have a 4KB stack limit. Original `RoomAccount` struct caused stack overflow.
+Helpers are now modeled as per-player stake PDAs instead of fixed arrays in `RoomAccount`.
 
-**Solution**: Reduced array sizes:
-- `MAX_HELPERS_PER_DIRECTION`: 8 → 4
-- `MAX_LOOTERS`: 32 → 8
-- `helpers` array: `[[Pubkey; 8]; 4]` → `[[Pubkey; 4]; 4]`
-
-If adding new fields or account structs, watch for stack overflow errors like:
-```
-Access violation in stack frame at address 0x...
-```
+- `HelperStake` PDA seeds: `["stake", room, direction, player]`
+- One stake account per helper per direction
+- `RoomAccount` tracks aggregates (`helper_counts`, `total_staked`, progress, completion state)
+- `RoomAccount` also stores discovery metadata: `created_by`, `created_slot`
+- Reward flow is split:
+  - `complete_job` marks job complete and allocates bonus
+  - `claim_job_reward` pays stake+bonus per helper and closes `HelperStake`
 
 ### 4. Anchor 0.32 Account Syntax
 
@@ -70,6 +69,68 @@ Solana CLI and Phantom use different derivation paths from seed phrases:
 - Phantom: `m/44'/501'/0'/0'` → different address
 
 Use JSON keypair files (`devnet-wallet.json`) to avoid confusion.
+
+### 7. Inventory PDA Model (Onchain)
+
+Inventory is now stored onchain in a dedicated PDA per player:
+
+- `InventoryAccount` PDA seeds: `["inventory", player]`
+- `InventoryItem` fields:
+  - `item_id: u16`
+  - `amount: u32`
+  - `durability: u16`
+- Max inventory stacks per player: `64`
+
+Behavior:
+- `loot_chest` now writes directly to `InventoryAccount` (init-if-needed).
+- `add_inventory_item(item_id, amount, durability)` stacks by `(item_id, durability)`.
+- `remove_inventory_item(item_id, amount)` removes across all stacks of the same `item_id`.
+
+Current item ids used by chest loot:
+- `1` = Ore
+- `2` = Tool (durability defaults to `100`)
+- `3` = Buff
+
+### 8. Room Center and Boss System
+
+Rooms now have a center type:
+- `0` = empty
+- `1` = chest
+- `2` = boss
+
+Spawn rules implemented:
+- Start room `(5,5)` center is always empty.
+- Depth 1 rooms: 50% chest chance, with one guaranteed chest among first-ring rooms.
+- Depth 2+ rooms: 50% boss chance.
+
+Boss runtime fields are stored in `RoomAccount`:
+- `center_id` for Unity boss prefab selection
+- `boss_max_hp`, `boss_current_hp`, `boss_total_dps`, `boss_fighter_count`, `boss_defeated`
+
+Boss instruction flow:
+- `equip_item(item_id)` (0 to unequip)
+- `set_player_skin(skin_id)`
+- `join_boss_fight()`
+- `tick_boss_fight()`
+- `loot_boss()` (fighters-only, after defeat)
+
+### 9. Scalable Presence/Profile Indexing
+
+To avoid full player scans for room rendering, two PDAs were added:
+
+- `PlayerProfile` seeds: `["profile", player]`
+  - stores `skin_id`
+- `RoomPresence` seeds: `["presence", season_seed, room_x, room_y, player]`
+  - stores `skin_id`, `equipped_item_id`, activity, and `is_current`
+
+Update points:
+- `init_player` creates profile + initial presence
+- `move_player` updates old/new room presences
+- `equip_item` syncs current room presence `equipped_item_id`
+- `set_player_skin` syncs profile and current room presence
+- `join_job` marks presence as door-job activity
+- `join_boss_fight` marks presence as boss-fight activity
+- `abandon_job` / `claim_job_reward` / `loot_boss` return presence to idle
 
 ## File Locations
 
@@ -127,6 +188,9 @@ Use **Ctrl+Shift+P** → "Tasks: Run Task" to access these:
 # Build
 wsl -d Ubuntu -- bash scripts/wsl/build.sh
 
+# Build fallback if scripts/wsl/*.sh were saved with CRLF
+wsl -d Ubuntu -- bash -lc "cd /mnt/e/Github2/SeekerDungeon/solana-program && rm -f Cargo.lock && anchor build"
+
 # Deploy/upgrade
 wsl -d Ubuntu -- bash scripts/wsl/run.sh "solana program deploy target/deploy/chaindepth.so --program-id 3Ctc2FgnNHQtGAcZftMS4ykLhJYjLzBD3hELKy55DnKo --url devnet -k devnet-wallet.json"
 
@@ -145,6 +209,7 @@ wsl -d Ubuntu -- bash scripts/wsl/run.sh "export ANCHOR_PROVIDER_URL=https://api
 | `npm run check-state` | Query current game state on devnet |
 | `npm run init-devnet` | Initialize game (create token, global state) |
 | `npm run mint-tokens <wallet> [amount]` | Mint test SKR tokens |
+| `npm run smoke-door` | End-to-end devnet smoke test (init/move/join/tick/complete/claim flow) |
 | `npm run watch-logs` | Watch program logs in real-time |
 
 ## Known Issues / Gotchas
@@ -154,8 +219,9 @@ wsl -d Ubuntu -- bash scripts/wsl/run.sh "export ANCHOR_PROVIDER_URL=https://api
 3. **`init-if-needed` feature**: Must enable in Cargo.toml: `anchor-lang = { version = "...", features = ["init-if-needed"] }`
 4. **blake3 dependency**: Pin to `=1.5.5` to avoid Edition 2024 requirement
 5. **Temporary value lifetimes**: When building escrow seeds, bind `room.key()` to variable first
-6. **Line endings**: WSL scripts must have Unix line endings (LF). Fix with: `wsl -d Ubuntu -- sed -i 's/\r$//' scripts/wsl/*.sh`
+6. **Line endings**: WSL scripts must have Unix line endings (LF). If you see `$'\r': command not found`, fix with: `wsl -d Ubuntu -- sed -i 's/\r$//' scripts/wsl/*.sh`
 7. **BigInt in Kite**: `getCurrentSlot()` returns BigInt, convert with `Number()` for arithmetic
+10. **`npm test` can fail on Devnet faucet limits**: Anchor test `before()` currently requests airdrops and may hit `429 Too Many Requests`
 
 ## Architecture Notes
 
@@ -163,7 +229,11 @@ wsl -d Ubuntu -- bash scripts/wsl/run.sh "export ANCHOR_PROVIDER_URL=https://api
 - Rooms are PDAs keyed by `[season_seed, x, y]`
 - Season resets create new room PDAs (old ones orphaned)
 - Escrow accounts hold staked SKR during jobs
+- Helper stakes are per-player PDAs keyed by `[room, direction, player]`
+- Helpers claim stake + bonus with `claim_job_reward`
+- Rooms track discovery metadata with `created_by` and `created_slot`
 - Prize pool is a token account owned by global PDA
+- Player inventory is a dedicated PDA keyed by `[inventory, player]`
 
 ## Unity Integration
 
@@ -270,3 +340,4 @@ The Unity scripts use generated instruction builders from `ChainDepthClient.cs`.
 2. Associated token account creation
 
 See the TypeScript scripts for reference on account structure.
+

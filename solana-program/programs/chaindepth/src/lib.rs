@@ -63,8 +63,57 @@ pub mod chaindepth {
         instructions::loot_chest::handler(ctx)
     }
 
+    /// Loot boss rewards after boss defeat (fighters only)
+    pub fn loot_boss(ctx: Context<LootBoss>) -> Result<()> {
+        instructions::loot_boss::handler(ctx)
+    }
+
     /// Abandon a job and receive partial refund
     pub fn abandon_job(ctx: Context<AbandonJob>, direction: u8) -> Result<()> {
         instructions::abandon_job::handler(ctx, direction)
+    }
+
+    /// Claim stake + bonus after a job has been completed
+    pub fn claim_job_reward(ctx: Context<ClaimJobReward>, direction: u8) -> Result<()> {
+        instructions::claim_job_reward::handler(ctx, direction)
+    }
+
+    /// Equip an item id for combat (0 = unequip)
+    pub fn equip_item(ctx: Context<EquipItem>, item_id: u16) -> Result<()> {
+        instructions::equip_item::handler(ctx, item_id)
+    }
+
+    /// Set player skin id for visual profile
+    pub fn set_player_skin(ctx: Context<SetPlayerSkin>, skin_id: u16) -> Result<()> {
+        instructions::set_player_skin::handler(ctx, skin_id)
+    }
+
+    /// Join fight on boss in current room.
+    pub fn join_boss_fight(ctx: Context<JoinBossFight>) -> Result<()> {
+        instructions::join_boss_fight::handler(ctx)
+    }
+
+    /// Tick boss fight progress.
+    pub fn tick_boss_fight(ctx: Context<TickBossFight>) -> Result<()> {
+        instructions::tick_boss_fight::handler(ctx)
+    }
+
+    /// Add items to player's inventory (utility/admin-like action for testing flows)
+    pub fn add_inventory_item(
+        ctx: Context<AddInventoryItem>,
+        item_id: u16,
+        amount: u32,
+        durability: u16,
+    ) -> Result<()> {
+        instructions::add_inventory_item::handler(ctx, item_id, amount, durability)
+    }
+
+    /// Remove items from player's inventory (e.g. spending items)
+    pub fn remove_inventory_item(
+        ctx: Context<RemoveInventoryItem>,
+        item_id: u16,
+        amount: u32,
+    ) -> Result<()> {
+        instructions::remove_inventory_item::handler(ctx, item_id, amount)
     }
 }

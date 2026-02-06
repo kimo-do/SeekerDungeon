@@ -1,10 +1,8 @@
 use anchor_lang::prelude::*;
 
-/// Maximum helpers per direction (reduced for stack safety)
-pub const MAX_HELPERS_PER_DIRECTION: usize = 4;
-
-/// Maximum players who can loot a chest (reduced for stack safety)
-pub const MAX_LOOTERS: usize = 8;
+/// Maximum players who can loot a chest
+pub const MAX_LOOTERS: usize = 128;
+pub const MAX_BOSS_HP: u64 = 100_000;
 
 /// Direction constants
 pub const DIRECTION_NORTH: u8 = 0;
@@ -16,6 +14,11 @@ pub const DIRECTION_WEST: u8 = 3;
 pub const WALL_SOLID: u8 = 0;
 pub const WALL_RUBBLE: u8 = 1;
 pub const WALL_OPEN: u8 = 2;
+
+/// Center state constants
+pub const CENTER_EMPTY: u8 = 0;
+pub const CENTER_CHEST: u8 = 1;
+pub const CENTER_BOSS: u8 = 2;
 
 /// Room account - one per coordinate pair per season
 /// PDA seeds: ["room", season_seed (8 bytes), x (1 byte), y (1 byte)]
@@ -33,12 +36,8 @@ pub struct RoomAccount {
     /// 0 = solid wall (impassable), 1 = rubble (can clear), 2 = open (passable)
     pub walls: [u8; 4],
 
-    /// Helpers working on each wall direction
-    #[max_len(4, 4)]
-    pub helpers: [[Pubkey; 4]; 4],
-
     /// Count of active helpers per direction
-    pub helper_counts: [u8; 4],
+    pub helper_counts: [u32; 4],
 
     /// Progress towards completion for each direction (in slots)
     pub progress: [u64; 4],
@@ -50,14 +49,50 @@ pub struct RoomAccount {
     pub base_slots: [u64; 4],
 
     /// Amount staked in escrow for each direction
-    pub staked_amount: [u64; 4],
+    pub total_staked: [u64; 4],
+
+    /// Whether each directional job has been completed and is in claim phase
+    pub job_completed: [bool; 4],
+
+    /// Bonus allocated per helper after completion
+    pub bonus_per_helper: [u64; 4],
 
     /// Whether this room has a chest
     pub has_chest: bool,
 
+    /// What is in the room center (empty/chest/boss)
+    pub center_type: u8,
+
+    /// Identifier used by Unity to pick boss prefab/variant
+    pub center_id: u16,
+
+    /// Boss max HP (0 if no boss in center)
+    pub boss_max_hp: u64,
+
+    /// Boss remaining HP (0 if no boss or defeated)
+    pub boss_current_hp: u64,
+
+    /// Slot of latest boss HP update
+    pub boss_last_update_slot: u64,
+
+    /// Total DPS from current fighters
+    pub boss_total_dps: u64,
+
+    /// Number of current fighters
+    pub boss_fighter_count: u32,
+
+    /// Whether boss has been defeated
+    pub boss_defeated: bool,
+
     /// Players who have already looted this chest
     #[max_len(MAX_LOOTERS)]
     pub looted_by: Vec<Pubkey>,
+
+    /// Wallet that first discovered/created this room
+    pub created_by: Pubkey,
+
+    /// Slot when this room was created
+    pub created_slot: u64,
 
     /// PDA bump seed
     pub bump: u8,
@@ -80,6 +115,7 @@ impl RoomAccount {
 
     /// Refund percentage when abandoning (80%)
     pub const ABANDON_REFUND_PERCENT: u64 = 80;
+    pub const BOSS_BASE_HP: u64 = 300;
 
     /// Get opposite direction
     pub fn opposite_direction(direction: u8) -> u8 {
@@ -124,63 +160,22 @@ impl RoomAccount {
         self.walls[direction as usize] == WALL_OPEN
     }
 
-    /// Add a helper to a job
-    pub fn add_helper(&mut self, direction: u8, helper: Pubkey) -> Result<()> {
-        let dir = direction as usize;
-        let count = self.helper_counts[dir] as usize;
-
-        require!(
-            count < MAX_HELPERS_PER_DIRECTION,
-            crate::errors::ChainDepthError::JobFull
-        );
-
-        // Check if already helping
-        for i in 0..count {
-            require!(
-                self.helpers[dir][i] != helper,
-                crate::errors::ChainDepthError::AlreadyJoined
-            );
-        }
-
-        self.helpers[dir][count] = helper;
-        self.helper_counts[dir] += 1;
-        Ok(())
-    }
-
-    /// Remove a helper from a job
-    pub fn remove_helper(&mut self, direction: u8, helper: Pubkey) -> bool {
-        let dir = direction as usize;
-        let count = self.helper_counts[dir] as usize;
-
-        for i in 0..count {
-            if self.helpers[dir][i] == helper {
-                // Shift remaining helpers
-                for j in i..(count - 1) {
-                    self.helpers[dir][j] = self.helpers[dir][j + 1];
-                }
-                self.helpers[dir][count - 1] = Pubkey::default();
-                self.helper_counts[dir] -= 1;
-                return true;
-            }
-        }
-        false
-    }
-
-    /// Check if helper is in the job
-    pub fn is_helper(&self, direction: u8, helper: &Pubkey) -> bool {
-        let dir = direction as usize;
-        let count = self.helper_counts[dir] as usize;
-        for i in 0..count {
-            if &self.helpers[dir][i] == helper {
-                return true;
-            }
-        }
-        false
-    }
-
     /// Check if player has already looted this chest
     pub fn has_looted(&self, player: &Pubkey) -> bool {
         self.looted_by.contains(player)
+    }
+
+    pub fn is_valid_center_type(center_type: u8) -> bool {
+        center_type == CENTER_EMPTY || center_type == CENTER_CHEST || center_type == CENTER_BOSS
+    }
+
+    pub fn boss_hp_for_depth(depth: u32, boss_id: u16) -> u64 {
+        let depth_multiplier = 1 + (depth / 4) as u64;
+        let id_multiplier = 1 + (boss_id % 5) as u64;
+        let hp = Self::BOSS_BASE_HP
+            .saturating_mul(depth_multiplier)
+            .saturating_mul(id_multiplier);
+        hp.min(MAX_BOSS_HP)
     }
 }
 

@@ -97,8 +97,8 @@
             </ui:VisualElement>
             
             <ui:VisualElement class="chest-info">
-                <ui:Label name="chest-label" text="Chest: None" class="info-label" />
-                <ui:Button name="btn-loot-chest" text="Loot Chest" class="button" />
+                <ui:Label name="chest-label" text="Center: Empty" class="info-label" />
+                <ui:Button name="btn-loot-chest" text="Center Action" class="button" />
             </ui:VisualElement>
         </ui:VisualElement>
         

@@ -26,7 +26,7 @@ pub struct BoostJob<'info> {
             &[room.x as u8],
             &[room.y as u8]
         ],
-        bump = room.bump
+        bump
     )]
     pub room: Account<'info, RoomAccount>,
 

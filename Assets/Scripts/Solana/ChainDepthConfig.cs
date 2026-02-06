@@ -21,6 +21,11 @@ namespace SeekerDungeon.Solana
         public const string PLAYER_SEED = "player";
         public const string ROOM_SEED = "room";
         public const string ESCROW_SEED = "escrow";
+        public const string STAKE_SEED = "stake";
+        public const string INVENTORY_SEED = "inventory";
+        public const string BOSS_FIGHT_SEED = "boss_fight";
+        public const string PROFILE_SEED = "profile";
+        public const string PRESENCE_SEED = "presence";
         public const string PRIZE_POOL_SEED = "prize_pool";
         
         // Game constants
@@ -39,6 +44,11 @@ namespace SeekerDungeon.Solana
         public const byte WALL_SOLID = 0;
         public const byte WALL_RUBBLE = 1;
         public const byte WALL_OPEN = 2;
+
+        // Center state constants
+        public const byte CENTER_EMPTY = 0;
+        public const byte CENTER_CHEST = 1;
+        public const byte CENTER_BOSS = 2;
         
         // Token constants (9 decimals)
         public const int SKR_DECIMALS = 9;

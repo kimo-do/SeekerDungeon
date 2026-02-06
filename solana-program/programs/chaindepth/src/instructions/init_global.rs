@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
 use crate::events::GlobalInitialized;
-use crate::state::{GlobalAccount, RoomAccount, WALL_RUBBLE};
+use crate::state::{GlobalAccount, RoomAccount, CENTER_EMPTY, WALL_OPEN, WALL_RUBBLE};
 
 #[derive(Accounts)]
 #[instruction(initial_prize_pool_amount: u64, season_seed: u64)]
@@ -74,27 +74,35 @@ pub fn handler(ctx: Context<InitGlobal>, initial_prize_pool_amount: u64, season_
     global.jobs_completed = 0;
     global.bump = ctx.bumps.global;
 
-    // Initialize starting room with open center and rubble walls
+    // Initialize starting room with empty center and mixed walls
     let start_room = &mut ctx.accounts.start_room;
     start_room.x = GlobalAccount::START_X;
     start_room.y = GlobalAccount::START_Y;
     start_room.season_seed = season_seed;
     
-    // Starting room: all 4 walls are rubble (can be cleared)
-    // This allows players to expand in any direction
-    start_room.walls = [WALL_RUBBLE; 4];
+    start_room.walls = generate_start_walls(season_seed);
     
-    // Initialize helpers arrays
-    start_room.helpers = [[Pubkey::default(); 4]; 4];
+    // Initialize directional job state
     start_room.helper_counts = [0; 4];
     start_room.progress = [0; 4];
     start_room.start_slot = [0; 4];
     start_room.base_slots = [RoomAccount::calculate_base_slots(0); 4];
-    start_room.staked_amount = [0; 4];
+    start_room.total_staked = [0; 4];
+    start_room.job_completed = [false; 4];
+    start_room.bonus_per_helper = [0; 4];
     
-    // Starting room has a chest (welcome gift)
-    start_room.has_chest = true;
+    start_room.has_chest = false;
+    start_room.center_type = CENTER_EMPTY;
+    start_room.center_id = 0;
+    start_room.boss_max_hp = 0;
+    start_room.boss_current_hp = 0;
+    start_room.boss_last_update_slot = clock.slot;
+    start_room.boss_total_dps = 0;
+    start_room.boss_fighter_count = 0;
+    start_room.boss_defeated = false;
     start_room.looted_by = Vec::new();
+    start_room.created_by = ctx.accounts.admin.key();
+    start_room.created_slot = clock.slot;
     start_room.bump = ctx.bumps.start_room;
 
     // Transfer initial prize pool from admin
@@ -118,4 +126,17 @@ pub fn handler(ctx: Context<InitGlobal>, initial_prize_pool_amount: u64, season_
     });
 
     Ok(())
+}
+
+fn generate_start_walls(season_seed: u64) -> [u8; 4] {
+    let mut walls = [WALL_RUBBLE; 4];
+    for (direction, wall) in walls.iter_mut().enumerate() {
+        let direction_hash = season_seed.wrapping_mul(31).wrapping_add(direction as u64);
+        if (direction_hash % 2) == 0 {
+            *wall = WALL_OPEN;
+        } else {
+            *wall = WALL_RUBBLE;
+        }
+    }
+    walls
 }

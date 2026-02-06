@@ -10,6 +10,7 @@
     "init-devnet": "npx tsx scripts/init-devnet.ts",
     "check-state": "npx tsx scripts/check-state.ts",
     "mint-tokens": "npx tsx scripts/mint-test-tokens.ts",
+    "smoke-door": "npx tsx scripts/smoke-door-devnet.ts",
     "watch-logs": "npx tsx scripts/watch-logs.ts"
   },
   "dependencies": {
@@ -26,6 +27,7 @@
     "@types/chai": "^4.3.16",
     "@types/mocha": "^10.0.7",
     "@types/node": "^22.0.0",
+    "@solana/spl-token": "^0.4.14",
     "chai": "^4.4.1",
     "codama": "^1.5.0",
     "dotenv": "^16.4.5",

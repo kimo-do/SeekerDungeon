@@ -120,8 +120,9 @@ This creates a client in `generated/client/` that can replace the Anchor TypeScr
 2. Rooms have 4 walls: solid, rubble (clearable), or open
 3. Join a job to clear rubble by staking 0.01 SKR
 4. Jobs complete after enough slots pass (faster with more helpers)
-5. Completed jobs open new rooms, refund stake + bonus
-6. Some rooms have chests with loot
+5. Completing a job opens a new room and puts rewards into escrow
+6. Each helper claims stake + bonus with `claim_job_reward`
+7. Some rooms have chests with loot
 
 ### Instructions
 - `init_global` - Admin: Initialize game state and starting room
@@ -129,7 +130,8 @@ This creates a client in `generated/client/` that can replace the Anchor TypeScr
 - `join_job` - Stake SKR to help clear a rubble wall
 - `tick_job` - Update job progress based on elapsed time
 - `boost_job` - Tip SKR to speed up a job
-- `complete_job` - Finish job, open wall, get rewards
+- `complete_job` - Finish job and open wall
+- `claim_job_reward` - Claim staked SKR + completion bonus
 - `abandon_job` - Leave job early (80% refund, 20% slashed)
 - `loot_chest` - Collect items from a room's chest
 - `reset_season` - Admin: Start a new season
@@ -137,7 +139,8 @@ This creates a client in `generated/client/` that can replace the Anchor TypeScr
 ### Accounts
 - **GlobalAccount** - Game state (depth, season, prize pool)
 - **PlayerAccount** - Player position and active jobs
-- **RoomAccount** - Room state (walls, helpers, chests)
+- **RoomAccount** - Room state (walls, job aggregates, chests, creator metadata)
+- **HelperStake** - Per-helper stake record for one room direction
 
 ## Unity Integration
 

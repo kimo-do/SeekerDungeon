@@ -1,7 +1,17 @@
+pub mod boss_fight;
 pub mod global;
+pub mod helper_stake;
+pub mod inventory;
 pub mod player;
+pub mod player_profile;
 pub mod room;
+pub mod room_presence;
 
+pub use boss_fight::*;
 pub use global::*;
+pub use helper_stake::*;
+pub use inventory::*;
 pub use player::*;
+pub use player_profile::*;
 pub use room::*;
+pub use room_presence::*;

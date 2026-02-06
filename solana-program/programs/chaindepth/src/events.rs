@@ -7,8 +7,8 @@ pub struct JobCompleted {
     pub room_y: i8,
     pub direction: u8,
     pub new_depth: u32,
-    pub helpers_count: u8,
-    pub total_reward: u64,
+    pub helpers_count: u32,
+    pub reward_per_helper: u64,
 }
 
 /// Emitted when a player loots a chest
@@ -37,7 +37,7 @@ pub struct JobJoined {
     pub room_y: i8,
     pub direction: u8,
     pub player: Pubkey,
-    pub helper_count: u8,
+    pub helper_count: u32,
     pub stake_amount: u64,
 }
 
@@ -62,6 +62,16 @@ pub struct JobAbandoned {
     pub refund_amount: u64,
 }
 
+/// Emitted when a helper claims reward from a completed job
+#[event]
+pub struct JobRewardClaimed {
+    pub room_x: i8,
+    pub room_y: i8,
+    pub direction: u8,
+    pub player: Pubkey,
+    pub payout_amount: u64,
+}
+
 /// Emitted when a player moves to a new room
 #[event]
 pub struct PlayerMoved {
@@ -79,6 +89,57 @@ pub struct GlobalInitialized {
     pub admin: Pubkey,
     pub skr_mint: Pubkey,
     pub end_slot: u64,
+}
+
+/// Emitted when an item stack is added to inventory
+#[event]
+pub struct InventoryItemAdded {
+    pub player: Pubkey,
+    pub item_id: u16,
+    pub amount: u32,
+    pub durability: u16,
+}
+
+/// Emitted when items are removed from inventory
+#[event]
+pub struct InventoryItemRemoved {
+    pub player: Pubkey,
+    pub item_id: u16,
+    pub amount: u32,
+}
+
+#[event]
+pub struct ItemEquipped {
+    pub player: Pubkey,
+    pub item_id: u16,
+}
+
+#[event]
+pub struct BossFightJoined {
+    pub room_x: i8,
+    pub room_y: i8,
+    pub player: Pubkey,
+    pub dps: u64,
+    pub fighter_count: u32,
+}
+
+#[event]
+pub struct BossTicked {
+    pub room_x: i8,
+    pub room_y: i8,
+    pub boss_id: u16,
+    pub current_hp: u64,
+    pub max_hp: u64,
+    pub fighter_count: u32,
+}
+
+#[event]
+pub struct BossLooted {
+    pub room_x: i8,
+    pub room_y: i8,
+    pub player: Pubkey,
+    pub item_type: u8,
+    pub item_amount: u8,
 }
 
 /// Item types for loot

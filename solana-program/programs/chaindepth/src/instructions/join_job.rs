@@ -3,7 +3,7 @@ use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
 use crate::errors::ChainDepthError;
 use crate::events::JobJoined;
-use crate::state::{GlobalAccount, PlayerAccount, RoomAccount};
+use crate::state::{GlobalAccount, HelperStake, PlayerAccount, RoomAccount, RoomPresence};
 
 #[derive(Accounts)]
 #[instruction(direction: u8)]
@@ -34,12 +34,24 @@ pub struct JoinJob<'info> {
             &[player_account.current_room_x as u8],
             &[player_account.current_room_y as u8]
         ],
-        bump = room.bump
+        bump
     )]
     pub room: Account<'info, RoomAccount>,
 
-    /// Escrow account for this job (holds staked SKR)
-    /// CHECK: This is a token account that will be initialized if needed
+    #[account(
+        mut,
+        seeds = [
+            RoomPresence::SEED_PREFIX,
+            &global.season_seed.to_le_bytes(),
+            &[player_account.current_room_x as u8],
+            &[player_account.current_room_y as u8],
+            player.key().as_ref()
+        ],
+        bump = room_presence.bump
+    )]
+    pub room_presence: Account<'info, RoomPresence>,
+
+    /// Escrow token account for this room direction.
     #[account(
         init_if_needed,
         payer = player,
@@ -49,6 +61,21 @@ pub struct JoinJob<'info> {
         bump
     )]
     pub escrow: Account<'info, TokenAccount>,
+
+    /// Per-helper stake marker for this room+direction.
+    #[account(
+        init,
+        payer = player,
+        space = 8 + HelperStake::INIT_SPACE,
+        seeds = [
+            HelperStake::SEED_PREFIX,
+            room.key().as_ref(),
+            &[direction],
+            player.key().as_ref()
+        ],
+        bump
+    )]
+    pub helper_stake: Account<'info, HelperStake>,
 
     /// Player's SKR token account
     #[account(
@@ -67,7 +94,6 @@ pub struct JoinJob<'info> {
 }
 
 pub fn handler(ctx: Context<JoinJob>, direction: u8) -> Result<()> {
-    // Validate direction
     require!(
         RoomAccount::is_valid_direction(direction),
         ChainDepthError::InvalidDirection
@@ -77,36 +103,45 @@ pub fn handler(ctx: Context<JoinJob>, direction: u8) -> Result<()> {
     let player_account = &mut ctx.accounts.player_account;
     let player_key = ctx.accounts.player.key();
     let clock = Clock::get()?;
+    let dir_idx = direction as usize;
 
-    // Check wall is rubble (clearable)
     require!(room.is_rubble(direction), ChainDepthError::NotRubble);
-
-    // Check player doesn't already have this job active
     require!(
         !player_account.has_active_job(room.x, room.y, direction),
         ChainDepthError::AlreadyJoined
     );
+    require!(
+        !room.job_completed[dir_idx],
+        ChainDepthError::JobAlreadyCompleted
+    );
 
-    // Add helper to room
-    room.add_helper(direction, player_key)?;
-
-    // If first helper, initialize job timing
-    let dir_idx = direction as usize;
-    if room.helper_counts[dir_idx] == 1 {
+    if room.helper_counts[dir_idx] == 0 {
         room.start_slot[dir_idx] = clock.slot;
         room.base_slots[dir_idx] = RoomAccount::calculate_base_slots(ctx.accounts.global.depth);
         room.progress[dir_idx] = 0;
+        room.bonus_per_helper[dir_idx] = 0;
+        room.job_completed[dir_idx] = false;
     }
 
-    // Add to staked amount
-    room.staked_amount[dir_idx] = room.staked_amount[dir_idx]
+    room.helper_counts[dir_idx] = room.helper_counts[dir_idx]
+        .checked_add(1)
+        .ok_or(ChainDepthError::Overflow)?;
+
+    room.total_staked[dir_idx] = room.total_staked[dir_idx]
         .checked_add(RoomAccount::STAKE_AMOUNT)
         .ok_or(ChainDepthError::Overflow)?;
 
-    // Add active job to player
     player_account.add_job(room.x, room.y, direction)?;
+    ctx.accounts.room_presence.set_door_job(direction);
 
-    // Transfer stake to escrow
+    let helper_stake = &mut ctx.accounts.helper_stake;
+    helper_stake.player = player_key;
+    helper_stake.room = room.key();
+    helper_stake.direction = direction;
+    helper_stake.amount = RoomAccount::STAKE_AMOUNT;
+    helper_stake.joined_slot = clock.slot;
+    helper_stake.bump = ctx.bumps.helper_stake;
+
     let transfer_ctx = CpiContext::new(
         ctx.accounts.token_program.to_account_info(),
         Transfer {

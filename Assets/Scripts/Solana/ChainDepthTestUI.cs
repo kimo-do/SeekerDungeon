@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
+using Solana.Unity.Rpc;
+using Solana.Unity.Rpc.Types;
 using Solana.Unity.SDK;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -158,13 +160,13 @@ namespace SeekerDungeon.Solana
             _btnMoveWest?.RegisterCallback<ClickEvent>(_ => OnMove(ChainDepthConfig.DIRECTION_WEST));
 
             // Jobs
-            _btnJobNorth?.RegisterCallback<ClickEvent>(_ => OnJoinJob(ChainDepthConfig.DIRECTION_NORTH));
-            _btnJobSouth?.RegisterCallback<ClickEvent>(_ => OnJoinJob(ChainDepthConfig.DIRECTION_SOUTH));
-            _btnJobEast?.RegisterCallback<ClickEvent>(_ => OnJoinJob(ChainDepthConfig.DIRECTION_EAST));
-            _btnJobWest?.RegisterCallback<ClickEvent>(_ => OnJoinJob(ChainDepthConfig.DIRECTION_WEST));
+            _btnJobNorth?.RegisterCallback<ClickEvent>(_ => OnDoorAction(ChainDepthConfig.DIRECTION_NORTH));
+            _btnJobSouth?.RegisterCallback<ClickEvent>(_ => OnDoorAction(ChainDepthConfig.DIRECTION_SOUTH));
+            _btnJobEast?.RegisterCallback<ClickEvent>(_ => OnDoorAction(ChainDepthConfig.DIRECTION_EAST));
+            _btnJobWest?.RegisterCallback<ClickEvent>(_ => OnDoorAction(ChainDepthConfig.DIRECTION_WEST));
 
-            // Chest
-            _btnLootChest?.RegisterCallback<ClickEvent>(_ => OnLootChest());
+            // Center action (chest/boss/empty)
+            _btnLootChest?.RegisterCallback<ClickEvent>(_ => OnCenterAction());
             
             // Player actions
             _btnInitPlayer?.RegisterCallback<ClickEvent>(_ => OnInitPlayer());
@@ -303,9 +305,18 @@ namespace SeekerDungeon.Solana
             try
             {
                 if (!IsWalletConnected()) return;
-                
-                var balance = await Web3.Instance.WalletBase.GetBalance();
-                var solBalance = balance / 1_000_000_000.0; // Convert lamports to SOL
+
+                var rpc = Web3.Wallet.ActiveRpcClient ?? ClientFactory.GetClient(ChainDepthConfig.RPC_URL);
+                var pubkey = Web3.Wallet.Account.PublicKey.Key;
+                var result = await rpc.GetBalanceAsync(pubkey, Commitment.Confirmed);
+                if (!result.WasSuccessful || result.Result?.Value == null)
+                {
+                    LogMessage($"Balance fetch failed: {result.Reason}");
+                    return;
+                }
+
+                var lamports = result.Result.Value;
+                var solBalance = lamports / 1_000_000_000.0;
                 SetLabel(_balanceLabel, $"Balance: {solBalance:F4} SOL");
                 LogMessage($"Balance: {solBalance:F4} SOL");
             }
@@ -374,6 +385,29 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
+            if (_manager.CurrentRoomState == null || _manager.CurrentPlayerState == null)
+            {
+                SetStatus("Refresh state first");
+                LogMessage("Move blocked: fetch player/room state first.");
+                return;
+            }
+
+            if (_manager.CurrentRoomState.Walls == null || direction >= _manager.CurrentRoomState.Walls.Length)
+            {
+                SetStatus("Room wall data unavailable");
+                LogMessage("Move blocked: missing wall state.");
+                return;
+            }
+
+            var wallState = _manager.CurrentRoomState.Walls[direction];
+            if (wallState != ChainDepthConfig.WALL_OPEN)
+            {
+                var dirNameBlocked = ChainDepthConfig.GetDirectionName(direction);
+                SetStatus($"{dirNameBlocked} is not open");
+                LogMessage($"Move blocked: {dirNameBlocked} wall is {ChainDepthConfig.GetWallStateName(wallState)}. Use Door Action first.");
+                return;
+            }
+
             var dirName = ChainDepthConfig.GetDirectionName(direction);
             SetStatus($"Moving {dirName}...");
             LogMessage($"Moving {dirName}...");
@@ -399,7 +433,7 @@ namespace SeekerDungeon.Solana
             }).Forget();
         }
 
-        private void OnJoinJob(byte direction)
+        private void OnDoorAction(byte direction)
         {
             if (!IsWalletConnected())
             {
@@ -408,46 +442,48 @@ namespace SeekerDungeon.Solana
             }
 
             var dirName = ChainDepthConfig.GetDirectionName(direction);
-            SetStatus($"Joining job {dirName}...");
-            LogMessage($"Joining job: {dirName}...");
+            SetStatus($"Door action: {dirName}...");
+            LogMessage($"Door action requested: {dirName}...");
 
-            _manager.JoinJob(direction).ContinueWith(sig =>
+            _manager.InteractWithDoor(direction).ContinueWith(sig =>
             {
                 if (sig != null)
                 {
-                    SetStatus($"Joined {dirName} job!");
-                    LogMessage($"Join job success: {sig}");
+                    SetStatus($"Door action sent ({dirName})");
+                    LogMessage($"Door action success: {sig}");
                 }
                 else
                 {
-                    SetStatus("Join job failed - check console");
-                    LogMessage("Join job failed!");
+                    SetStatus($"No tx for {dirName} action");
+                    LogMessage($"Door action skipped/failed for {dirName}");
                 }
             }).Forget();
         }
 
-        private void OnLootChest()
+        private void OnCenterAction()
         {
             if (!IsWalletConnected())
             {
                 SetStatus("Connect wallet first!");
                 return;
             }
-            
-            SetStatus("Looting chest...");
-            LogMessage("Looting chest...");
 
-            _manager.LootChest().ContinueWith(sig =>
+            var roomState = _manager.CurrentRoomState;
+            var centerName = GetCenterTypeName(roomState);
+            SetStatus($"Center action: {centerName}...");
+            LogMessage($"Center action requested ({centerName})...");
+
+            _manager.InteractWithCenter().ContinueWith(sig =>
             {
                 if (sig != null)
                 {
-                    SetStatus($"Chest looted!");
-                    LogMessage($"Loot TX: {sig}");
+                    SetStatus($"Center action success");
+                    LogMessage($"Center action success: {sig}");
                 }
                 else
                 {
-                    SetStatus("Loot failed - check console");
-                    LogMessage("Loot chest failed!");
+                    SetStatus("Center action skipped/failed");
+                    LogMessage("Center action skipped/failed");
                 }
             }).Forget();
         }
@@ -486,7 +522,8 @@ namespace SeekerDungeon.Solana
         private void OnWalletStateChanged()
         {
             var connected = IsWalletConnected();
-            LogMessage($"Wallet state changed. Connected: {connected}");
+            var walletKey = connected ? Web3.Wallet.Account.PublicKey.Key : "none";
+            LogMessage($"Wallet state changed. Connected: {connected}. Wallet: {walletKey}");
             UpdateConnectionUI();
 
             if (connected)
@@ -601,16 +638,80 @@ namespace SeekerDungeon.Solana
 
         private void UpdateRoomInfo(RoomAccount state)
         {
-            SetLabel(_roomInfo, $"Room: ({state.X}, {state.Y}), Chest={state.HasChest}");
+            SetLabel(_roomInfo, $"Room: ({state.X}, {state.Y}), Center={GetCenterTypeName(state)}, CreatedBy={ShortKey(state.CreatedBy)}");
             
             // Get wall state names from the walls array
-            UpdateWallLabel(_wallNorth, "North", GetWallStateName(state.Walls, ChainDepthConfig.DIRECTION_NORTH));
-            UpdateWallLabel(_wallSouth, "South", GetWallStateName(state.Walls, ChainDepthConfig.DIRECTION_SOUTH));
-            UpdateWallLabel(_wallEast, "East", GetWallStateName(state.Walls, ChainDepthConfig.DIRECTION_EAST));
-            UpdateWallLabel(_wallWest, "West", GetWallStateName(state.Walls, ChainDepthConfig.DIRECTION_WEST));
+            UpdateWallRow(_wallNorth, _btnJobNorth, "North", state, ChainDepthConfig.DIRECTION_NORTH);
+            UpdateWallRow(_wallSouth, _btnJobSouth, "South", state, ChainDepthConfig.DIRECTION_SOUTH);
+            UpdateWallRow(_wallEast, _btnJobEast, "East", state, ChainDepthConfig.DIRECTION_EAST);
+            UpdateWallRow(_wallWest, _btnJobWest, "West", state, ChainDepthConfig.DIRECTION_WEST);
             
-            SetLabel(_chestLabel, state.HasChest ? "Chest: Available!" : "Chest: None");
-            SetButtonEnabled(_btnLootChest, state.HasChest && IsWalletConnected());
+            UpdateCenterInfo(state);
+        }
+
+        private void UpdateWallRow(Label label, Button button, string directionName, RoomAccount state, byte direction)
+        {
+            var wallState = GetWallStateName(state.Walls, direction);
+            var helpers = state.HelperCounts != null && direction < state.HelperCounts.Length
+                ? state.HelperCounts[direction]
+                : 0;
+            var progress = state.Progress != null && direction < state.Progress.Length
+                ? state.Progress[direction]
+                : 0UL;
+            var required = state.BaseSlots != null && direction < state.BaseSlots.Length
+                ? state.BaseSlots[direction]
+                : 0UL;
+            var completed = state.JobCompleted != null && direction < state.JobCompleted.Length
+                ? state.JobCompleted[direction]
+                : false;
+
+            var progressText = required > 0 ? $"{progress}/{required}" : "0/0";
+            UpdateWallLabel(label, directionName, $"{wallState} | H:{helpers} | P:{progressText}");
+
+            if (button == null)
+            {
+                return;
+            }
+
+            if (!IsWalletConnected())
+            {
+                button.text = "Connect";
+                SetButtonEnabled(button, false);
+                return;
+            }
+
+            if (wallState == "Solid")
+            {
+                button.text = "Blocked";
+                SetButtonEnabled(button, false);
+                return;
+            }
+
+            if (wallState == "Open")
+            {
+                button.text = "Open";
+                SetButtonEnabled(button, false);
+                return;
+            }
+
+            var hasActive = _manager != null && _manager.HasActiveJobInCurrentRoom(direction);
+
+            if (completed)
+            {
+                button.text = hasActive ? "Claim Reward" : "Completed";
+                SetButtonEnabled(button, hasActive);
+                return;
+            }
+
+            if (!hasActive)
+            {
+                button.text = "Join Job";
+                SetButtonEnabled(button, true);
+                return;
+            }
+
+            button.text = progress >= required ? "Complete Job" : "Tick Job";
+            SetButtonEnabled(button, true);
         }
 
         private string GetWallStateName(byte[] walls, byte direction)
@@ -620,11 +721,81 @@ namespace SeekerDungeon.Solana
             return ChainDepthConfig.GetWallStateName(walls[direction]);
         }
 
-        private void UpdateWallLabel(Label label, string direction, string wallState)
+        private void UpdateCenterInfo(RoomAccount state)
+        {
+            if (_chestLabel == null || _btnLootChest == null)
+            {
+                return;
+            }
+
+            if (!IsWalletConnected())
+            {
+                SetLabel(_chestLabel, $"Center: {GetCenterTypeName(state)}");
+                _btnLootChest.text = "Connect";
+                SetButtonEnabled(_btnLootChest, false);
+                return;
+            }
+
+            if (state.CenterType == ChainDepthConfig.CENTER_EMPTY)
+            {
+                SetLabel(_chestLabel, "Center: Empty");
+                _btnLootChest.text = "No Action";
+                SetButtonEnabled(_btnLootChest, false);
+                return;
+            }
+
+            if (state.CenterType == ChainDepthConfig.CENTER_CHEST)
+            {
+                var lootedCount = state.LootedBy?.Count ?? 0;
+                SetLabel(_chestLabel, $"Center: Chest ({lootedCount}/128 looted)");
+                _btnLootChest.text = "Loot Center";
+                SetButtonEnabled(_btnLootChest, true);
+                return;
+            }
+
+            if (state.CenterType == ChainDepthConfig.CENTER_BOSS)
+            {
+                if (state.BossDefeated)
+                {
+                    var lootedCount = state.LootedBy?.Count ?? 0;
+                    SetLabel(_chestLabel, $"Center: Boss #{state.CenterId} defeated ({lootedCount}/128 looted)");
+                    _btnLootChest.text = "Loot Boss";
+                }
+                else
+                {
+                    SetLabel(_chestLabel, $"Center: Boss #{state.CenterId} HP {state.BossCurrentHp}/{state.BossMaxHp}, Fighters={state.BossFighterCount}");
+                    _btnLootChest.text = "Boss Action";
+                }
+                SetButtonEnabled(_btnLootChest, true);
+                return;
+            }
+
+            SetLabel(_chestLabel, $"Center: Unknown ({state.CenterType})");
+            _btnLootChest.text = "Center Action";
+            SetButtonEnabled(_btnLootChest, true);
+        }
+
+        private static string GetCenterTypeName(RoomAccount state)
+        {
+            if (state == null)
+            {
+                return "Unknown";
+            }
+
+            return state.CenterType switch
+            {
+                ChainDepthConfig.CENTER_EMPTY => "Empty",
+                ChainDepthConfig.CENTER_CHEST => "Chest",
+                ChainDepthConfig.CENTER_BOSS => "Boss",
+                _ => "Unknown"
+            };
+        }
+
+        private void UpdateWallLabel(Label label, string direction, string wallDetails)
         {
             if (label == null) return;
             
-            label.text = $"{direction}: {wallState}";
+            label.text = $"{direction}: {wallDetails}";
             
             // Remove old classes
             label.RemoveFromClassList("wall-solid");
@@ -632,18 +803,29 @@ namespace SeekerDungeon.Solana
             label.RemoveFromClassList("wall-open");
             
             // Add appropriate class based on state
-            switch (wallState)
+            if (wallDetails.StartsWith("Solid"))
             {
-                case "Solid":
-                    label.AddToClassList("wall-solid");
-                    break;
-                case "Rubble":
-                    label.AddToClassList("wall-rubble");
-                    break;
-                case "Open":
-                    label.AddToClassList("wall-open");
-                    break;
+                label.AddToClassList("wall-solid");
             }
+            else if (wallDetails.StartsWith("Rubble"))
+            {
+                label.AddToClassList("wall-rubble");
+            }
+            else if (wallDetails.StartsWith("Open"))
+            {
+                label.AddToClassList("wall-open");
+            }
+        }
+
+        private static string ShortKey(global::Solana.Unity.Wallet.PublicKey key)
+        {
+            if (key == null || string.IsNullOrEmpty(key.Key))
+            {
+                return "unknown";
+            }
+
+            var value = key.Key;
+            return value.Length <= 10 ? value : $"{value.Substring(0, 4)}...{value.Substring(value.Length - 4)}";
         }
 
         private void SetStatus(string message)

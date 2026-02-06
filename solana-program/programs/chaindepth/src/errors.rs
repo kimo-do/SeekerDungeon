@@ -34,8 +34,26 @@ pub enum ChainDepthError {
     #[msg("No active job at this location")]
     NoActiveJob,
 
+    #[msg("Job has already been completed")]
+    JobAlreadyCompleted,
+
+    #[msg("Job has not been completed yet")]
+    JobNotCompleted,
+
     #[msg("Too many active jobs: abandon one first")]
     TooManyActiveJobs,
+
+    #[msg("Inventory is full")]
+    InventoryFull,
+
+    #[msg("Invalid item id")]
+    InvalidItemId,
+
+    #[msg("Invalid item amount")]
+    InvalidItemAmount,
+
+    #[msg("Not enough items")]
+    InsufficientItemAmount,
 
     // Loot errors
     #[msg("Room has no chest")]
@@ -44,8 +62,29 @@ pub enum ChainDepthError {
     #[msg("Already looted this chest")]
     AlreadyLooted,
 
+    #[msg("This chest has reached the maximum number of looters")]
+    MaxLootersReached,
+
     #[msg("Player not in this room")]
     NotInRoom,
+
+    #[msg("No boss in this room center")]
+    NoBoss,
+
+    #[msg("Boss is already defeated")]
+    BossAlreadyDefeated,
+
+    #[msg("Boss has not been defeated yet")]
+    BossNotDefeated,
+
+    #[msg("Player is already fighting this boss")]
+    AlreadyFightingBoss,
+
+    #[msg("Player is not a fighter for this boss")]
+    NotBossFighter,
+
+    #[msg("Invalid center type")]
+    InvalidCenterType,
 
     // Season errors
     #[msg("Season has not ended yet")]

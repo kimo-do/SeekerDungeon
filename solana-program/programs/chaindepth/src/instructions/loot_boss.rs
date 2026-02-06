@@ -1,14 +1,14 @@
 use anchor_lang::prelude::*;
 
 use crate::errors::ChainDepthError;
-use crate::events::{item_types, ChestLooted};
+use crate::events::{item_types, BossLooted};
 use crate::state::{
-    item_ids, GlobalAccount, InventoryAccount, PlayerAccount, RoomAccount, MAX_LOOTERS,
-    CENTER_CHEST,
+    item_ids, BossFightAccount, GlobalAccount, InventoryAccount, PlayerAccount, RoomAccount,
+    RoomPresence, MAX_LOOTERS, CENTER_BOSS,
 };
 
 #[derive(Accounts)]
-pub struct LootChest<'info> {
+pub struct LootBoss<'info> {
     #[account(mut)]
     pub player: Signer<'info>,
 
@@ -25,7 +25,6 @@ pub struct LootChest<'info> {
     )]
     pub player_account: Account<'info, PlayerAccount>,
 
-    /// Room with the chest
     #[account(
         mut,
         seeds = [
@@ -39,6 +38,25 @@ pub struct LootChest<'info> {
     pub room: Account<'info, RoomAccount>,
 
     #[account(
+        mut,
+        seeds = [
+            RoomPresence::SEED_PREFIX,
+            &global.season_seed.to_le_bytes(),
+            &[player_account.current_room_x as u8],
+            &[player_account.current_room_y as u8],
+            player.key().as_ref()
+        ],
+        bump = room_presence.bump
+    )]
+    pub room_presence: Account<'info, RoomPresence>,
+
+    #[account(
+        seeds = [BossFightAccount::SEED_PREFIX, room.key().as_ref(), player.key().as_ref()],
+        bump = boss_fight.bump
+    )]
+    pub boss_fight: Account<'info, BossFightAccount>,
+
+    #[account(
         init_if_needed,
         payer = player,
         space = InventoryAccount::DISCRIMINATOR.len() + InventoryAccount::INIT_SPACE,
@@ -50,37 +68,31 @@ pub struct LootChest<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<LootChest>) -> Result<()> {
+pub fn handler(ctx: Context<LootBoss>) -> Result<()> {
     let room = &mut ctx.accounts.room;
     let player_account = &mut ctx.accounts.player_account;
     let inventory = &mut ctx.accounts.inventory;
     let player_key = ctx.accounts.player.key();
     let clock = Clock::get()?;
 
-    require!(room.center_type == CENTER_CHEST, ChainDepthError::NoChest);
-
-    // Check player is in this room
+    require!(room.center_type == CENTER_BOSS, ChainDepthError::NoBoss);
+    require!(room.boss_defeated, ChainDepthError::BossNotDefeated);
     require!(
         player_account.is_at_room(room.x, room.y),
         ChainDepthError::NotInRoom
     );
-
-    // Check player hasn't already looted
     require!(!room.has_looted(&player_key), ChainDepthError::AlreadyLooted);
-
-    // Check we haven't hit max looters
     require!(
         room.looted_by.len() < MAX_LOOTERS,
         ChainDepthError::MaxLootersReached
     );
 
-    // Add player to looted list
     room.looted_by.push(player_key);
     player_account.chests_looted += 1;
+    ctx.accounts.room_presence.set_idle();
 
-    // Generate deterministic loot based on slot + player pubkey
-    let loot_hash = generate_loot_hash(clock.slot, &player_key);
-    let (item_type, item_amount) = calculate_loot(loot_hash);
+    let loot_hash = generate_loot_hash(clock.slot, &player_key, room.center_id);
+    let (item_type, item_amount) = calculate_boss_loot(loot_hash);
     let item_id = map_item_type_to_item_id(item_type);
     let durability = item_durability(item_type);
 
@@ -91,7 +103,7 @@ pub fn handler(ctx: Context<LootChest>) -> Result<()> {
     }
     inventory.add_item(item_id, u32::from(item_amount), durability)?;
 
-    emit!(ChestLooted {
+    emit!(BossLooted {
         room_x: room.x,
         room_y: room.y,
         player: player_key,
@@ -102,40 +114,35 @@ pub fn handler(ctx: Context<LootChest>) -> Result<()> {
     Ok(())
 }
 
-/// Generate deterministic hash for loot
-fn generate_loot_hash(slot: u64, player: &Pubkey) -> u64 {
+fn generate_loot_hash(slot: u64, player: &Pubkey, boss_id: u16) -> u64 {
     let player_bytes = player.to_bytes();
-    let mut hash = slot;
-    
-    // Mix in player pubkey bytes
+    let mut hash = slot
+        .wrapping_mul(31)
+        .wrapping_add(u64::from(boss_id));
     for chunk in player_bytes.chunks(8) {
         let mut bytes = [0u8; 8];
         bytes[..chunk.len()].copy_from_slice(chunk);
-        let val = u64::from_le_bytes(bytes);
-        hash = hash.wrapping_mul(31).wrapping_add(val);
+        let value = u64::from_le_bytes(bytes);
+        hash = hash.wrapping_mul(31).wrapping_add(value);
     }
-    
     hash
 }
 
-/// Calculate loot item type and amount from hash
-fn calculate_loot(hash: u64) -> (u8, u8) {
-    // Item type: 0=Ore (60%), 1=Tool (25%), 2=Buff (15%)
+fn calculate_boss_loot(hash: u64) -> (u8, u8) {
     let type_roll = hash % 100;
-    let item_type = if type_roll < 60 {
+    let item_type = if type_roll < 35 {
         item_types::ORE
-    } else if type_roll < 85 {
+    } else if type_roll < 75 {
         item_types::TOOL
     } else {
         item_types::BUFF
     };
 
-    // Amount varies by type
     let amount_hash = (hash >> 32) as u8;
     let item_amount = match item_type {
-        item_types::ORE => (amount_hash % 5) + 1,    // 1-5 ore
-        item_types::TOOL => 1,                        // Always 1 tool
-        item_types::BUFF => (amount_hash % 3) + 1,   // 1-3 buffs
+        item_types::ORE => (amount_hash % 8) + 3,
+        item_types::TOOL => 1,
+        item_types::BUFF => (amount_hash % 5) + 2,
         _ => 1,
     };
 

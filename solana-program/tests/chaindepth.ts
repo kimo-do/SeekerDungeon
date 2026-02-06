@@ -39,13 +39,6 @@ describe("chaindepth", () => {
   const DIRECTION_WEST = 3;
 
   before(async () => {
-    // Airdrop SOL to player
-    const airdropSig = await provider.connection.requestAirdrop(
-      player.publicKey,
-      2 * anchor.web3.LAMPORTS_PER_SOL
-    );
-    await provider.connection.confirmTransaction(airdropSig);
-
     // Create mock SKR token mint
     skrMint = await createMint(
       provider.connection,

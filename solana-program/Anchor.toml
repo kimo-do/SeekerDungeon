@@ -19,5 +19,5 @@ cluster = "devnet"
 wallet = "./devnet-wallet.json"
 
 [scripts]
-test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+test = "npx ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
 init-devnet = "ts-node scripts/init-devnet.ts"

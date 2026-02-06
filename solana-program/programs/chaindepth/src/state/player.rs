@@ -26,6 +26,9 @@ pub struct PlayerAccount {
     /// Total chests looted by this player
     pub chests_looted: u64,
 
+    /// Item id currently equipped for combat (0 = none)
+    pub equipped_item_id: u16,
+
     /// Season this player data belongs to (for cleanup on reset)
     pub season_seed: u64,
 
