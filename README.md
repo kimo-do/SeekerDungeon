@@ -6,6 +6,10 @@
   <sub>Working title for the current build track.</sub>
 </div>
 
+<p align="center">
+  <img src="Docs/media/loot-goblins-splash.png" alt="Loot Goblins splash artwork" width="100%" />
+</p>
+
 <br/>
 
 ## Table of Contents
