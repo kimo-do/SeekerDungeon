@@ -135,6 +135,7 @@ This creates a client in `generated/client/` that can replace the Anchor TypeScr
 - `abandon_job` - Leave job early (80% refund, 20% slashed)
 - `loot_chest` - Collect items from a room's chest
 - `reset_season` - Admin: Start a new season
+- `force_reset_season` - Admin: Immediate season reset override (ignores season end gate)
 
 ### Accounts
 - **GlobalAccount** - Game state (depth, season, prize pool)

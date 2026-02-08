@@ -20,6 +20,8 @@ namespace SeekerDungeon.Dungeon
     public sealed class RoomController : MonoBehaviour
     {
         [SerializeField] private List<DoorLayerBinding> doorLayers = new();
+        [Header("Backgrounds")]
+        [SerializeField] private List<GameObject> roomBackgrounds = new();
         [Header("Occupant Visuals")]
         [SerializeField] private Transform occupantVisualSpawnRoot;
         [SerializeField] private RoomIdleOccupantLayer2D idleOccupantLayer;
@@ -33,6 +35,9 @@ namespace SeekerDungeon.Dungeon
 
         private readonly Dictionary<RoomDirection, DoorOccupantLayer2D> _doorLayerByDirection = new();
         private readonly Dictionary<RoomDirection, DoorVisualController> _doorVisualByDirection = new();
+        private bool _hasBackgroundRoomKey;
+        private int _backgroundRoomX;
+        private int _backgroundRoomY;
 
         private void Awake()
         {
@@ -46,6 +51,8 @@ namespace SeekerDungeon.Dungeon
             {
                 return;
             }
+
+            ApplyBackgroundForRoom(snapshot.Room);
 
             if (snapshot.Room.Doors != null)
             {
@@ -107,6 +114,16 @@ namespace SeekerDungeon.Dungeon
         {
             var count = occupants?.Count ?? 0;
             Debug.Log($"[RoomController] Boss occupants={count}");
+        }
+
+        public void PrepareForRoomTransition()
+        {
+            SetDoorOccupants(RoomDirection.North, Array.Empty<DungeonOccupantVisual>());
+            SetDoorOccupants(RoomDirection.South, Array.Empty<DungeonOccupantVisual>());
+            SetDoorOccupants(RoomDirection.East, Array.Empty<DungeonOccupantVisual>());
+            SetDoorOccupants(RoomDirection.West, Array.Empty<DungeonOccupantVisual>());
+            SetIdleOccupants(Array.Empty<DungeonOccupantVisual>());
+            SetBossOccupants(Array.Empty<DungeonOccupantVisual>());
         }
 
         public void SetIdleOccupants(IReadOnlyList<DungeonOccupantVisual> occupants)
@@ -193,6 +210,49 @@ namespace SeekerDungeon.Dungeon
             if (idleOccupantLayer != null)
             {
                 idleOccupantLayer.SetVisualSpawnRoot(occupantVisualSpawnRoot);
+            }
+        }
+
+        private void ApplyBackgroundForRoom(RoomView room)
+        {
+            if (roomBackgrounds == null || roomBackgrounds.Count == 0)
+            {
+                return;
+            }
+
+            if (_hasBackgroundRoomKey && _backgroundRoomX == room.X && _backgroundRoomY == room.Y)
+            {
+                return;
+            }
+
+            _backgroundRoomX = room.X;
+            _backgroundRoomY = room.Y;
+            _hasBackgroundRoomKey = true;
+
+            var validIndices = new List<int>();
+            for (var index = 0; index < roomBackgrounds.Count; index += 1)
+            {
+                if (roomBackgrounds[index] != null)
+                {
+                    validIndices.Add(index);
+                }
+            }
+
+            if (validIndices.Count == 0)
+            {
+                return;
+            }
+
+            var selectedIndex = validIndices[UnityEngine.Random.Range(0, validIndices.Count)];
+            for (var index = 0; index < roomBackgrounds.Count; index += 1)
+            {
+                var background = roomBackgrounds[index];
+                if (background == null)
+                {
+                    continue;
+                }
+
+                background.SetActive(index == selectedIndex);
             }
         }
 

@@ -726,7 +726,12 @@ namespace SeekerDungeon.Solana
             {
                 if (wallState == LGConfig.WALL_OPEN)
                 {
-                    Log($"Door {LGConfig.GetDirectionName(direction)} is already open.");
+                    Log($"Door {LGConfig.GetDirectionName(direction)} is open. Moving player through door.");
+                    var (targetX, targetY) = LGConfig.GetAdjacentCoords(
+                        CurrentPlayerState.CurrentRoomX,
+                        CurrentPlayerState.CurrentRoomY,
+                        direction);
+                    return await MovePlayer(targetX, targetY);
                 }
                 else
                 {
@@ -1857,6 +1862,7 @@ namespace SeekerDungeon.Solana
                 else
                 {
                     LogError($"Transaction failed: {result.Reason}");
+                    LogFrameworkErrorDetails(result.Reason);
                     if (result.ServerErrorCode != 0)
                     {
                         LogError($"Server error code: {result.ServerErrorCode}");
@@ -1868,6 +1874,71 @@ namespace SeekerDungeon.Solana
             {
                 LogError($"Transaction exception: {ex.Message}");
                 return null;
+            }
+        }
+
+        private void LogFrameworkErrorDetails(string reason)
+        {
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                return;
+            }
+
+            var markerIndex = reason.IndexOf("custom program error: 0x", StringComparison.OrdinalIgnoreCase);
+            if (markerIndex < 0)
+            {
+                return;
+            }
+
+            var hexStart = markerIndex + "custom program error: 0x".Length;
+            var hexEnd = hexStart;
+            while (hexEnd < reason.Length && Uri.IsHexDigit(reason[hexEnd]))
+            {
+                hexEnd += 1;
+            }
+
+            if (hexEnd <= hexStart)
+            {
+                return;
+            }
+
+            var hexValue = reason.Substring(hexStart, hexEnd - hexStart);
+            if (!uint.TryParse(hexValue, System.Globalization.NumberStyles.HexNumber, null, out var errorCode))
+            {
+                return;
+            }
+
+            if (TryMapAnchorFrameworkError(errorCode, out var mappedMessage))
+            {
+                LogError($"Program framework error {errorCode} (0x{hexValue}): {mappedMessage}");
+            }
+        }
+
+        private static bool TryMapAnchorFrameworkError(uint errorCode, out string message)
+        {
+            switch (errorCode)
+            {
+                case 3000:
+                    message = "Account discriminator already set.";
+                    return true;
+                case 3001:
+                    message = "Account discriminator not found.";
+                    return true;
+                case 3002:
+                    message = "Account discriminator mismatch.";
+                    return true;
+                case 3003:
+                    message = "Account did not deserialize (often stale account layout vs current program struct).";
+                    return true;
+                case 3004:
+                    message = "Account did not serialize.";
+                    return true;
+                case 3012:
+                    message = "Account not initialized.";
+                    return true;
+                default:
+                    message = null;
+                    return false;
             }
         }
 

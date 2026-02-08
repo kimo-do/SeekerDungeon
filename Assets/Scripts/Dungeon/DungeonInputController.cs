@@ -17,6 +17,7 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private float maxTapMovementPixels = 18f;
         [SerializeField] private LocalPlayerJobMover localPlayerJobMover;
         [SerializeField] private RoomController roomController;
+        [SerializeField] private DungeonManager dungeonManager;
 
         private LGManager _lgManager;
         private float _nextInteractTime;
@@ -47,6 +48,11 @@ namespace SeekerDungeon.Dungeon
             if (roomController == null)
             {
                 roomController = UnityEngine.Object.FindFirstObjectByType<RoomController>();
+            }
+
+            if (dungeonManager == null)
+            {
+                dungeonManager = UnityEngine.Object.FindFirstObjectByType<DungeonManager>();
             }
         }
 
@@ -126,17 +132,31 @@ namespace SeekerDungeon.Dungeon
                 var door = hit.GetComponentInParent<DoorInteractable>();
                 if (door != null)
                 {
+                    var wasDoorOpenBeforeInteraction = IsDoorOpenInCurrentState(door.Direction);
+                    var hadRoomBefore = TryGetCurrentRoomCoordinates(out var previousRoomX, out var previousRoomY);
                     var signature = await _lgManager.InteractWithDoor((byte)door.Direction);
-                    if (!string.IsNullOrWhiteSpace(signature) && localPlayerJobMover != null)
+                    if (!string.IsNullOrWhiteSpace(signature))
                     {
-                        if (roomController != null &&
-                            roomController.TryGetDoorStandPosition(door.Direction, out var standPosition))
+                        var playerMovedRooms = hadRoomBefore &&
+                                               TryGetCurrentRoomCoordinates(out var currentRoomX, out var currentRoomY) &&
+                                               (currentRoomX != previousRoomX || currentRoomY != previousRoomY);
+                        var fallbackRoomMove = !hadRoomBefore && wasDoorOpenBeforeInteraction;
+
+                        if ((playerMovedRooms || fallbackRoomMove) && dungeonManager != null)
                         {
-                            localPlayerJobMover.MoveTo(standPosition);
+                            await dungeonManager.TransitionToCurrentPlayerRoomAsync();
                         }
-                        else
+                        else if (localPlayerJobMover != null)
                         {
-                            localPlayerJobMover.MoveTo(door.InteractWorldPosition);
+                            if (roomController != null &&
+                                roomController.TryGetDoorStandPosition(door.Direction, out var standPosition))
+                            {
+                                localPlayerJobMover.MoveTo(standPosition);
+                            }
+                            else
+                            {
+                                localPlayerJobMover.MoveTo(door.InteractWorldPosition);
+                            }
                         }
                     }
 
@@ -196,6 +216,39 @@ namespace SeekerDungeon.Dungeon
             }
 
             localPlayerJobMover = UnityEngine.Object.FindFirstObjectByType<LocalPlayerJobMover>();
+        }
+
+        private bool TryGetCurrentRoomCoordinates(out int roomX, out int roomY)
+        {
+            roomX = default;
+            roomY = default;
+
+            var playerState = _lgManager?.CurrentPlayerState;
+            if (playerState == null)
+            {
+                return false;
+            }
+
+            roomX = playerState.CurrentRoomX;
+            roomY = playerState.CurrentRoomY;
+            return true;
+        }
+
+        private bool IsDoorOpenInCurrentState(RoomDirection direction)
+        {
+            var roomState = _lgManager?.CurrentRoomState;
+            if (roomState?.Walls == null)
+            {
+                return false;
+            }
+
+            var directionIndex = (int)direction;
+            if (directionIndex < 0 || directionIndex >= roomState.Walls.Length)
+            {
+                return false;
+            }
+
+            return roomState.Walls[directionIndex] == LGConfig.WALL_OPEN;
         }
 
         private static bool TryGetPointerDownPosition(out Vector2 position, out int pointerId)

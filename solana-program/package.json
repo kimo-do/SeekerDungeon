@@ -8,6 +8,7 @@
     "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check",
     "test": "anchor test",
     "init-devnet": "npx tsx scripts/init-devnet.ts",
+    "force-reset-season": "npx tsx scripts/force-reset-season.ts",
     "check-state": "npx tsx scripts/check-state.ts",
     "mint-tokens": "npx tsx scripts/mint-test-tokens.ts",
     "smoke-door": "npx tsx scripts/smoke-door-devnet.ts",

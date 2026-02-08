@@ -3,7 +3,7 @@
   "skrMint": "Dkpjmf6mUxxLyw9HmbdkBKhVf7zjGZZ6jNjruhjYpkiN",
   "globalPda": "9JudM6MujJyg5tBb7YaMw7DSQYVgCYNyzATzfyRSdy7G",
   "prizePoolPda": "5AuvdfSKKUsroC74RwVJ25jyhX5erMr8VCNLmj3EXQVg",
-  "seasonSeed": "439885499",
+  "seasonSeed": "16157978486592107993",
   "network": "devnet",
   "rpcUrl": "https://api.devnet.solana.com"
 }

@@ -201,6 +201,7 @@ wsl -d Ubuntu -- bash scripts/wsl/run.sh "solana balance --url devnet"
 
 # Run scripts (use the npm commands)
 wsl -d Ubuntu -- bash scripts/wsl/run.sh "export ANCHOR_PROVIDER_URL=https://api.devnet.solana.com && export ANCHOR_WALLET=devnet-wallet.json && npm run check-state"
+wsl -d Ubuntu -- bash scripts/wsl/run.sh "export ANCHOR_PROVIDER_URL=https://api.devnet.solana.com && export ANCHOR_WALLET=devnet-wallet.json && npm run force-reset-season"
 wsl -d Ubuntu -- bash scripts/wsl/run.sh "export ANCHOR_PROVIDER_URL=https://api.devnet.solana.com && export ANCHOR_WALLET=devnet-wallet.json && npm run init-devnet"
 wsl -d Ubuntu -- bash scripts/wsl/run.sh "export ANCHOR_PROVIDER_URL=https://api.devnet.solana.com && export ANCHOR_WALLET=devnet-wallet.json && npm run smoke-session-join-job"
 
@@ -213,6 +214,7 @@ wsl -d Ubuntu -- bash scripts/wsl/run.sh "export ANCHOR_PROVIDER_URL=https://api
 | Script | Purpose |
 |--------|---------|
 | `npm run check-state` | Query current game state on devnet |
+| `npm run force-reset-season` | Admin-only immediate season reset override |
 | `npm run init-devnet` | Initialize game (create token, global state) |
 | `npm run mint-tokens <wallet> [amount]` | Mint test SKR tokens |
 | `npm run smoke-door` | End-to-end devnet smoke test (init/move/join/tick/complete/claim flow) |

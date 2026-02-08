@@ -1,6 +1,6 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
     <Style src="LGGameHudUI.uss"/>
-    <ui:VisualElement name="game-hud-root" class="game-hud-root">
+    <ui:VisualElement name="game-hud-root" class="game-hud-root" picking-mode="Ignore">
         <ui:VisualElement name="hud-top-bar" class="hud-top-bar">
             <ui:VisualElement name="hud-balance-column" class="hud-balance-column">
                 <ui:Label name="hud-sol-balance" text="SOL: --" class="hud-balance-label"/>

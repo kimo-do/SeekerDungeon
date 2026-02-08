@@ -99,6 +99,27 @@ namespace SeekerDungeon.Dungeon
             ApplySnapshot(roomView, occupants);
         }
 
+        public async UniTask TransitionToCurrentPlayerRoomAsync()
+        {
+            var sceneLoadController = SceneLoadController.GetOrCreate();
+            await sceneLoadController.FadeToBlackAsync();
+
+            try
+            {
+                _roomController?.PrepareForRoomTransition();
+                await ResolveCurrentRoomCoordinatesAsync();
+                await RefreshCurrentRoomSnapshotAsync();
+                if (_lgManager != null)
+                {
+                    await _lgManager.StartRoomOccupantSubscriptions(_currentRoomX, _currentRoomY);
+                }
+            }
+            finally
+            {
+                await sceneLoadController.FadeFromBlackAsync();
+            }
+        }
+
         private async UniTask ResolveCurrentRoomCoordinatesAsync()
         {
             if (_lgManager.CurrentPlayerState != null)

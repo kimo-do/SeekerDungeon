@@ -28,6 +28,11 @@ pub mod chaindepth {
         instructions::reset_season::handler(ctx)
     }
 
+    /// Force reset the season immediately (admin override).
+    pub fn force_reset_season(ctx: Context<ForceResetSeason>) -> Result<()> {
+        instructions::force_reset_season::handler(ctx)
+    }
+
     /// Initialize a new player at the spawn point
     pub fn init_player(ctx: Context<InitPlayer>) -> Result<()> {
         instructions::move_player::init_player_handler(ctx)

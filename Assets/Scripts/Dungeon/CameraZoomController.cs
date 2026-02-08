@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
 using Unity.Cinemachine;
+using System.Collections.Generic;
 
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
@@ -312,7 +313,11 @@ namespace SeekerDungeon.Dungeon
 
             if (worldCamera == null)
             {
-                return false;
+                worldCamera = Camera.main;
+                if (worldCamera == null)
+                {
+                    return false;
+                }
             }
 
             var targetPlaneZ = panTarget != null ? panTarget.position.z : 0f;
@@ -334,7 +339,33 @@ namespace SeekerDungeon.Dungeon
                 return false;
             }
 
+            if (TryGetPointerPosition(pointerId, out var position))
+            {
+                return IsScreenPositionOverUi(position);
+            }
+
+            if (pointerId < 0)
+            {
+                return EventSystem.current.IsPointerOverGameObject();
+            }
+
             return EventSystem.current.IsPointerOverGameObject(pointerId);
+        }
+
+        private static bool IsScreenPositionOverUi(Vector2 screenPosition)
+        {
+            if (EventSystem.current == null)
+            {
+                return false;
+            }
+
+            var pointerData = new PointerEventData(EventSystem.current)
+            {
+                position = screenPosition
+            };
+            var raycastResults = new List<RaycastResult>();
+            EventSystem.current.RaycastAll(pointerData, raycastResults);
+            return raycastResults.Count > 0;
         }
 
         private void EndPan()

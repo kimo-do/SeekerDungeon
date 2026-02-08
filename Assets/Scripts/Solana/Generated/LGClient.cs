@@ -1176,6 +1176,13 @@ namespace Chaindepth
             public PublicKey SessionAuthority { get; set; }
         }
 
+        public class ForceResetSeasonAccounts
+        {
+            public PublicKey Authority { get; set; }
+
+            public PublicKey Global { get; set; }
+        }
+
         public class InitGlobalAccounts
         {
             public PublicKey Admin { get; set; }
@@ -1557,6 +1564,20 @@ namespace Chaindepth
                 offset += 8;
                 _data.WriteU16(item_id, offset);
                 offset += 2;
+                byte[] resultData = new byte[offset];
+                Array.Copy(_data, resultData, offset);
+                return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
+            }
+
+            public static Solana.Unity.Rpc.Models.TransactionInstruction ForceResetSeason(ForceResetSeasonAccounts accounts, PublicKey programId = null)
+            {
+                programId ??= new(ID);
+                List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
+                {Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Authority, true), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Global, false)};
+                byte[] _data = new byte[1200];
+                int offset = 0;
+                _data.WriteU64(15941254558648459401UL, offset);
+                offset += 8;
                 byte[] resultData = new byte[offset];
                 Array.Copy(_data, resultData, offset);
                 return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};

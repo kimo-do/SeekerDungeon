@@ -97,6 +97,18 @@ namespace SeekerDungeon
             }
         }
 
+        public async UniTask FadeToBlackAsync()
+        {
+            EnsureFadeOverlay();
+            await FadeAsync(1f);
+        }
+
+        public async UniTask FadeFromBlackAsync()
+        {
+            EnsureFadeOverlay();
+            await FadeAsync(0f);
+        }
+
         public void HoldBlackScreen(string reason = "unspecified")
         {
             var normalizedReason = string.IsNullOrWhiteSpace(reason) ? "unspecified" : reason;
