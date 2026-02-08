@@ -8,3 +8,8 @@ warning CS0618: 'Object.FindObjectOfType<T>()' is obsolete: 'Object.FindObjectOf
 
 ## input system
 We use the unity new input system package
+
+## inspector references
+we prefer to slot prefabs and references in the inspector when needed. 
+
+And we prefer to automatically configure reference (by instance for example) when possible (and thus not expose them in the inspector).

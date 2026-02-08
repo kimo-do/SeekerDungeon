@@ -101,6 +101,7 @@ GameObject:
   m_Component:
   - component: {fileID: 6673592912793491093}
   - component: {fileID: 1843884093472186079}
+  - component: {fileID: 6473170922569016381}
   m_Layer: 0
   m_Name: player
   m_TagString: Untagged
@@ -172,3 +173,18 @@ MonoBehaviour:
     sprite: {fileID: -572591544964641781, guid: e6bcefc7e2c980146a8d99c65cea40f2, type: 3}
   - skin: 16
     sprite: {fileID: 7227000743248742133, guid: 531d2876fc0f880489cd0b3208ca602a, type: 3}
+--- !u!114 &6473170922569016381
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4752332143254669612}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4a55e8ad11a8e574b976b5d1899c2847, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Dungeon.LocalPlayerJobMover
+  moveDurationSeconds: 0.22
+  keepZPosition: 1
+  keepUprightRotation: 1

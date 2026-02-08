@@ -272,6 +272,28 @@ namespace SeekerDungeon.Solana
             };
         }
 
+        public static bool TryToDirection(byte direction, out RoomDirection result)
+        {
+            switch (direction)
+            {
+                case 0:
+                    result = RoomDirection.North;
+                    return true;
+                case 1:
+                    result = RoomDirection.South;
+                    return true;
+                case 2:
+                    result = RoomDirection.East;
+                    return true;
+                case 3:
+                    result = RoomDirection.West;
+                    return true;
+                default:
+                    result = RoomDirection.North;
+                    return false;
+            }
+        }
+
         public static ItemId ToItemId(ushort itemId)
         {
             return itemId switch

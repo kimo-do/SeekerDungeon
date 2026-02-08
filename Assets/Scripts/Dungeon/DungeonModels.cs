@@ -20,6 +20,7 @@ namespace SeekerDungeon.Dungeon
         public RoomView Room { get; init; }
         public IReadOnlyDictionary<RoomDirection, IReadOnlyList<DungeonOccupantVisual>> DoorOccupants { get; init; }
         public IReadOnlyList<DungeonOccupantVisual> BossOccupants { get; init; }
+        public IReadOnlyList<DungeonOccupantVisual> IdleOccupants { get; init; }
     }
 
     [Serializable]

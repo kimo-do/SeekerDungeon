@@ -480,7 +480,14 @@ namespace SeekerDungeon.Solana
 
         private async UniTaskVoid LoadSceneWithFadeAsync(string sceneName)
         {
-            await SceneLoadController.GetOrCreate().LoadSceneAsync(sceneName, LoadSceneMode.Single);
+            var sceneLoadController = SceneLoadController.GetOrCreate();
+            if (!string.IsNullOrWhiteSpace(sceneName) &&
+                string.Equals(sceneName, gameplaySceneName, StringComparison.Ordinal))
+            {
+                sceneLoadController.HoldBlackScreen("gameplay_doors_ready");
+            }
+
+            await sceneLoadController.LoadSceneAsync(sceneName, LoadSceneMode.Single);
         }
 
         private void SetPlayerVisible(bool isVisible)

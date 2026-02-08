@@ -15,6 +15,8 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private LayerMask interactableMask = ~0;
         [SerializeField] private float interactCooldownSeconds = 0.15f;
         [SerializeField] private float maxTapMovementPixels = 18f;
+        [SerializeField] private LocalPlayerJobMover localPlayerJobMover;
+        [SerializeField] private RoomController roomController;
 
         private LGManager _lgManager;
         private float _nextInteractTime;
@@ -34,7 +36,17 @@ namespace SeekerDungeon.Dungeon
             _lgManager = LGManager.Instance;
             if (_lgManager == null)
             {
-                _lgManager = FindObjectOfType<LGManager>();
+                _lgManager = UnityEngine.Object.FindFirstObjectByType<LGManager>();
+            }
+
+            if (localPlayerJobMover == null)
+            {
+                ResolveLocalPlayerJobMover();
+            }
+
+            if (roomController == null)
+            {
+                roomController = UnityEngine.Object.FindFirstObjectByType<RoomController>();
             }
         }
 
@@ -114,7 +126,20 @@ namespace SeekerDungeon.Dungeon
                 var door = hit.GetComponentInParent<DoorInteractable>();
                 if (door != null)
                 {
-                    await _lgManager.InteractWithDoor((byte)door.Direction);
+                    var signature = await _lgManager.InteractWithDoor((byte)door.Direction);
+                    if (!string.IsNullOrWhiteSpace(signature) && localPlayerJobMover != null)
+                    {
+                        if (roomController != null &&
+                            roomController.TryGetDoorStandPosition(door.Direction, out var standPosition))
+                        {
+                            localPlayerJobMover.MoveTo(standPosition);
+                        }
+                        else
+                        {
+                            localPlayerJobMover.MoveTo(door.InteractWorldPosition);
+                        }
+                    }
+
                     _nextInteractTime = Time.unscaledTime + interactCooldownSeconds;
                     return;
                 }
@@ -122,7 +147,12 @@ namespace SeekerDungeon.Dungeon
                 var center = hit.GetComponentInParent<CenterInteractable>();
                 if (center != null)
                 {
-                    await _lgManager.InteractWithCenter();
+                    var signature = await _lgManager.InteractWithCenter();
+                    if (!string.IsNullOrWhiteSpace(signature) && localPlayerJobMover != null)
+                    {
+                        localPlayerJobMover.MoveTo(center.InteractWorldPosition);
+                    }
+
                     _nextInteractTime = Time.unscaledTime + interactCooldownSeconds;
                 }
             }
@@ -130,6 +160,42 @@ namespace SeekerDungeon.Dungeon
             {
                 _isProcessingInteract = false;
             }
+        }
+
+        private void ResolveLocalPlayerJobMover()
+        {
+            if (localPlayerJobMover != null)
+            {
+                return;
+            }
+
+            var playerControllers = UnityEngine.Object.FindObjectsByType<LGPlayerController>(
+                FindObjectsInactive.Exclude,
+                FindObjectsSortMode.None);
+
+            for (var index = 0; index < playerControllers.Length; index += 1)
+            {
+                var playerController = playerControllers[index];
+                if (playerController == null)
+                {
+                    continue;
+                }
+
+                if (playerController.GetComponentInParent<DoorOccupantVisual2D>() != null)
+                {
+                    continue;
+                }
+
+                localPlayerJobMover = playerController.GetComponent<LocalPlayerJobMover>();
+                if (localPlayerJobMover == null)
+                {
+                    localPlayerJobMover = playerController.gameObject.AddComponent<LocalPlayerJobMover>();
+                }
+
+                return;
+            }
+
+            localPlayerJobMover = UnityEngine.Object.FindFirstObjectByType<LocalPlayerJobMover>();
         }
 
         private static bool TryGetPointerDownPosition(out Vector2 position, out int pointerId)

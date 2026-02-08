@@ -22,6 +22,7 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private List<DoorLayerBinding> doorLayers = new();
         [Header("Occupant Visuals")]
         [SerializeField] private Transform occupantVisualSpawnRoot;
+        [SerializeField] private RoomIdleOccupantLayer2D idleOccupantLayer;
         [Header("Center Visuals")]
         [SerializeField] private GameObject centerEmptyVisualRoot;
         [SerializeField] private GameObject centerChestVisualRoot;
@@ -62,6 +63,8 @@ namespace SeekerDungeon.Dungeon
                 }
             }
 
+            SetIdleOccupants(snapshot.IdleOccupants);
+
             ApplyCenterState(snapshot.Room, snapshot.BossOccupants);
             SetBossOccupants(snapshot.BossOccupants);
         }
@@ -89,10 +92,31 @@ namespace SeekerDungeon.Dungeon
             Debug.Log($"[RoomController] No door layer assigned for {direction}. Occupants={count}");
         }
 
+        public bool TryGetDoorStandPosition(RoomDirection direction, out Vector3 worldPosition)
+        {
+            worldPosition = default;
+            if (!_doorLayerByDirection.TryGetValue(direction, out var layer) || layer == null)
+            {
+                return false;
+            }
+
+            return layer.TryGetLocalPlayerStandPosition(out worldPosition);
+        }
+
         public void SetBossOccupants(IReadOnlyList<DungeonOccupantVisual> occupants)
         {
             var count = occupants?.Count ?? 0;
             Debug.Log($"[RoomController] Boss occupants={count}");
+        }
+
+        public void SetIdleOccupants(IReadOnlyList<DungeonOccupantVisual> occupants)
+        {
+            if (idleOccupantLayer == null)
+            {
+                return;
+            }
+
+            idleOccupantLayer.SetOccupants(occupants ?? Array.Empty<DungeonOccupantVisual>());
         }
 
         private void ApplyCenterState(RoomView room, IReadOnlyList<DungeonOccupantVisual> bossOccupants)
@@ -164,6 +188,11 @@ namespace SeekerDungeon.Dungeon
                 {
                     binding.OccupantLayer.SetVisualSpawnRoot(occupantVisualSpawnRoot);
                 }
+            }
+
+            if (idleOccupantLayer != null)
+            {
+                idleOccupantLayer.SetVisualSpawnRoot(occupantVisualSpawnRoot);
             }
         }
 

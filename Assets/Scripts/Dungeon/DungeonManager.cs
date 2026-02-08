@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
+using SeekerDungeon;
 using SeekerDungeon.Solana;
 using UnityEngine;
 
@@ -20,6 +21,8 @@ namespace SeekerDungeon.Dungeon
         private int _currentRoomY = LGConfig.START_Y;
         private readonly Dictionary<RoomDirection, List<DungeonOccupantVisual>> _doorOccupants = new();
         private readonly List<DungeonOccupantVisual> _bossOccupants = new();
+        private readonly List<DungeonOccupantVisual> _idleOccupants = new();
+        private bool _releasedGameplayDoorsReadyHold;
 
         private void Awake()
         {
@@ -30,7 +33,7 @@ namespace SeekerDungeon.Dungeon
 
             if (_lgManager == null)
             {
-                _lgManager = FindObjectOfType<LGManager>();
+                _lgManager = UnityEngine.Object.FindFirstObjectByType<LGManager>();
             }
 
             EnsureDoorCollections();
@@ -172,6 +175,7 @@ namespace SeekerDungeon.Dungeon
                 [RoomDirection.West] = new List<DungeonOccupantVisual>()
             };
             _bossOccupants.Clear();
+            _idleOccupants.Clear();
 
             foreach (var occupant in occupants)
             {
@@ -183,13 +187,14 @@ namespace SeekerDungeon.Dungeon
                     continue;
                 }
 
-                if (occupant.Activity != OccupantActivity.DoorJob || occupant.ActivityDirection == null)
+                if (occupant.Activity == OccupantActivity.DoorJob && occupant.ActivityDirection != null)
                 {
+                    var direction = occupant.ActivityDirection.Value;
+                    newDoorOccupants[direction].Add(visual);
                     continue;
                 }
 
-                var direction = occupant.ActivityDirection.Value;
-                newDoorOccupants[direction].Add(visual);
+                _idleOccupants.Add(visual);
             }
 
             foreach (var direction in newDoorOccupants.Keys)
@@ -271,16 +276,40 @@ namespace SeekerDungeon.Dungeon
             {
                 Room = roomView,
                 DoorOccupants = doorSnapshot,
-                BossOccupants = new List<DungeonOccupantVisual>(_bossOccupants)
+                BossOccupants = new List<DungeonOccupantVisual>(_bossOccupants),
+                IdleOccupants = new List<DungeonOccupantVisual>(_idleOccupants)
             };
         }
 
         private void PushSnapshot(DungeonRoomSnapshot snapshot)
         {
+            TryReleaseGameplayDoorsReadyHold(snapshot);
             _roomController?.ApplySnapshot(snapshot);
             OnRoomSnapshotUpdated?.Invoke(snapshot);
 
-            Log($"Snapshot updated room=({snapshot.Room.X},{snapshot.Room.Y}) N={snapshot.DoorOccupants[RoomDirection.North].Count} S={snapshot.DoorOccupants[RoomDirection.South].Count} E={snapshot.DoorOccupants[RoomDirection.East].Count} W={snapshot.DoorOccupants[RoomDirection.West].Count} B={snapshot.BossOccupants.Count}");
+            Log($"Snapshot updated room=({snapshot.Room.X},{snapshot.Room.Y}) N={snapshot.DoorOccupants[RoomDirection.North].Count} S={snapshot.DoorOccupants[RoomDirection.South].Count} E={snapshot.DoorOccupants[RoomDirection.East].Count} W={snapshot.DoorOccupants[RoomDirection.West].Count} B={snapshot.BossOccupants.Count} I={snapshot.IdleOccupants.Count}");
+        }
+
+        private void TryReleaseGameplayDoorsReadyHold(DungeonRoomSnapshot snapshot)
+        {
+            if (_releasedGameplayDoorsReadyHold)
+            {
+                return;
+            }
+
+            if (snapshot?.Room?.Doors == null || snapshot.Room.Doors.Count == 0)
+            {
+                return;
+            }
+
+            var sceneLoadController = SceneLoadController.Instance;
+            if (sceneLoadController == null)
+            {
+                return;
+            }
+
+            sceneLoadController.ReleaseBlackScreen("gameplay_doors_ready");
+            _releasedGameplayDoorsReadyHold = true;
         }
 
         private DungeonOccupantVisual ToDungeonOccupantVisual(RoomOccupantView occupant)
@@ -340,7 +369,7 @@ namespace SeekerDungeon.Dungeon
                 return;
             }
 
-            _roomController = FindObjectOfType<RoomController>();
+            _roomController = UnityEngine.Object.FindFirstObjectByType<RoomController>();
             if (_roomController != null)
             {
                 return;

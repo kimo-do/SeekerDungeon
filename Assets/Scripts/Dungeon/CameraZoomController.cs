@@ -27,6 +27,9 @@ namespace SeekerDungeon.Dungeon
         [Header("Smoothing")]
         [SerializeField] private float zoomLerpSpeed = 12.0f;
         [SerializeField] private float panLerpSpeed = 20.0f;
+        [Header("Pan Bounds")]
+        [SerializeField] private Vector2 panBoundsX = new Vector2(-3f, 3f);
+        [SerializeField] private Vector2 panBoundsY = new Vector2(-3f, 3f);
 
         private float _targetZoom;
         private Vector3 _targetPanPosition;
@@ -74,6 +77,8 @@ namespace SeekerDungeon.Dungeon
             }
 
             _targetPanPosition = panTarget.position;
+            _targetPanPosition = ClampPanPosition(_targetPanPosition);
+            panTarget.position = _targetPanPosition;
             _targetZoom = GetCurrentZoom();
         }
 
@@ -213,6 +218,7 @@ namespace SeekerDungeon.Dungeon
                 {
                     var worldDelta = previousWorld - currentWorld;
                     _targetPanPosition += worldDelta * dragPanSensitivity;
+                    _targetPanPosition = ClampPanPosition(_targetPanPosition);
                 }
 
                 _lastPointerScreenPosition = currentScreenPosition;
@@ -232,11 +238,19 @@ namespace SeekerDungeon.Dungeon
 
             if (panTarget != null)
             {
+                _targetPanPosition = ClampPanPosition(_targetPanPosition);
                 panTarget.position = Vector3.Lerp(
                     panTarget.position,
                     _targetPanPosition,
                     panLerpSpeed * Time.unscaledDeltaTime);
             }
+        }
+
+        private Vector3 ClampPanPosition(Vector3 position)
+        {
+            position.x = Mathf.Clamp(position.x, panBoundsX.x, panBoundsX.y);
+            position.y = Mathf.Clamp(position.y, panBoundsY.x, panBoundsY.y);
+            return position;
         }
 
         private float GetCurrentZoom()

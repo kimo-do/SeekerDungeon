@@ -1,0 +1,103 @@
+.game-hud-root {
+    flex-grow: 1;
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.hud-top-bar {
+    position: absolute;
+    top: 2.2%;
+    left: 2.2%;
+    right: 2.2%;
+    min-height: 220px;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: stretch;
+    padding: 20px 22px;
+    background-color: rgba(0, 0, 0, 0.66);
+    border-top-left-radius: 18px;
+    border-top-right-radius: 18px;
+    border-bottom-left-radius: 18px;
+    border-bottom-right-radius: 18px;
+    border-top-width: 3px;
+    border-right-width: 3px;
+    border-bottom-width: 3px;
+    border-left-width: 3px;
+    border-top-color: rgba(164, 173, 194, 0.95);
+    border-left-color: rgba(150, 158, 182, 0.95);
+    border-right-color: rgba(48, 53, 69, 0.97);
+    border-bottom-color: rgba(40, 46, 62, 0.97);
+}
+
+.hud-balance-column {
+    width: 32%;
+    justify-content: center;
+}
+
+.hud-job-column {
+    width: 40%;
+    justify-content: center;
+    align-items: center;
+}
+
+.hud-action-column {
+    width: 24%;
+    justify-content: center;
+    align-items: stretch;
+}
+
+.hud-balance-label {
+    font-size: 34px;
+    -unity-font-style: bold;
+    color: rgb(243, 248, 255);
+    margin-top: 5px;
+    margin-bottom: 5px;
+}
+
+.hud-job-label {
+    font-size: 34px;
+    -unity-font-style: bold;
+    color: rgb(243, 248, 255);
+    -unity-text-align: middle-center;
+}
+
+.hud-status-label {
+    margin-top: 7px;
+    font-size: 24px;
+    color: rgb(209, 220, 240);
+    -unity-text-align: middle-center;
+}
+
+.hud-button {
+    height: 72px;
+    margin-top: 6px;
+    margin-bottom: 6px;
+    font-size: 28px;
+    -unity-font-style: bold;
+    color: rgb(245, 250, 255);
+    background-color: rgb(42, 123, 186);
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
+    border-top-width: 3px;
+    border-right-width: 3px;
+    border-bottom-width: 3px;
+    border-left-width: 3px;
+    border-top-color: rgb(172, 215, 245);
+    border-left-color: rgb(157, 199, 230);
+    border-right-color: rgb(23, 67, 104);
+    border-bottom-color: rgb(17, 52, 84);
+}
+
+.hud-button:active {
+    margin-top: 9px;
+    margin-bottom: 3px;
+}
+
+.hud-button-danger {
+    background-color: rgb(141, 47, 62);
+    border-top-color: rgb(225, 146, 160);
+    border-left-color: rgb(206, 118, 132);
+    border-right-color: rgb(84, 28, 38);
+    border-bottom-color: rgb(67, 22, 31);
+}

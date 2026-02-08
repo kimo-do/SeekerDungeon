@@ -605,12 +605,29 @@ namespace SeekerDungeon.Solana
                         EquippedItemId = LGDomainMapper.ToItemId(presence.EquippedItemId),
                         SkinId = presence.SkinId,
                         Activity = LGDomainMapper.ToOccupantActivity(presence.Activity),
-                        ActivityDirection = presence.Activity == 1 && presence.ActivityDirection <= 3
-                            ? LGDomainMapper.ToDirection(presence.ActivityDirection)
+                        ActivityDirection = presence.Activity == 1 &&
+                                            LGDomainMapper.TryToDirection(presence.ActivityDirection, out var mappedDirection)
+                            ? mappedDirection
                             : null,
                         IsFightingBoss = presence.Activity == 2
                     })
                     .ToArray();
+
+                if (logDebugMessages)
+                {
+                    var rawDirections = string.Join(",",
+                        roomPresences
+                            .Where(p => p != null && p.Activity == 1)
+                            .Select(p => p.ActivityDirection.ToString()));
+
+                    var mappedNorth = occupants.Count(o => o.ActivityDirection == RoomDirection.North);
+                    var mappedSouth = occupants.Count(o => o.ActivityDirection == RoomDirection.South);
+                    var mappedEast = occupants.Count(o => o.ActivityDirection == RoomDirection.East);
+                    var mappedWest = occupants.Count(o => o.ActivityDirection == RoomDirection.West);
+
+                    Log(
+                        $"RoomOccupants ({roomX},{roomY}) total={occupants.Length} doorJobRawDirs=[{rawDirections}] mapped N={mappedNorth} S={mappedSouth} E={mappedEast} W={mappedWest}");
+                }
 
                 OnRoomOccupantsUpdated?.Invoke(occupants);
                 return occupants;
@@ -937,6 +954,7 @@ namespace SeekerDungeon.Solana
                 var instruction = ChaindepthProgram.MovePlayer(
                     new MovePlayerAccounts
                     {
+                        Authority = Web3.Wallet.Account.PublicKey,
                         Player = Web3.Wallet.Account.PublicKey,
                         Global = _globalPda,
                         PlayerAccount = playerPda,
@@ -1077,6 +1095,7 @@ namespace SeekerDungeon.Solana
                 var instruction = ChaindepthProgram.CompleteJob(
                     new CompleteJobAccounts
                     {
+                        Authority = Web3.Wallet.Account.PublicKey,
                         Player = Web3.Wallet.Account.PublicKey,
                         Global = _globalPda,
                         PlayerAccount = playerPda,
@@ -1148,6 +1167,7 @@ namespace SeekerDungeon.Solana
                 var instruction = ChaindepthProgram.AbandonJob(
                     new AbandonJobAccounts
                     {
+                        Authority = Web3.Wallet.Account.PublicKey,
                         Player = Web3.Wallet.Account.PublicKey,
                         Global = _globalPda,
                         PlayerAccount = playerPda,
@@ -1221,6 +1241,7 @@ namespace SeekerDungeon.Solana
                 var instruction = ChaindepthProgram.ClaimJobReward(
                     new ClaimJobRewardAccounts
                     {
+                        Authority = Web3.Wallet.Account.PublicKey,
                         Player = Web3.Wallet.Account.PublicKey,
                         Global = _globalPda,
                         PlayerAccount = playerPda,
@@ -1338,6 +1359,7 @@ namespace SeekerDungeon.Solana
                 var instruction = ChaindepthProgram.EquipItem(
                     new EquipItemAccounts
                     {
+                        Authority = Web3.Wallet.Account.PublicKey,
                         Player = Web3.Wallet.Account.PublicKey,
                         Global = _globalPda,
                         PlayerAccount = playerPda,
@@ -1394,6 +1416,7 @@ namespace SeekerDungeon.Solana
                 var instruction = ChaindepthProgram.SetPlayerSkin(
                     new SetPlayerSkinAccounts
                     {
+                        Authority = Web3.Wallet.Account.PublicKey,
                         Player = Web3.Wallet.Account.PublicKey,
                         Global = _globalPda,
                         PlayerAccount = playerPda,
@@ -1450,6 +1473,7 @@ namespace SeekerDungeon.Solana
                 var instruction = ChaindepthProgram.CreatePlayerProfile(
                     new CreatePlayerProfileAccounts
                     {
+                        Authority = Web3.Wallet.Account.PublicKey,
                         Player = Web3.Wallet.Account.PublicKey,
                         Global = _globalPda,
                         PlayerAccount = playerPda,
@@ -1516,6 +1540,7 @@ namespace SeekerDungeon.Solana
                 var instruction = ChaindepthProgram.JoinBossFight(
                     new JoinBossFightAccounts
                     {
+                        Authority = Web3.Wallet.Account.PublicKey,
                         Player = Web3.Wallet.Account.PublicKey,
                         Global = _globalPda,
                         PlayerAccount = playerPda,
@@ -1634,6 +1659,7 @@ namespace SeekerDungeon.Solana
                 var instruction = ChaindepthProgram.LootBoss(
                     new LootBossAccounts
                     {
+                        Authority = Web3.Wallet.Account.PublicKey,
                         Player = Web3.Wallet.Account.PublicKey,
                         Global = _globalPda,
                         PlayerAccount = playerPda,
@@ -1744,6 +1770,7 @@ namespace SeekerDungeon.Solana
                 var instruction = ChaindepthProgram.BoostJob(
                     new BoostJobAccounts
                     {
+                        Authority = Web3.Wallet.Account.PublicKey,
                         Player = Web3.Wallet.Account.PublicKey,
                         Global = _globalPda,
                         Room = roomPda,

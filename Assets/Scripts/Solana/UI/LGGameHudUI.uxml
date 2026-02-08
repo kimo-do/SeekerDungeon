@@ -1,0 +1,19 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
+    <Style src="LGGameHudUI.uss"/>
+    <ui:VisualElement name="game-hud-root" class="game-hud-root">
+        <ui:VisualElement name="hud-top-bar" class="hud-top-bar">
+            <ui:VisualElement name="hud-balance-column" class="hud-balance-column">
+                <ui:Label name="hud-sol-balance" text="SOL: --" class="hud-balance-label"/>
+                <ui:Label name="hud-skr-balance" text="SKR: --" class="hud-balance-label"/>
+            </ui:VisualElement>
+            <ui:VisualElement name="hud-job-column" class="hud-job-column">
+                <ui:Label name="hud-job-info" text="Job: None" class="hud-job-label"/>
+                <ui:Label name="hud-status" text="" class="hud-status-label"/>
+            </ui:VisualElement>
+            <ui:VisualElement name="hud-action-column" class="hud-action-column">
+                <ui:Button name="hud-btn-back" text="Back" class="hud-button"/>
+                <ui:Button name="hud-btn-disconnect" text="Disconnect" class="hud-button hud-button-danger"/>
+            </ui:VisualElement>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

@@ -1,4 +1,5 @@
 using Cysharp.Threading.Tasks;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -14,9 +15,12 @@ namespace SeekerDungeon
         [SerializeField] private float fadeDurationSeconds = 0.22f;
         [SerializeField] private Color fadeColor = Color.black;
         [SerializeField] private int canvasSortOrder = 10000;
+        [SerializeField] private float maxBlackHoldSeconds = 20f;
 
         private CanvasGroup _fadeCanvasGroup;
         private bool _isTransitioning;
+        private readonly Dictionary<string, int> _blackScreenHoldsByReason = new();
+        private int _blackScreenHoldCount;
 
         public static SceneLoadController GetOrCreate()
         {
@@ -25,7 +29,7 @@ namespace SeekerDungeon
                 return Instance;
             }
 
-            var existingController = FindObjectOfType<SceneLoadController>();
+            var existingController = Object.FindFirstObjectByType<SceneLoadController>();
             if (existingController != null)
             {
                 return existingController;
@@ -83,12 +87,74 @@ namespace SeekerDungeon
                 }
 
                 await UniTask.NextFrame();
+                await WaitForBlackScreenHoldsAsync();
                 await FadeAsync(0f);
                 return true;
             }
             finally
             {
                 _isTransitioning = false;
+            }
+        }
+
+        public void HoldBlackScreen(string reason = "unspecified")
+        {
+            var normalizedReason = string.IsNullOrWhiteSpace(reason) ? "unspecified" : reason;
+            if (_blackScreenHoldsByReason.TryGetValue(normalizedReason, out var currentCount))
+            {
+                _blackScreenHoldsByReason[normalizedReason] = currentCount + 1;
+            }
+            else
+            {
+                _blackScreenHoldsByReason[normalizedReason] = 1;
+            }
+
+            _blackScreenHoldCount += 1;
+        }
+
+        public void ReleaseBlackScreen(string reason = "unspecified")
+        {
+            var normalizedReason = string.IsNullOrWhiteSpace(reason) ? "unspecified" : reason;
+            if (!_blackScreenHoldsByReason.TryGetValue(normalizedReason, out var currentCount) || currentCount <= 0)
+            {
+                return;
+            }
+
+            if (currentCount == 1)
+            {
+                _blackScreenHoldsByReason.Remove(normalizedReason);
+            }
+            else
+            {
+                _blackScreenHoldsByReason[normalizedReason] = currentCount - 1;
+            }
+
+            _blackScreenHoldCount = Mathf.Max(0, _blackScreenHoldCount - 1);
+        }
+
+        private async UniTask WaitForBlackScreenHoldsAsync()
+        {
+            if (_blackScreenHoldCount <= 0)
+            {
+                return;
+            }
+
+            var elapsed = 0f;
+            while (_blackScreenHoldCount > 0)
+            {
+                await UniTask.Yield(PlayerLoopTiming.Update);
+                elapsed += Time.unscaledDeltaTime;
+
+                if (elapsed < maxBlackHoldSeconds)
+                {
+                    continue;
+                }
+
+                Debug.LogWarning(
+                    $"[SceneLoadController] Hold timeout reached ({maxBlackHoldSeconds:F1}s). Releasing black screen automatically.");
+                _blackScreenHoldsByReason.Clear();
+                _blackScreenHoldCount = 0;
+                break;
             }
         }
 
