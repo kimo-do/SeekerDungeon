@@ -13,15 +13,15 @@ using Chaindepth.Accounts;
 namespace SeekerDungeon.Solana
 {
     /// <summary>
-    /// Test UI for ChainDepth Solana program interactions using UI Toolkit
+    /// Test UI for LG Solana program interactions using UI Toolkit
     /// Attach this to a GameObject with a UIDocument component
     /// </summary>
     [RequireComponent(typeof(UIDocument))]
-    public class ChainDepthTestUI : MonoBehaviour
+    public class LGTestUI : MonoBehaviour
     {
         private UIDocument _document;
         private VisualElement _root;
-        private ChainDepthManager _manager;
+        private LGManager _manager;
 
         // Cached UI elements
         private Label _statusLabel;
@@ -77,17 +77,17 @@ namespace SeekerDungeon.Solana
 
         private void Start()
         {
-            _manager = ChainDepthManager.Instance;
+            _manager = LGManager.Instance;
             if (_manager == null)
             {
-                LogMessage("ERROR: ChainDepthManager not found!");
-                Debug.LogError("[ChainDepthTestUI] ChainDepthManager not found! Make sure it's in the scene.");
+                LogMessage("ERROR: LGManager not found!");
+                Debug.LogError("[LGTestUI] LGManager not found! Make sure it's in the scene.");
                 return;
             }
 
             SetupEventListeners();
             UpdateConnectionUI();
-            LogMessage("ChainDepth Test UI initialized");
+            LogMessage("LG Test UI initialized");
         }
 
         private void QueryElements()
@@ -154,16 +154,16 @@ namespace SeekerDungeon.Solana
             _btnRefreshAll?.RegisterCallback<ClickEvent>(_ => OnRefreshAll());
 
             // Movement
-            _btnMoveNorth?.RegisterCallback<ClickEvent>(_ => OnMove(ChainDepthConfig.DIRECTION_NORTH));
-            _btnMoveSouth?.RegisterCallback<ClickEvent>(_ => OnMove(ChainDepthConfig.DIRECTION_SOUTH));
-            _btnMoveEast?.RegisterCallback<ClickEvent>(_ => OnMove(ChainDepthConfig.DIRECTION_EAST));
-            _btnMoveWest?.RegisterCallback<ClickEvent>(_ => OnMove(ChainDepthConfig.DIRECTION_WEST));
+            _btnMoveNorth?.RegisterCallback<ClickEvent>(_ => OnMove(LGConfig.DIRECTION_NORTH));
+            _btnMoveSouth?.RegisterCallback<ClickEvent>(_ => OnMove(LGConfig.DIRECTION_SOUTH));
+            _btnMoveEast?.RegisterCallback<ClickEvent>(_ => OnMove(LGConfig.DIRECTION_EAST));
+            _btnMoveWest?.RegisterCallback<ClickEvent>(_ => OnMove(LGConfig.DIRECTION_WEST));
 
             // Jobs
-            _btnJobNorth?.RegisterCallback<ClickEvent>(_ => OnDoorAction(ChainDepthConfig.DIRECTION_NORTH));
-            _btnJobSouth?.RegisterCallback<ClickEvent>(_ => OnDoorAction(ChainDepthConfig.DIRECTION_SOUTH));
-            _btnJobEast?.RegisterCallback<ClickEvent>(_ => OnDoorAction(ChainDepthConfig.DIRECTION_EAST));
-            _btnJobWest?.RegisterCallback<ClickEvent>(_ => OnDoorAction(ChainDepthConfig.DIRECTION_WEST));
+            _btnJobNorth?.RegisterCallback<ClickEvent>(_ => OnDoorAction(LGConfig.DIRECTION_NORTH));
+            _btnJobSouth?.RegisterCallback<ClickEvent>(_ => OnDoorAction(LGConfig.DIRECTION_SOUTH));
+            _btnJobEast?.RegisterCallback<ClickEvent>(_ => OnDoorAction(LGConfig.DIRECTION_EAST));
+            _btnJobWest?.RegisterCallback<ClickEvent>(_ => OnDoorAction(LGConfig.DIRECTION_WEST));
 
             // Center action (chest/boss/empty)
             _btnLootChest?.RegisterCallback<ClickEvent>(_ => OnCenterAction());
@@ -306,7 +306,7 @@ namespace SeekerDungeon.Solana
             {
                 if (!IsWalletConnected()) return;
 
-                var rpc = Web3.Wallet.ActiveRpcClient ?? ClientFactory.GetClient(ChainDepthConfig.RPC_URL);
+                var rpc = Web3.Wallet.ActiveRpcClient ?? ClientFactory.GetClient(LGConfig.RPC_URL);
                 var pubkey = Web3.Wallet.Account.PublicKey.Key;
                 var result = await rpc.GetBalanceAsync(pubkey, Commitment.Confirmed);
                 if (!result.WasSuccessful || result.Result?.Value == null)
@@ -400,21 +400,21 @@ namespace SeekerDungeon.Solana
             }
 
             var wallState = _manager.CurrentRoomState.Walls[direction];
-            if (wallState != ChainDepthConfig.WALL_OPEN)
+            if (wallState != LGConfig.WALL_OPEN)
             {
-                var dirNameBlocked = ChainDepthConfig.GetDirectionName(direction);
+                var dirNameBlocked = LGConfig.GetDirectionName(direction);
                 SetStatus($"{dirNameBlocked} is not open");
-                LogMessage($"Move blocked: {dirNameBlocked} wall is {ChainDepthConfig.GetWallStateName(wallState)}. Use Door Action first.");
+                LogMessage($"Move blocked: {dirNameBlocked} wall is {LGConfig.GetWallStateName(wallState)}. Use Door Action first.");
                 return;
             }
 
-            var dirName = ChainDepthConfig.GetDirectionName(direction);
+            var dirName = LGConfig.GetDirectionName(direction);
             SetStatus($"Moving {dirName}...");
             LogMessage($"Moving {dirName}...");
 
-            var currentX = _manager.CurrentPlayerState?.CurrentRoomX ?? ChainDepthConfig.START_X;
-            var currentY = _manager.CurrentPlayerState?.CurrentRoomY ?? ChainDepthConfig.START_Y;
-            var (newX, newY) = ChainDepthConfig.GetAdjacentCoords(currentX, currentY, direction);
+            var currentX = _manager.CurrentPlayerState?.CurrentRoomX ?? LGConfig.START_X;
+            var currentY = _manager.CurrentPlayerState?.CurrentRoomY ?? LGConfig.START_Y;
+            var (newX, newY) = LGConfig.GetAdjacentCoords(currentX, currentY, direction);
 
             LogMessage($"({currentX}, {currentY}) -> ({newX}, {newY})");
 
@@ -441,7 +441,7 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
-            var dirName = ChainDepthConfig.GetDirectionName(direction);
+            var dirName = LGConfig.GetDirectionName(direction);
             SetStatus($"Door action: {dirName}...");
             LogMessage($"Door action requested: {dirName}...");
 
@@ -581,7 +581,7 @@ namespace SeekerDungeon.Solana
         {
             LogMessage($"ERROR: {error}");
             SetStatus($"Error: {error}");
-            Debug.LogError($"[ChainDepthTestUI] Error: {error}");
+            Debug.LogError($"[LGTestUI] Error: {error}");
         }
 
         #endregion
@@ -641,10 +641,10 @@ namespace SeekerDungeon.Solana
             SetLabel(_roomInfo, $"Room: ({state.X}, {state.Y}), Center={GetCenterTypeName(state)}, CreatedBy={ShortKey(state.CreatedBy)}");
             
             // Get wall state names from the walls array
-            UpdateWallRow(_wallNorth, _btnJobNorth, "North", state, ChainDepthConfig.DIRECTION_NORTH);
-            UpdateWallRow(_wallSouth, _btnJobSouth, "South", state, ChainDepthConfig.DIRECTION_SOUTH);
-            UpdateWallRow(_wallEast, _btnJobEast, "East", state, ChainDepthConfig.DIRECTION_EAST);
-            UpdateWallRow(_wallWest, _btnJobWest, "West", state, ChainDepthConfig.DIRECTION_WEST);
+            UpdateWallRow(_wallNorth, _btnJobNorth, "North", state, LGConfig.DIRECTION_NORTH);
+            UpdateWallRow(_wallSouth, _btnJobSouth, "South", state, LGConfig.DIRECTION_SOUTH);
+            UpdateWallRow(_wallEast, _btnJobEast, "East", state, LGConfig.DIRECTION_EAST);
+            UpdateWallRow(_wallWest, _btnJobWest, "West", state, LGConfig.DIRECTION_WEST);
             
             UpdateCenterInfo(state);
         }
@@ -718,7 +718,7 @@ namespace SeekerDungeon.Solana
         {
             if (walls == null || direction >= walls.Length)
                 return "Unknown";
-            return ChainDepthConfig.GetWallStateName(walls[direction]);
+            return LGConfig.GetWallStateName(walls[direction]);
         }
 
         private void UpdateCenterInfo(RoomAccount state)
@@ -736,7 +736,7 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
-            if (state.CenterType == ChainDepthConfig.CENTER_EMPTY)
+            if (state.CenterType == LGConfig.CENTER_EMPTY)
             {
                 SetLabel(_chestLabel, "Center: Empty");
                 _btnLootChest.text = "No Action";
@@ -744,7 +744,7 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
-            if (state.CenterType == ChainDepthConfig.CENTER_CHEST)
+            if (state.CenterType == LGConfig.CENTER_CHEST)
             {
                 var lootedCount = state.LootedBy?.Length ?? 0;
                 SetLabel(_chestLabel, $"Center: Chest ({lootedCount}/128 looted)");
@@ -753,7 +753,7 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
-            if (state.CenterType == ChainDepthConfig.CENTER_BOSS)
+            if (state.CenterType == LGConfig.CENTER_BOSS)
             {
                 if (state.BossDefeated)
                 {
@@ -784,9 +784,9 @@ namespace SeekerDungeon.Solana
 
             return state.CenterType switch
             {
-                ChainDepthConfig.CENTER_EMPTY => "Empty",
-                ChainDepthConfig.CENTER_CHEST => "Chest",
-                ChainDepthConfig.CENTER_BOSS => "Boss",
+                LGConfig.CENTER_EMPTY => "Empty",
+                LGConfig.CENTER_CHEST => "Chest",
+                LGConfig.CENTER_BOSS => "Boss",
                 _ => "Unknown"
             };
         }
@@ -863,7 +863,7 @@ namespace SeekerDungeon.Solana
             // Scroll to bottom
             _logScroll?.ScrollTo(_logText);
             
-            Debug.Log($"[ChainDepthTestUI] {message}");
+            Debug.Log($"[LGTestUI] {message}");
         }
 
         private bool IsWalletConnected()
@@ -874,3 +874,4 @@ namespace SeekerDungeon.Solana
         #endregion
     }
 }
+

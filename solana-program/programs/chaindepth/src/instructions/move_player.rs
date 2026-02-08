@@ -2,15 +2,20 @@ use anchor_lang::prelude::*;
 
 use crate::errors::ChainDepthError;
 use crate::events::PlayerMoved;
+use crate::instructions::session_auth::authorize_player_action;
 use crate::state::{
-    GlobalAccount, PlayerAccount, PlayerProfile, RoomAccount, RoomPresence, WALL_OPEN,
+    session_instruction_bits, GlobalAccount, PlayerAccount, PlayerProfile, RoomAccount,
+    RoomPresence, SessionAuthority, WALL_OPEN,
 };
 
 #[derive(Accounts)]
 #[instruction(new_x: i8, new_y: i8)]
 pub struct MovePlayer<'info> {
     #[account(mut)]
-    pub player: Signer<'info>,
+    pub authority: Signer<'info>,
+
+    /// CHECK: wallet owner whose gameplay state is being modified
+    pub player: UncheckedAccount<'info>,
 
     #[account(
         seeds = [GlobalAccount::SEED_PREFIX],
@@ -20,7 +25,7 @@ pub struct MovePlayer<'info> {
 
     #[account(
         init_if_needed,
-        payer = player,
+        payer = authority,
         space = 8 + PlayerAccount::INIT_SPACE,
         seeds = [PlayerAccount::SEED_PREFIX, player.key().as_ref()],
         bump
@@ -29,7 +34,7 @@ pub struct MovePlayer<'info> {
 
     #[account(
         init_if_needed,
-        payer = player,
+        payer = authority,
         space = PlayerProfile::DISCRIMINATOR.len() + PlayerProfile::INIT_SPACE,
         seeds = [PlayerProfile::SEED_PREFIX, player.key().as_ref()],
         bump
@@ -62,7 +67,7 @@ pub struct MovePlayer<'info> {
 
     #[account(
         init_if_needed,
-        payer = player,
+        payer = authority,
         space = RoomPresence::DISCRIMINATOR.len() + RoomPresence::INIT_SPACE,
         seeds = [
             RoomPresence::SEED_PREFIX,
@@ -77,7 +82,7 @@ pub struct MovePlayer<'info> {
 
     #[account(
         init_if_needed,
-        payer = player,
+        payer = authority,
         space = RoomPresence::DISCRIMINATOR.len() + RoomPresence::INIT_SPACE,
         seeds = [
             RoomPresence::SEED_PREFIX,
@@ -90,10 +95,29 @@ pub struct MovePlayer<'info> {
     )]
     pub target_presence: Account<'info, RoomPresence>,
 
+    #[account(
+        mut,
+        seeds = [
+            SessionAuthority::SEED_PREFIX,
+            player.key().as_ref(),
+            authority.key().as_ref()
+        ],
+        bump = session_authority.bump
+    )]
+    pub session_authority: Option<Account<'info, SessionAuthority>>,
+
     pub system_program: Program<'info, System>,
 }
 
 pub fn handler(ctx: Context<MovePlayer>, new_x: i8, new_y: i8) -> Result<()> {
+    authorize_player_action(
+        &ctx.accounts.authority,
+        &ctx.accounts.player,
+        ctx.accounts.session_authority.as_mut(),
+        session_instruction_bits::MOVE_PLAYER,
+        0,
+    )?;
+
     let player_account = &mut ctx.accounts.player_account;
     let profile = &mut ctx.accounts.profile;
     let current_room = &ctx.accounts.current_room;
@@ -189,7 +213,7 @@ pub fn handler(ctx: Context<MovePlayer>, new_x: i8, new_y: i8) -> Result<()> {
     ctx.accounts.target_presence.set_idle();
 
     emit!(PlayerMoved {
-        player: ctx.accounts.player.key(),
+        player: player_key,
         from_x,
         from_y,
         to_x: new_x,

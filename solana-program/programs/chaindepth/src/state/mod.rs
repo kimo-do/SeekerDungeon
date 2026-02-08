@@ -6,6 +6,7 @@ pub mod player;
 pub mod player_profile;
 pub mod room;
 pub mod room_presence;
+pub mod session_authority;
 
 pub use boss_fight::*;
 pub use global::*;
@@ -15,3 +16,4 @@ pub use player::*;
 pub use player_profile::*;
 pub use room::*;
 pub use room_presence::*;
+pub use session_authority::*;

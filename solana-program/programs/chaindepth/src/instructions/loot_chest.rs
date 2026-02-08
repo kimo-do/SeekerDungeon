@@ -2,15 +2,19 @@ use anchor_lang::prelude::*;
 
 use crate::errors::ChainDepthError;
 use crate::events::{item_types, ChestLooted};
+use crate::instructions::session_auth::authorize_player_action;
 use crate::state::{
-    item_ids, GlobalAccount, InventoryAccount, PlayerAccount, RoomAccount, MAX_LOOTERS,
-    CENTER_CHEST,
+    item_ids, session_instruction_bits, GlobalAccount, InventoryAccount, PlayerAccount,
+    RoomAccount, SessionAuthority, MAX_LOOTERS, CENTER_CHEST,
 };
 
 #[derive(Accounts)]
 pub struct LootChest<'info> {
     #[account(mut)]
-    pub player: Signer<'info>,
+    pub authority: Signer<'info>,
+
+    /// CHECK: wallet owner whose gameplay state is being modified
+    pub player: UncheckedAccount<'info>,
 
     #[account(
         seeds = [GlobalAccount::SEED_PREFIX],
@@ -40,17 +44,36 @@ pub struct LootChest<'info> {
 
     #[account(
         init_if_needed,
-        payer = player,
+        payer = authority,
         space = InventoryAccount::DISCRIMINATOR.len() + InventoryAccount::INIT_SPACE,
         seeds = [InventoryAccount::SEED_PREFIX, player.key().as_ref()],
         bump
     )]
     pub inventory: Account<'info, InventoryAccount>,
 
+    #[account(
+        mut,
+        seeds = [
+            SessionAuthority::SEED_PREFIX,
+            player.key().as_ref(),
+            authority.key().as_ref()
+        ],
+        bump = session_authority.bump
+    )]
+    pub session_authority: Option<Account<'info, SessionAuthority>>,
+
     pub system_program: Program<'info, System>,
 }
 
 pub fn handler(ctx: Context<LootChest>) -> Result<()> {
+    authorize_player_action(
+        &ctx.accounts.authority,
+        &ctx.accounts.player,
+        ctx.accounts.session_authority.as_mut(),
+        session_instruction_bits::LOOT_CHEST,
+        0,
+    )?;
+
     let room = &mut ctx.accounts.room;
     let player_account = &mut ctx.accounts.player_account;
     let inventory = &mut ctx.accounts.inventory;

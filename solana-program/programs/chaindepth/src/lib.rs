@@ -33,6 +33,28 @@ pub mod chaindepth {
         instructions::move_player::init_player_handler(ctx)
     }
 
+    /// Begin a delegated session key for gameplay actions.
+    pub fn begin_session(
+        ctx: Context<BeginSession>,
+        expires_at_slot: u64,
+        expires_at_unix_timestamp: i64,
+        instruction_allowlist: u64,
+        max_token_spend: u64,
+    ) -> Result<()> {
+        instructions::begin_session::handler(
+            ctx,
+            expires_at_slot,
+            expires_at_unix_timestamp,
+            instruction_allowlist,
+            max_token_spend,
+        )
+    }
+
+    /// Revoke a delegated session key.
+    pub fn end_session(ctx: Context<EndSession>) -> Result<()> {
+        instructions::end_session::handler(ctx)
+    }
+
     /// Move player to an adjacent room
     pub fn move_player(ctx: Context<MovePlayer>, new_x: i8, new_y: i8) -> Result<()> {
         instructions::move_player::handler(ctx, new_x, new_y)
@@ -41,6 +63,14 @@ pub mod chaindepth {
     /// Join a job to clear rubble (stakes SKR)
     pub fn join_job(ctx: Context<JoinJob>, direction: u8) -> Result<()> {
         instructions::join_job::handler(ctx, direction)
+    }
+
+    /// Join a job using a delegated session key.
+    pub fn join_job_with_session(
+        ctx: Context<JoinJobWithSession>,
+        direction: u8,
+    ) -> Result<()> {
+        instructions::join_job_with_session::handler(ctx, direction)
     }
 
     /// Update job progress based on elapsed slots

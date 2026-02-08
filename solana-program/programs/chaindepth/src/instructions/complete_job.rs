@@ -3,16 +3,20 @@ use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
 use crate::errors::ChainDepthError;
 use crate::events::JobCompleted;
+use crate::instructions::session_auth::authorize_player_action;
 use crate::state::{
-    GlobalAccount, HelperStake, PlayerAccount, RoomAccount, CENTER_BOSS, CENTER_CHEST,
-    CENTER_EMPTY, WALL_OPEN, WALL_RUBBLE,
+    session_instruction_bits, GlobalAccount, HelperStake, PlayerAccount, RoomAccount,
+    SessionAuthority, CENTER_BOSS, CENTER_CHEST, CENTER_EMPTY, WALL_OPEN, WALL_RUBBLE,
 };
 
 #[derive(Accounts)]
 #[instruction(direction: u8)]
 pub struct CompleteJob<'info> {
     #[account(mut)]
-    pub player: Signer<'info>,
+    pub authority: Signer<'info>,
+
+    /// CHECK: wallet owner whose gameplay state is being modified
+    pub player: UncheckedAccount<'info>,
 
     #[account(
         mut,
@@ -55,7 +59,7 @@ pub struct CompleteJob<'info> {
     /// Adjacent room that will be opened/initialized
     #[account(
         init_if_needed,
-        payer = player,
+        payer = authority,
         space = 8 + RoomAccount::INIT_SPACE,
         seeds = [
             RoomAccount::SEED_PREFIX,
@@ -82,6 +86,17 @@ pub struct CompleteJob<'info> {
     )]
     pub prize_pool: Account<'info, TokenAccount>,
 
+    #[account(
+        mut,
+        seeds = [
+            SessionAuthority::SEED_PREFIX,
+            player.key().as_ref(),
+            authority.key().as_ref()
+        ],
+        bump = session_authority.bump
+    )]
+    pub session_authority: Option<Account<'info, SessionAuthority>>,
+
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
@@ -103,6 +118,14 @@ fn adjacent_y(y: i8, direction: u8) -> i8 {
 }
 
 pub fn handler(ctx: Context<CompleteJob>, direction: u8) -> Result<()> {
+    authorize_player_action(
+        &ctx.accounts.authority,
+        &ctx.accounts.player,
+        ctx.accounts.session_authority.as_mut(),
+        session_instruction_bits::COMPLETE_JOB,
+        0,
+    )?;
+
     require!(
         RoomAccount::is_valid_direction(direction),
         ChainDepthError::InvalidDirection

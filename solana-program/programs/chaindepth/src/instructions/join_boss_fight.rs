@@ -2,15 +2,19 @@ use anchor_lang::prelude::*;
 
 use crate::errors::ChainDepthError;
 use crate::events::BossFightJoined;
+use crate::instructions::session_auth::authorize_player_action;
 use crate::state::{
-    BossFightAccount, GlobalAccount, PlayerAccount, PlayerProfile, RoomAccount, RoomPresence,
-    CENTER_BOSS,
+    session_instruction_bits, BossFightAccount, GlobalAccount, PlayerAccount, PlayerProfile,
+    RoomAccount, RoomPresence, SessionAuthority, CENTER_BOSS,
 };
 
 #[derive(Accounts)]
 pub struct JoinBossFight<'info> {
     #[account(mut)]
-    pub player: Signer<'info>,
+    pub authority: Signer<'info>,
+
+    /// CHECK: wallet owner whose gameplay state is being modified
+    pub player: UncheckedAccount<'info>,
 
     #[account(
         seeds = [GlobalAccount::SEED_PREFIX],
@@ -57,17 +61,36 @@ pub struct JoinBossFight<'info> {
 
     #[account(
         init,
-        payer = player,
+        payer = authority,
         space = BossFightAccount::DISCRIMINATOR.len() + BossFightAccount::INIT_SPACE,
         seeds = [BossFightAccount::SEED_PREFIX, room.key().as_ref(), player.key().as_ref()],
         bump
     )]
     pub boss_fight: Account<'info, BossFightAccount>,
 
+    #[account(
+        mut,
+        seeds = [
+            SessionAuthority::SEED_PREFIX,
+            player.key().as_ref(),
+            authority.key().as_ref()
+        ],
+        bump = session_authority.bump
+    )]
+    pub session_authority: Option<Account<'info, SessionAuthority>>,
+
     pub system_program: Program<'info, System>,
 }
 
 pub fn handler(ctx: Context<JoinBossFight>) -> Result<()> {
+    authorize_player_action(
+        &ctx.accounts.authority,
+        &ctx.accounts.player,
+        ctx.accounts.session_authority.as_mut(),
+        session_instruction_bits::JOIN_BOSS_FIGHT,
+        0,
+    )?;
+
     let room = &mut ctx.accounts.room;
     let player_account = &ctx.accounts.player_account;
     let clock = Clock::get()?;

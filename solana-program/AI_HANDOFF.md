@@ -9,6 +9,7 @@ Quick reference for AI assistants working on this project.
 - **Run commands**: `wsl -d Ubuntu -- bash /mnt/e/Github2/SeekerDungeon/solana-program/scripts/wsl/run.sh "your command"`
 - **Program ID**: `3Ctc2FgnNHQtGAcZftMS4ykLhJYjLzBD3hELKy55DnKo`
 - **Network**: Devnet
+- **Session smoke wallet (fresh)**: `test-wallets/devnet-session-wallet.json` (`2eoK8KdoAJ9hgBjoUbQY6SQypJmNYeEnyxFvkQaWXELP`)
 
 ## Critical Implementation Details
 
@@ -201,6 +202,10 @@ wsl -d Ubuntu -- bash scripts/wsl/run.sh "solana balance --url devnet"
 # Run scripts (use the npm commands)
 wsl -d Ubuntu -- bash scripts/wsl/run.sh "export ANCHOR_PROVIDER_URL=https://api.devnet.solana.com && export ANCHOR_WALLET=devnet-wallet.json && npm run check-state"
 wsl -d Ubuntu -- bash scripts/wsl/run.sh "export ANCHOR_PROVIDER_URL=https://api.devnet.solana.com && export ANCHOR_WALLET=devnet-wallet.json && npm run init-devnet"
+wsl -d Ubuntu -- bash scripts/wsl/run.sh "export ANCHOR_PROVIDER_URL=https://api.devnet.solana.com && export ANCHOR_WALLET=devnet-wallet.json && npm run smoke-session-join-job"
+
+# Run session smoke on dedicated test wallet
+wsl -d Ubuntu -- bash scripts/wsl/run.sh "export ANCHOR_PROVIDER_URL=https://api.devnet.solana.com && export ANCHOR_WALLET=test-wallets/devnet-session-wallet.json && npm run smoke-session-join-job"
 ```
 
 ## Scripts
@@ -211,7 +216,18 @@ wsl -d Ubuntu -- bash scripts/wsl/run.sh "export ANCHOR_PROVIDER_URL=https://api
 | `npm run init-devnet` | Initialize game (create token, global state) |
 | `npm run mint-tokens <wallet> [amount]` | Mint test SKR tokens |
 | `npm run smoke-door` | End-to-end devnet smoke test (init/move/join/tick/complete/claim flow) |
+| `npm run smoke-session-join-job` | Devnet smoke test for `begin_session` + `join_job_with_session` + presence sync |
 | `npm run watch-logs` | Watch program logs in real-time |
+
+## Devnet Test Wallets
+
+- `test-wallets/devnet-session-wallet.json`
+  - Public key: `2eoK8KdoAJ9hgBjoUbQY6SQypJmNYeEnyxFvkQaWXELP`
+  - Intended use: session-key smoke tests
+  - Funding baseline: `1 SOL` and `25 SKR`
+- `test-wallets/devnet-smoke-wallet.json`
+  - Public key: `E2xzqHcjQ78kKzZ2bFE41csGFswn6YgRG8hRKFQj2RvH`
+  - Known issue: currently fails `begin_session` with `ConstraintSeeds` on `player_account` (legacy onchain state mismatch)
 
 ## Known Issues / Gotchas
 
@@ -222,6 +238,10 @@ wsl -d Ubuntu -- bash scripts/wsl/run.sh "export ANCHOR_PROVIDER_URL=https://api
 5. **Temporary value lifetimes**: When building escrow seeds, bind `room.key()` to variable first
 6. **Line endings**: WSL scripts must have Unix line endings (LF). If you see `$'\r': command not found`, fix with: `wsl -d Ubuntu -- sed -i 's/\r$//' scripts/wsl/*.sh`
 7. **BigInt in Kite**: `getCurrentSlot()` returns BigInt, convert with `Number()` for arithmetic
+8. **`init_player` account list changed**: now requires `profile` and `room_presence` PDAs in addition to `player_account`
+9. **`mint-test-tokens.ts` can fail for some addresses** with `Expected a Address.` from `@solana/kit`; fallback to CLI:
+   - `spl-token create-account <MINT> --owner <WALLET> --fee-payer devnet-wallet.json -u devnet`
+   - `spl-token mint <MINT> 25 <RECIPIENT_ATA> --mint-authority devnet-wallet.json --fee-payer devnet-wallet.json -u devnet`
 10. **`npm test` can fail on Devnet faucet limits**: Anchor test `before()` currently requests airdrops and may hit `429 Too Many Requests`
 
 ## Architecture Notes
@@ -257,12 +277,12 @@ Unity scripts are in `Assets/Scripts/Solana/`:
 
 | File | Purpose |
 |------|---------|
-| `ChainDepthConfig.cs` | Constants (addresses, seeds, game values) |
-| `ChainDepthManager.cs` | Main manager for Solana interactions |
-| `ChainDepthTestUI.cs` | Test UI using UI Toolkit |
-| `UI/ChainDepthTestUI.uxml` | UI Toolkit layout |
-| `UI/ChainDepthTestUI.uss` | UI Toolkit styles |
-| `Generated/ChainDepthClient.cs` | **Auto-generated** IDL client (do not edit) |
+| `LGConfig.cs` | Constants (addresses, seeds, game values) |
+| `LGManager.cs` | Main manager for Solana interactions |
+| `LGTestUI.cs` | Test UI using UI Toolkit |
+| `UI/LGTestUI.uxml` | UI Toolkit layout |
+| `UI/LGTestUI.uss` | UI Toolkit styles |
+| `Generated/LGClient.cs` | **Auto-generated** IDL client (do not edit) |
 
 ### IDL to C# Code Generation
 
@@ -287,12 +307,12 @@ bash scripts/generate-unity-client.sh
 
 Manual command:
 ```bash
-dotnet anchorgen -i solana-program/target/idl/chaindepth.json -o Assets/Scripts/Solana/Generated/ChainDepthClient.cs
+dotnet anchorgen -i solana-program/target/idl/chaindepth.json -o Assets/Scripts/Solana/Generated/LGClient.cs
 ```
 
 **Workflow after changing the Rust program:**
 1. `anchor build` - Generates new IDL in `target/idl/chaindepth.json`
-2. Run regeneration script - Updates `ChainDepthClient.cs`
+2. Run regeneration script - Updates `LGClient.cs`
 3. Unity automatically picks up changes
 
 **Generated code provides:**
@@ -300,7 +320,7 @@ dotnet anchorgen -i solana-program/target/idl/chaindepth.json -o Assets/Scripts/
 - `InitPlayerAccounts`, `MovePlayerAccounts`, etc. - Strongly-typed account structs
 - Account discriminators and serialization handled automatically
 
-**Example usage in ChainDepthManager.cs:**
+**Example usage in LGManager.cs:**
 ```csharp
 using Chaindepth.Program;
 
@@ -320,12 +340,12 @@ var instruction = ChaindepthProgram.InitPlayer(
 
 1. Import the Solana Unity SDK via Package Manager (Git URL above)
 2. Add `Web3` component to scene (from SDK samples or create manually)
-3. Add `ChainDepthManager` to a GameObject (it's a singleton)
+3. Add `LGManager` to a GameObject (it's a singleton)
 4. For Test UI:
    - Create Panel Settings asset (Create > UI Toolkit > Panel Settings Asset)
    - Create GameObject with `UIDocument` component
-   - Assign `ChainDepthTestUI.uxml` as Source Asset
-   - Add `ChainDepthTestUI` script component
+   - Assign `LGTestUI.uxml` as Source Asset
+   - Add `LGTestUI` script component
 5. Configure Web3 component with devnet RPC URL
 
 ### Key Unity Classes
@@ -336,7 +356,7 @@ var instruction = ChaindepthProgram.InitPlayer(
 
 ### Note on Instruction Building
 
-The Unity scripts use generated instruction builders from `ChainDepthClient.cs`. For instructions requiring token accounts (join_job, complete_job, etc.), additional setup is needed:
+The Unity scripts use generated instruction builders from `LGClient.cs`. For instructions requiring token accounts (join_job, complete_job, etc.), additional setup is needed:
 1. Token account setup for escrow
 2. Associated token account creation
 

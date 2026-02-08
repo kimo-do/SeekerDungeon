@@ -7,7 +7,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 IDL_PATH="$PROJECT_ROOT/target/idl/chaindepth.json"
-OUTPUT_PATH="$PROJECT_ROOT/../Assets/Scripts/Solana/Generated/ChainDepthClient.cs"
+OUTPUT_PATH="$PROJECT_ROOT/../Assets/Scripts/Solana/Generated/LGClient.cs"
 
 echo "=== Generate Unity C# Client ==="
 echo "IDL: $IDL_PATH"
@@ -28,3 +28,4 @@ echo "Generating..."
 dotnet anchorgen -i "$IDL_PATH" -o "$OUTPUT_PATH"
 
 echo "Success! Generated: $OUTPUT_PATH"
+

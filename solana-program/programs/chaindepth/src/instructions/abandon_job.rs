@@ -3,13 +3,21 @@ use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
 use crate::errors::ChainDepthError;
 use crate::events::JobAbandoned;
-use crate::state::{GlobalAccount, HelperStake, PlayerAccount, RoomAccount, RoomPresence};
+use crate::instructions::session_auth::authorize_player_action;
+use crate::state::{
+    session_instruction_bits, GlobalAccount, HelperStake, PlayerAccount, RoomAccount, RoomPresence,
+    SessionAuthority,
+};
 
 #[derive(Accounts)]
 #[instruction(direction: u8)]
 pub struct AbandonJob<'info> {
     #[account(mut)]
-    pub player: Signer<'info>,
+    pub authority: Signer<'info>,
+
+    /// CHECK: wallet owner whose gameplay state is being modified
+    #[account(mut)]
+    pub player: UncheckedAccount<'info>,
 
     #[account(
         seeds = [GlobalAccount::SEED_PREFIX],
@@ -87,10 +95,29 @@ pub struct AbandonJob<'info> {
     )]
     pub player_token_account: Account<'info, TokenAccount>,
 
+    #[account(
+        mut,
+        seeds = [
+            SessionAuthority::SEED_PREFIX,
+            player.key().as_ref(),
+            authority.key().as_ref()
+        ],
+        bump = session_authority.bump
+    )]
+    pub session_authority: Option<Account<'info, SessionAuthority>>,
+
     pub token_program: Program<'info, Token>,
 }
 
 pub fn handler(ctx: Context<AbandonJob>, direction: u8) -> Result<()> {
+    authorize_player_action(
+        &ctx.accounts.authority,
+        &ctx.accounts.player,
+        ctx.accounts.session_authority.as_mut(),
+        session_instruction_bits::ABANDON_JOB,
+        0,
+    )?;
+
     require!(
         RoomAccount::is_valid_direction(direction),
         ChainDepthError::InvalidDirection

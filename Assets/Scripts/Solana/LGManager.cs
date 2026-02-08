@@ -21,12 +21,12 @@ using Chaindepth.Types;
 namespace SeekerDungeon.Solana
 {
     /// <summary>
-    /// Manager for ChainDepth Solana program interactions.
+    /// Manager for LG Solana program interactions.
     /// Uses generated client from anchor IDL for type-safe operations.
     /// </summary>
-    public class ChainDepthManager : MonoBehaviour
+    public class LGManager : MonoBehaviour
     {
-        public static ChainDepthManager Instance { get; private set; }
+        public static LGManager Instance { get; private set; }
 
         [Header("Debug")]
         [SerializeField] private bool logDebugMessages = true;
@@ -65,8 +65,8 @@ namespace SeekerDungeon.Solana
             Instance = this;
             DontDestroyOnLoad(gameObject);
 
-            _programId = new PublicKey(ChainDepthConfig.PROGRAM_ID);
-            _globalPda = new PublicKey(ChainDepthConfig.GLOBAL_PDA);
+            _programId = new PublicKey(LGConfig.PROGRAM_ID);
+            _globalPda = new PublicKey(LGConfig.GLOBAL_PDA);
             
             // Initialize RPC client
             _rpcClient = ClientFactory.GetClient(rpcUrl);
@@ -74,7 +74,7 @@ namespace SeekerDungeon.Solana
             // Initialize generated client (no streaming for now)
             _client = new ChaindepthClient(_rpcClient, null, _programId);
             
-            Log($"ChainDepth Manager initialized. Program: {ChainDepthConfig.PROGRAM_ID}");
+            Log($"LG Manager initialized. Program: {LGConfig.PROGRAM_ID}");
         }
 
         /// <summary>
@@ -90,12 +90,12 @@ namespace SeekerDungeon.Solana
         private void Log(string message)
         {
             if (logDebugMessages)
-                Debug.Log($"[ChainDepth] {message}");
+                Debug.Log($"[LG] {message}");
         }
 
         private void LogError(string message)
         {
-            Debug.LogError($"[ChainDepth] {message}");
+            Debug.LogError($"[LG] {message}");
             OnError?.Invoke(message);
         }
 
@@ -109,7 +109,7 @@ namespace SeekerDungeon.Solana
             var success = PublicKey.TryFindProgramAddress(
                 new List<byte[]>
                 {
-                    Encoding.UTF8.GetBytes(ChainDepthConfig.PLAYER_SEED),
+                    Encoding.UTF8.GetBytes(LGConfig.PLAYER_SEED),
                     walletPubkey.KeyBytes
                 },
                 _programId,
@@ -131,7 +131,7 @@ namespace SeekerDungeon.Solana
             var success = PublicKey.TryFindProgramAddress(
                 new List<byte[]>
                 {
-                    Encoding.UTF8.GetBytes(ChainDepthConfig.ROOM_SEED),
+                    Encoding.UTF8.GetBytes(LGConfig.ROOM_SEED),
                     seasonBytes,
                     new[] { (byte)(sbyte)x },
                     new[] { (byte)(sbyte)y }
@@ -151,7 +151,7 @@ namespace SeekerDungeon.Solana
             var success = PublicKey.TryFindProgramAddress(
                 new List<byte[]>
                 {
-                    Encoding.UTF8.GetBytes(ChainDepthConfig.ESCROW_SEED),
+                    Encoding.UTF8.GetBytes(LGConfig.ESCROW_SEED),
                     roomPda.KeyBytes,
                     new[] { direction }
                 },
@@ -170,7 +170,7 @@ namespace SeekerDungeon.Solana
             var success = PublicKey.TryFindProgramAddress(
                 new List<byte[]>
                 {
-                    Encoding.UTF8.GetBytes(ChainDepthConfig.STAKE_SEED),
+                    Encoding.UTF8.GetBytes(LGConfig.STAKE_SEED),
                     roomPda.KeyBytes,
                     new[] { direction },
                     playerPubkey.KeyBytes
@@ -190,7 +190,7 @@ namespace SeekerDungeon.Solana
             var success = PublicKey.TryFindProgramAddress(
                 new List<byte[]>
                 {
-                    Encoding.UTF8.GetBytes(ChainDepthConfig.INVENTORY_SEED),
+                    Encoding.UTF8.GetBytes(LGConfig.INVENTORY_SEED),
                     playerPubkey.KeyBytes
                 },
                 _programId,
@@ -208,7 +208,7 @@ namespace SeekerDungeon.Solana
             var success = PublicKey.TryFindProgramAddress(
                 new List<byte[]>
                 {
-                    Encoding.UTF8.GetBytes(ChainDepthConfig.PROFILE_SEED),
+                    Encoding.UTF8.GetBytes(LGConfig.PROFILE_SEED),
                     playerPubkey.KeyBytes
                 },
                 _programId,
@@ -232,7 +232,7 @@ namespace SeekerDungeon.Solana
             var success = PublicKey.TryFindProgramAddress(
                 new List<byte[]>
                 {
-                    Encoding.UTF8.GetBytes(ChainDepthConfig.PRESENCE_SEED),
+                    Encoding.UTF8.GetBytes(LGConfig.PRESENCE_SEED),
                     seasonBytes,
                     new[] { (byte)(sbyte)roomX },
                     new[] { (byte)(sbyte)roomY },
@@ -253,7 +253,7 @@ namespace SeekerDungeon.Solana
             var success = PublicKey.TryFindProgramAddress(
                 new List<byte[]>
                 {
-                    Encoding.UTF8.GetBytes(ChainDepthConfig.BOSS_FIGHT_SEED),
+                    Encoding.UTF8.GetBytes(LGConfig.BOSS_FIGHT_SEED),
                     roomPda.KeyBytes,
                     playerPubkey.KeyBytes
                 },
@@ -403,7 +403,7 @@ namespace SeekerDungeon.Solana
             if (CurrentPlayerState == null)
             {
                 // Player not initialized, fetch starting room
-                return await FetchRoomState(ChainDepthConfig.START_X, ChainDepthConfig.START_Y);
+                return await FetchRoomState(LGConfig.START_X, LGConfig.START_Y);
             }
 
             return await FetchRoomState(CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY);
@@ -541,11 +541,11 @@ namespace SeekerDungeon.Solana
                     .Select(presence => new RoomOccupantView
                     {
                         Wallet = presence.Player,
-                        EquippedItemId = ChainDepthDomainMapper.ToItemId(presence.EquippedItemId),
+                        EquippedItemId = LGDomainMapper.ToItemId(presence.EquippedItemId),
                         SkinId = presence.SkinId,
-                        Activity = ChainDepthDomainMapper.ToOccupantActivity(presence.Activity),
+                        Activity = LGDomainMapper.ToOccupantActivity(presence.Activity),
                         ActivityDirection = presence.Activity == 1 && presence.ActivityDirection <= 3
-                            ? ChainDepthDomainMapper.ToDirection(presence.ActivityDirection)
+                            ? LGDomainMapper.ToDirection(presence.ActivityDirection)
                             : null,
                         IsFightingBoss = presence.Activity == 2
                     })
@@ -605,7 +605,7 @@ namespace SeekerDungeon.Solana
                 return null;
             }
 
-            if (direction > ChainDepthConfig.DIRECTION_WEST)
+            if (direction > LGConfig.DIRECTION_WEST)
             {
                 LogError($"Invalid direction: {direction}");
                 return null;
@@ -631,15 +631,15 @@ namespace SeekerDungeon.Solana
 
             var dir = direction;
             var wallState = room.Walls[dir];
-            if (wallState != ChainDepthConfig.WALL_RUBBLE)
+            if (wallState != LGConfig.WALL_RUBBLE)
             {
-                if (wallState == ChainDepthConfig.WALL_OPEN)
+                if (wallState == LGConfig.WALL_OPEN)
                 {
-                    Log($"Door {ChainDepthConfig.GetDirectionName(direction)} is already open.");
+                    Log($"Door {LGConfig.GetDirectionName(direction)} is already open.");
                 }
                 else
                 {
-                    Log($"Door {ChainDepthConfig.GetDirectionName(direction)} is solid and cannot be worked.");
+                    Log($"Door {LGConfig.GetDirectionName(direction)} is solid and cannot be worked.");
                 }
                 return null;
             }
@@ -704,19 +704,19 @@ namespace SeekerDungeon.Solana
                 return null;
             }
 
-            if (room.CenterType == ChainDepthConfig.CENTER_EMPTY)
+            if (room.CenterType == LGConfig.CENTER_EMPTY)
             {
                 Log("Center is empty. No center action available.");
                 return null;
             }
 
-            if (room.CenterType == ChainDepthConfig.CENTER_CHEST)
+            if (room.CenterType == LGConfig.CENTER_CHEST)
             {
                 Log("Center action: chest loot.");
                 return await LootChest();
             }
 
-            if (room.CenterType != ChainDepthConfig.CENTER_BOSS)
+            if (room.CenterType != LGConfig.CENTER_BOSS)
             {
                 LogError($"Unknown center type: {room.CenterType}");
                 return null;
@@ -791,8 +791,8 @@ namespace SeekerDungeon.Solana
                 var profilePda = DeriveProfilePda(Web3.Wallet.Account.PublicKey);
                 var roomPresencePda = DeriveRoomPresencePda(
                     CurrentGlobalState.SeasonSeed,
-                    ChainDepthConfig.START_X,
-                    ChainDepthConfig.START_Y,
+                    LGConfig.START_X,
+                    LGConfig.START_Y,
                     Web3.Wallet.Account.PublicKey
                 );
 
@@ -843,13 +843,13 @@ namespace SeekerDungeon.Solana
                 var playerPda = DerivePlayerPda(Web3.Wallet.Account.PublicKey);
                 var profilePda = DeriveProfilePda(Web3.Wallet.Account.PublicKey);
                 var currentRoomPda = DeriveRoomPda(CurrentGlobalState.SeasonSeed, 
-                    CurrentPlayerState?.CurrentRoomX ?? ChainDepthConfig.START_X,
-                    CurrentPlayerState?.CurrentRoomY ?? ChainDepthConfig.START_Y);
+                    CurrentPlayerState?.CurrentRoomX ?? LGConfig.START_X,
+                    CurrentPlayerState?.CurrentRoomY ?? LGConfig.START_Y);
                 var targetRoomPda = DeriveRoomPda(CurrentGlobalState.SeasonSeed, newX, newY);
                 var currentPresencePda = DeriveRoomPresencePda(
                     CurrentGlobalState.SeasonSeed,
-                    CurrentPlayerState?.CurrentRoomX ?? ChainDepthConfig.START_X,
-                    CurrentPlayerState?.CurrentRoomY ?? ChainDepthConfig.START_Y,
+                    CurrentPlayerState?.CurrentRoomX ?? LGConfig.START_X,
+                    CurrentPlayerState?.CurrentRoomY ?? LGConfig.START_Y,
                     Web3.Wallet.Account.PublicKey
                 );
                 var targetPresencePda = DeriveRoomPresencePda(
@@ -910,7 +910,7 @@ namespace SeekerDungeon.Solana
                 return null;
             }
 
-            Log($"Joining job in direction {ChainDepthConfig.GetDirectionName(direction)}...");
+            Log($"Joining job in direction {LGConfig.GetDirectionName(direction)}...");
 
             try
             {
@@ -984,7 +984,7 @@ namespace SeekerDungeon.Solana
                 return null;
             }
 
-            Log($"Completing job in direction {ChainDepthConfig.GetDirectionName(direction)}...");
+            Log($"Completing job in direction {LGConfig.GetDirectionName(direction)}...");
 
             try
             {
@@ -993,7 +993,7 @@ namespace SeekerDungeon.Solana
                     CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY);
                 
                 // Calculate adjacent room coordinates
-                var (adjX, adjY) = ChainDepthConfig.GetAdjacentCoords(
+                var (adjX, adjY) = LGConfig.GetAdjacentCoords(
                     CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY, direction);
                 var adjacentRoomPda = DeriveRoomPda(CurrentGlobalState.SeasonSeed, adjX, adjY);
                 var escrowPda = DeriveEscrowPda(roomPda, direction);
@@ -1050,7 +1050,7 @@ namespace SeekerDungeon.Solana
                 return null;
             }
 
-            Log($"Abandoning job in direction {ChainDepthConfig.GetDirectionName(direction)}...");
+            Log($"Abandoning job in direction {LGConfig.GetDirectionName(direction)}...");
 
             try
             {
@@ -1121,7 +1121,7 @@ namespace SeekerDungeon.Solana
                 return null;
             }
 
-            Log($"Claiming reward for direction {ChainDepthConfig.GetDirectionName(direction)}...");
+            Log($"Claiming reward for direction {LGConfig.GetDirectionName(direction)}...");
 
             try
             {
@@ -1604,7 +1604,7 @@ namespace SeekerDungeon.Solana
                 return null;
             }
 
-            Log($"Ticking job in direction {ChainDepthConfig.GetDirectionName(direction)}...");
+            Log($"Ticking job in direction {LGConfig.GetDirectionName(direction)}...");
 
             try
             {
@@ -1655,7 +1655,7 @@ namespace SeekerDungeon.Solana
                 return null;
             }
 
-            Log($"Boosting job in direction {ChainDepthConfig.GetDirectionName(direction)} with {boostAmount} tokens...");
+            Log($"Boosting job in direction {LGConfig.GetDirectionName(direction)} with {boostAmount} tokens...");
 
             try
             {
@@ -1773,3 +1773,4 @@ namespace SeekerDungeon.Solana
         #endregion
     }
 }
+

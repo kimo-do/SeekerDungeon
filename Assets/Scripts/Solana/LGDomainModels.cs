@@ -140,7 +140,7 @@ namespace SeekerDungeon.Solana
         public bool IsFightingBoss { get; init; }
     }
 
-    public static class ChainDepthDomainMapper
+    public static class LGDomainMapper
     {
         public static RoomView ToRoomView(this RoomAccount room)
         {
@@ -293,3 +293,4 @@ namespace SeekerDungeon.Solana
         }
     }
 }
+

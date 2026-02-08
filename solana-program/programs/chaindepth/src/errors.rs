@@ -89,6 +89,24 @@ pub enum ChainDepthError {
     #[msg("Display name is too long")]
     DisplayNameTooLong,
 
+    #[msg("Invalid session expiry values")]
+    InvalidSessionExpiry,
+
+    #[msg("Session instruction allowlist cannot be empty")]
+    InvalidSessionAllowlist,
+
+    #[msg("Session has expired")]
+    SessionExpired,
+
+    #[msg("Session is inactive")]
+    SessionInactive,
+
+    #[msg("Instruction is not allowed by session policy")]
+    SessionInstructionNotAllowed,
+
+    #[msg("Session spend cap exceeded")]
+    SessionSpendCapExceeded,
+
     // Season errors
     #[msg("Season has not ended yet")]
     SeasonNotEnded,

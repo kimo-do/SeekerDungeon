@@ -5,7 +5,7 @@ $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $IdlPath = Join-Path $ProjectRoot "solana-program\target\idl\chaindepth.json"
-$OutputPath = Join-Path $ProjectRoot "Assets\Scripts\Solana\Generated\ChainDepthClient.cs"
+$OutputPath = Join-Path $ProjectRoot "Assets\Scripts\Solana\Generated\LGClient.cs"
 
 Write-Host "=== Generate Unity C# Client ===" -ForegroundColor Cyan
 Write-Host "IDL: $IdlPath"
@@ -34,3 +34,4 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "Error: Code generation failed" -ForegroundColor Red
     exit 1
 }
+

@@ -236,7 +236,7 @@ GameObject:
   - component: {fileID: 539678911}
   - component: {fileID: 539678913}
   m_Layer: 5
-  m_Name: ChainDepthTestUI
+  m_Name: LGTestUI
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -291,7 +291,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c7dc671bf8fa1f547bd3a090f12b6001, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Solana.ChainDepthTestUI
+  m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Solana.LGTestUI
 --- !u!1 &619394800
 GameObject:
   m_ObjectHideFlags: 0
@@ -513,7 +513,7 @@ GameObject:
   - component: {fileID: 1053050575}
   - component: {fileID: 1053050574}
   m_Layer: 0
-  m_Name: ChainDepthManager
+  m_Name: LGManager
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -530,7 +530,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 3d26d5e1bb5ef5342a48161d114515ea, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Solana.ChainDepthManager
+  m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Solana.LGManager
   logDebugMessages: 1
   rpcUrl: https://api.devnet.solana.com
 --- !u!4 &1053050575

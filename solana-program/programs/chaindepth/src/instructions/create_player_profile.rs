@@ -1,14 +1,19 @@
 use anchor_lang::prelude::*;
 
 use crate::errors::ChainDepthError;
+use crate::instructions::session_auth::authorize_player_action;
 use crate::state::{
-    item_ids, GlobalAccount, InventoryAccount, PlayerAccount, PlayerProfile, RoomPresence,
+    item_ids, session_instruction_bits, GlobalAccount, InventoryAccount, PlayerAccount,
+    PlayerProfile, RoomPresence, SessionAuthority,
 };
 
 #[derive(Accounts)]
 pub struct CreatePlayerProfile<'info> {
     #[account(mut)]
-    pub player: Signer<'info>,
+    pub authority: Signer<'info>,
+
+    /// CHECK: wallet owner whose gameplay state is being modified
+    pub player: UncheckedAccount<'info>,
 
     #[account(
         seeds = [GlobalAccount::SEED_PREFIX],
@@ -26,7 +31,7 @@ pub struct CreatePlayerProfile<'info> {
 
     #[account(
         init_if_needed,
-        payer = player,
+        payer = authority,
         space = PlayerProfile::DISCRIMINATOR.len() + PlayerProfile::INIT_SPACE,
         seeds = [PlayerProfile::SEED_PREFIX, player.key().as_ref()],
         bump
@@ -35,7 +40,7 @@ pub struct CreatePlayerProfile<'info> {
 
     #[account(
         init_if_needed,
-        payer = player,
+        payer = authority,
         space = InventoryAccount::DISCRIMINATOR.len() + InventoryAccount::INIT_SPACE,
         seeds = [InventoryAccount::SEED_PREFIX, player.key().as_ref()],
         bump
@@ -55,10 +60,29 @@ pub struct CreatePlayerProfile<'info> {
     )]
     pub room_presence: Account<'info, RoomPresence>,
 
+    #[account(
+        mut,
+        seeds = [
+            SessionAuthority::SEED_PREFIX,
+            player.key().as_ref(),
+            authority.key().as_ref()
+        ],
+        bump = session_authority.bump
+    )]
+    pub session_authority: Option<Account<'info, SessionAuthority>>,
+
     pub system_program: Program<'info, System>,
 }
 
 pub fn handler(ctx: Context<CreatePlayerProfile>, skin_id: u16, display_name: String) -> Result<()> {
+    authorize_player_action(
+        &ctx.accounts.authority,
+        &ctx.accounts.player,
+        ctx.accounts.session_authority.as_mut(),
+        session_instruction_bits::CREATE_PLAYER_PROFILE,
+        0,
+    )?;
+
     require!(display_name.len() <= 24, ChainDepthError::DisplayNameTooLong);
 
     let player_key = ctx.accounts.player.key();

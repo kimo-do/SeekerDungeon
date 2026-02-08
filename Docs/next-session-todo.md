@@ -15,17 +15,31 @@ Why:
 - For mobile gameplay this kills UX (too many confirmations).
 
 Implement:
-- Add a `SessionAuthority` PDA tying:
+- [x] Add a `SessionAuthority` PDA tying:
   - player wallet
   - session pubkey
   - expiry slot/timestamp
   - instruction allowlist
   - max token spend cap / scope
-- Add `begin_session` instruction (wallet signs once).
-- Update gameplay instructions to accept either:
+- [x] Add `begin_session` instruction (wallet signs once).
+- [ ] Update gameplay instructions to accept either:
   - wallet signer
   - valid session signer with policy checks.
-- Add `end_session` / revoke support.
+- [x] Add `end_session` / revoke support.
+  - done in this pass:
+    - `boost_job` (session allowlist + spend cap tracked on `SessionAuthority`)
+    - `abandon_job`
+    - `claim_job_reward`
+    - `equip_item`
+    - `set_player_skin`
+    - `remove_inventory_item`
+    - `move_player`
+    - `complete_job`
+    - `create_player_profile`
+    - `join_boss_fight`
+    - `loot_chest`
+    - `loot_boss`
+    - `join_job_with_session` (dedicated session-only path to avoid BPF account-validation stack overflow on `join_job`)
 
 ## 2) Real-time Room Occupant Sync via Presence Subscriptions (High Priority)
 

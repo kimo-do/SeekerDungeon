@@ -3,9 +3,9 @@ using UnityEngine;
 namespace SeekerDungeon.Solana
 {
     /// <summary>
-    /// Configuration constants for ChainDepth Solana program
+    /// Configuration constants for LG Solana program
     /// </summary>
-    public static class ChainDepthConfig
+    public static class LGConfig
     {
         // Program addresses (from devnet-config.json)
         public const string PROGRAM_ID = "3Ctc2FgnNHQtGAcZftMS4ykLhJYjLzBD3hELKy55DnKo";

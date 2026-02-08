@@ -11,6 +11,7 @@
     "check-state": "npx tsx scripts/check-state.ts",
     "mint-tokens": "npx tsx scripts/mint-test-tokens.ts",
     "smoke-door": "npx tsx scripts/smoke-door-devnet.ts",
+    "smoke-session-join-job": "npx tsx scripts/smoke-session-join-job-devnet.ts",
     "watch-logs": "npx tsx scripts/watch-logs.ts"
   },
   "dependencies": {
