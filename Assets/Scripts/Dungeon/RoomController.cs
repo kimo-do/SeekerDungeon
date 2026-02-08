@@ -20,6 +20,8 @@ namespace SeekerDungeon.Dungeon
     public sealed class RoomController : MonoBehaviour
     {
         [SerializeField] private List<DoorLayerBinding> doorLayers = new();
+        [Header("Occupant Visuals")]
+        [SerializeField] private Transform occupantVisualSpawnRoot;
         [Header("Center Visuals")]
         [SerializeField] private GameObject centerEmptyVisualRoot;
         [SerializeField] private GameObject centerChestVisualRoot;
@@ -33,6 +35,7 @@ namespace SeekerDungeon.Dungeon
 
         private void Awake()
         {
+            EnsureOccupantVisualSpawnRoot();
             BuildDoorLayerIndex();
         }
 
@@ -156,7 +159,27 @@ namespace SeekerDungeon.Dungeon
 
                 _doorLayerByDirection[binding.Direction] = binding.OccupantLayer;
                 _doorVisualByDirection[binding.Direction] = binding.VisualController;
+
+                if (binding.OccupantLayer != null)
+                {
+                    binding.OccupantLayer.SetVisualSpawnRoot(occupantVisualSpawnRoot);
+                }
             }
+        }
+
+        private void EnsureOccupantVisualSpawnRoot()
+        {
+            if (occupantVisualSpawnRoot != null)
+            {
+                return;
+            }
+
+            var rootObject = new GameObject("RoomOccupantVisuals");
+            rootObject.transform.SetParent(null, false);
+            rootObject.transform.position = Vector3.zero;
+            rootObject.transform.rotation = Quaternion.identity;
+            rootObject.transform.localScale = Vector3.one;
+            occupantVisualSpawnRoot = rootObject.transform;
         }
     }
 }

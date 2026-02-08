@@ -14,10 +14,15 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private Camera worldCamera;
         [SerializeField] private LayerMask interactableMask = ~0;
         [SerializeField] private float interactCooldownSeconds = 0.15f;
+        [SerializeField] private float maxTapMovementPixels = 18f;
 
         private LGManager _lgManager;
         private float _nextInteractTime;
         private bool _isProcessingInteract;
+        private bool _pointerPressed;
+        private int _pressedPointerId = -1;
+        private Vector2 _pressedScreenPosition;
+        private bool _pressedOverUi;
 
         private void Awake()
         {
@@ -40,17 +45,44 @@ namespace SeekerDungeon.Dungeon
                 return;
             }
 
-            if (!TryGetPointerDownPosition(out var pointerPosition, out var pointerId))
+            if (TryGetPointerDownPosition(out var downPosition, out var downPointerId))
+            {
+                _pointerPressed = true;
+                _pressedPointerId = downPointerId;
+                _pressedScreenPosition = downPosition;
+                _pressedOverUi = EventSystem.current != null && EventSystem.current.IsPointerOverGameObject(downPointerId);
+                return;
+            }
+
+            if (!_pointerPressed)
             {
                 return;
             }
 
-            if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject(pointerId))
+            if (!TryGetPointerUpPosition(out var upPosition, out var upPointerId))
             {
                 return;
             }
 
-            TryHandleInteract(pointerPosition).Forget();
+            if (upPointerId != _pressedPointerId)
+            {
+                return;
+            }
+
+            var movedDistance = Vector2.Distance(_pressedScreenPosition, upPosition);
+            var releasedOverUi = EventSystem.current != null && EventSystem.current.IsPointerOverGameObject(upPointerId);
+            var shouldInteract = !_pressedOverUi && !releasedOverUi && movedDistance <= maxTapMovementPixels;
+
+            _pointerPressed = false;
+            _pressedPointerId = -1;
+            _pressedOverUi = false;
+
+            if (!shouldInteract)
+            {
+                return;
+            }
+
+            TryHandleInteract(upPosition).Forget();
         }
 
         private async UniTaskVoid TryHandleInteract(Vector2 screenPosition)
@@ -136,6 +168,52 @@ namespace SeekerDungeon.Dungeon
             }
 
             if (Input.GetMouseButtonDown(0))
+            {
+                position = Input.mousePosition;
+                pointerId = -1;
+                return true;
+            }
+#endif
+
+            return false;
+        }
+
+        private static bool TryGetPointerUpPosition(out Vector2 position, out int pointerId)
+        {
+            position = default;
+            pointerId = -1;
+
+#if ENABLE_INPUT_SYSTEM
+            if (Touchscreen.current != null)
+            {
+                var primaryTouch = Touchscreen.current.primaryTouch;
+                if (primaryTouch.press.wasReleasedThisFrame)
+                {
+                    position = primaryTouch.position.ReadValue();
+                    pointerId = primaryTouch.touchId.ReadValue();
+                    return true;
+                }
+            }
+
+            if (Mouse.current != null && Mouse.current.leftButton.wasReleasedThisFrame)
+            {
+                position = Mouse.current.position.ReadValue();
+                pointerId = -1;
+                return true;
+            }
+#else
+            if (Input.touchCount > 0)
+            {
+                var touch = Input.GetTouch(0);
+                if (touch.phase == TouchPhase.Ended || touch.phase == TouchPhase.Canceled)
+                {
+                    position = touch.position;
+                    pointerId = touch.fingerId;
+                    return true;
+                }
+            }
+
+            if (Input.GetMouseButtonUp(0))
             {
                 position = Input.mousePosition;
                 pointerId = -1;

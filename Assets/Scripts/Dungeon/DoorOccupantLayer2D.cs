@@ -24,9 +24,15 @@ namespace SeekerDungeon.Dungeon
     {
         [SerializeField] private DoorOccupantSlot[] visualSlots;
         [SerializeField] private GameObject occupantVisualPrefab;
+        [SerializeField] private Transform visualSpawnRoot;
         private const int MaxVisibleOccupants = 5;
 
         private readonly List<GameObject> _spawnedVisuals = new();
+
+        public void SetVisualSpawnRoot(Transform spawnRoot)
+        {
+            visualSpawnRoot = spawnRoot;
+        }
 
         public void SetOccupants(IReadOnlyList<DungeonOccupantVisual> occupants)
         {
@@ -46,7 +52,11 @@ namespace SeekerDungeon.Dungeon
                     continue;
                 }
 
-                var visualObject = Instantiate(occupantVisualPrefab, slot.Anchor.position, slot.Anchor.rotation, transform);
+                var visualObject = Instantiate(
+                    occupantVisualPrefab,
+                    slot.Anchor.position,
+                    slot.Anchor.rotation,
+                    visualSpawnRoot);
                 visualObject.name = $"DoorOccupant_{occupants[index].DisplayName}_{index}";
 
                 var visual = visualObject.GetComponent<DoorOccupantVisual2D>();
