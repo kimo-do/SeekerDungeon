@@ -1,0 +1,12 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
+    <Style src="project://database/Assets/Scripts/Solana/UI/LGLoadingUI.uss?fileID=7433441132597879392&amp;guid=5479d9dcf1fa4cc419f7fbd83ff5bb2e&amp;type=3#LGLoadingUI"/>
+    <ui:VisualElement name="loading-root" class="loading-root">
+        <ui:VisualElement name="connect-panel" class="connect-panel" style="opacity: 1; background-color: rgba(34, 33, 30, 0); width: 777px; max-width: 1089px;">
+            <ui:VisualElement class="connect-button-stack" style="min-width: 612px; height: 124px;">
+                <ui:VisualElement class="connect-button-shadow"/>
+                <ui:Button name="btn-connect-wallet" text="Connect Wallet" class="connect-button" style="font-size: 39px;"/>
+            </ui:VisualElement>
+            <ui:Label name="connect-status" text="Connect your wallet to continue" class="connect-status" style="font-size: 35px;"/>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

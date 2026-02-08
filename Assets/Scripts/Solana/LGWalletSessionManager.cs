@@ -50,6 +50,8 @@ namespace SeekerDungeon.Solana
     /// </summary>
     public sealed class LGWalletSessionManager : MonoBehaviour
     {
+        private const string WalletConnectIntentPrefKey = "LG_WALLET_CONNECT_INTENT_V1";
+
         public static LGWalletSessionManager Instance { get; private set; }
 
         [Header("Network")]
@@ -58,6 +60,7 @@ namespace SeekerDungeon.Solana
 
         [Header("Startup Login")]
         [SerializeField] private bool connectOnStart = true;
+        [SerializeField] private bool allowAutoConnectOnDeviceBuilds = false;
         [SerializeField] private WalletLoginMode startupLoginMode = WalletLoginMode.Auto;
         [SerializeField] private bool autoUseEditorDevWallet = true;
         [SerializeField] private string editorDevWalletPassword = "seeker-dev-wallet";
@@ -97,6 +100,7 @@ namespace SeekerDungeon.Solana
         public bool IsWalletConnected => Web3.Wallet?.Account != null;
         public PublicKey ConnectedWalletPublicKey => Web3.Wallet?.Account?.PublicKey;
         public WalletLoginMode ActiveWalletMode { get; private set; } = WalletLoginMode.Auto;
+        public bool HasWalletConnectIntent => PlayerPrefs.GetInt(WalletConnectIntentPrefKey, 0) == 1;
 
         public bool HasActiveOnchainSession => _hasActiveOnchainSession && _sessionSignerAccount != null;
         public PublicKey ActiveSessionSignerPublicKey => _sessionSignerAccount?.PublicKey;
@@ -143,6 +147,12 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
+            if (!Application.isEditor && Application.isMobilePlatform && !allowAutoConnectOnDeviceBuilds)
+            {
+                EmitStatus("Auto-connect disabled on device builds. Waiting for user action.");
+                return;
+            }
+
             ConnectAsync(startupLoginMode).Forget();
         }
 
@@ -178,6 +188,10 @@ namespace SeekerDungeon.Solana
                 }
 
                 ActiveWalletMode = resolvedMode;
+                if (resolvedMode == WalletLoginMode.WalletAdapter)
+                {
+                    MarkWalletConnectIntent();
+                }
                 EmitStatus($"Wallet connected ({resolvedMode}): {ConnectedWalletPublicKey}");
 
                 if (autoBeginSessionAfterConnect)
@@ -204,6 +218,12 @@ namespace SeekerDungeon.Solana
             ClearSessionState();
             ActiveWalletMode = WalletLoginMode.Auto;
             EmitStatus("Wallet disconnected.");
+        }
+
+        public void MarkWalletConnectIntent()
+        {
+            PlayerPrefs.SetInt(WalletConnectIntentPrefKey, 1);
+            PlayerPrefs.Save();
         }
 
         public async UniTask<bool> BeginGameplaySessionAsync(

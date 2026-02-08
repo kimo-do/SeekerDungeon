@@ -1,5 +1,5 @@
 ---
-name: solana-anchor-research-agent-skill
+name: solana-anchor-skill
 description: Research-driven agent skill for building modern Solana programs with Anchor using up-to-date best practices, verified via live internet sources.
 ---
 

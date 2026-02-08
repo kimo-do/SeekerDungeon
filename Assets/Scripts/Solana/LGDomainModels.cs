@@ -39,6 +39,31 @@ namespace SeekerDungeon.Solana
         Buff = 3
     }
 
+    public enum PlayerSkinId : ushort
+    {
+        CheekyGoblin = 0,
+        ScrappyDwarfCharacter = 1,
+        DrunkDwarfCharacter = 2,
+        FatDwarfCharacter = 3,
+        FriendlyGoblin = 4,
+        GingerBearDwarfVariant = 5,
+        HappyDrunkDwarf = 6,
+        IdleGoblin = 7,
+        IdleHumanCharacter = 8,
+        JollyDwarfCharacter = 9,
+        JollyDwarfVariant = 10,
+        OldDwarfCharacter = 11,
+        ScrappyDwarfGingerBeard = 12,
+        ScrappyDwarfVariant = 13,
+        ScrappyHumanAssassin = 14,
+        ScrappySkeleton = 15,
+        SinisterHoodedFigure = 16,
+
+        // Backward-compatible aliases for existing code/data.
+        Goblin = CheekyGoblin,
+        Dwarf = ScrappyDwarfCharacter
+    }
+
     public enum OccupantActivity
     {
         Idle = 0,

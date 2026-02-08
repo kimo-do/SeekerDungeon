@@ -18,6 +18,7 @@
 - [Core Game Loop](#core-game-loop)
 - [Built for Seeker + SKR](#built-for-seeker--skr)
 - [Tech Stack](#tech-stack)
+- [Art Asset Pipeline](#art-asset-pipeline)
 - [Architecture](#architecture)
 - [Repository Structure](#repository-structure)
 - [Current Status](#current-status)
@@ -80,6 +81,11 @@ The intent is utility, not passive token gating: SKR is used to coordinate coope
 | Client/testing scripts | TypeScript (`tsx`, Anchor TS) |
 | Token model | SPL token flows for SKR staking/rewards |
 | Environment | Devnet-first iteration |
+
+## Art Asset Pipeline
+- Gameplay art starts in `spritecook.ai`, my self-built AI sprite generator (concept sprites, variations, and style exploration).
+- I then curate and import selected outputs into Unity under `Assets/` for in-game use.
+- Final integration (slicing, pivots, animation setup, and UI placement) is done in the Unity project.
 
 ## Architecture
 ```text

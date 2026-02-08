@@ -1,4 +1,5 @@
 using Cysharp.Threading.Tasks;
+using SeekerDungeon;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -19,6 +20,7 @@ namespace SeekerDungeon.Solana
         [Header("Scene Flow")]
         [SerializeField] private string connectedSceneName = "MenuScene";
         [SerializeField] private bool autoConnectOnStart = true;
+        [SerializeField] private bool allowAutoConnectOnDeviceBuilds = false;
         [SerializeField] private WalletLoginMode autoConnectMode = WalletLoginMode.Auto;
 
         [Header("Debug")]
@@ -66,6 +68,7 @@ namespace SeekerDungeon.Solana
         /// </summary>
         public void OnConnectSeekerClicked()
         {
+            walletSessionManager?.MarkWalletConnectIntent();
             ConnectSeekerAsync().Forget();
         }
 
@@ -94,6 +97,19 @@ namespace SeekerDungeon.Solana
             if (!autoConnectOnStart)
             {
                 return;
+            }
+
+            if (!Application.isEditor && Application.isMobilePlatform && !allowAutoConnectOnDeviceBuilds)
+            {
+                if (walletSessionManager.HasWalletConnectIntent)
+                {
+                    Log("Auto-connect allowed from prior user connect intent.");
+                }
+                else
+                {
+                    Log("Auto-connect disabled on device builds. Waiting for button press.");
+                    return;
+                }
             }
 
             await ConnectAsync(autoConnectMode);
@@ -156,7 +172,19 @@ namespace SeekerDungeon.Solana
 
             _isSceneLoading = true;
             Log($"Wallet connected. Loading scene '{connectedSceneName}'.");
-            SceneManager.LoadScene(connectedSceneName, LoadSceneMode.Single);
+            LoadConnectedSceneWithFadeAsync().Forget();
+        }
+
+        private async UniTaskVoid LoadConnectedSceneWithFadeAsync()
+        {
+            try
+            {
+                await SceneLoadController.GetOrCreate().LoadSceneAsync(connectedSceneName, LoadSceneMode.Single);
+            }
+            finally
+            {
+                _isSceneLoading = false;
+            }
         }
 
         private void Log(string message)

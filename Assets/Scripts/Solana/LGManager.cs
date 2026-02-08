@@ -52,6 +52,7 @@ namespace SeekerDungeon.Solana
         private PublicKey _programId;
         private PublicKey _globalPda;
         private IRpcClient _rpcClient;
+        private IStreamingRpcClient _streamingRpcClient;
         private ChaindepthClient _client;
         private readonly HashSet<string> _roomPresenceSubscriptionKeys = new();
 
@@ -70,9 +71,23 @@ namespace SeekerDungeon.Solana
             
             // Initialize RPC client
             _rpcClient = ClientFactory.GetClient(rpcUrl);
-            
-            // Initialize generated client (no streaming for now)
-            _client = new ChaindepthClient(_rpcClient, null, _programId);
+
+            // Initialize streaming RPC client for account subscriptions.
+            // If this fails, we still run with polling-only behavior.
+            try
+            {
+                var websocketUrl = rpcUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                    ? rpcUrl.Replace("https://", "wss://")
+                    : rpcUrl.Replace("http://", "ws://");
+                _streamingRpcClient = ClientFactory.GetStreamingClient(websocketUrl);
+            }
+            catch (Exception streamingInitError)
+            {
+                _streamingRpcClient = null;
+                Log($"Streaming RPC unavailable. Falling back to polling-only mode. Reason: {streamingInitError.Message}");
+            }
+
+            _client = new ChaindepthClient(_rpcClient, _streamingRpcClient, _programId);
             
             Log($"LG Manager initialized. Program: {LGConfig.PROGRAM_ID}");
         }
@@ -97,6 +112,31 @@ namespace SeekerDungeon.Solana
         {
             Debug.LogError($"[LG] {message}");
             OnError?.Invoke(message);
+        }
+
+        private async UniTask<bool> AccountHasData(PublicKey accountPda)
+        {
+            var rpc = GetRpcClient();
+            if (rpc == null || accountPda == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                var accountInfo = await rpc.GetAccountInfoAsync(accountPda, Commitment.Confirmed);
+                if (!accountInfo.WasSuccessful || accountInfo.Result?.Value == null)
+                {
+                    return false;
+                }
+
+                var data = accountInfo.Result.Value.Data;
+                return data != null && data.Count > 0 && !string.IsNullOrEmpty(data[0]);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         #region PDA Derivation
@@ -320,6 +360,14 @@ namespace SeekerDungeon.Solana
                     return null;
                 }
 
+                if (!await AccountHasData(playerPda))
+                {
+                    Log("Player account not found (not initialized yet)");
+                    CurrentPlayerState = null;
+                    OnPlayerStateUpdated?.Invoke(null);
+                    return null;
+                }
+
                 var result = await _client.GetPlayerAccountAsync(playerPda.Key, Commitment.Confirmed);
                 
                 if (!result.WasSuccessful || result.ParsedResult == null)
@@ -366,6 +414,12 @@ namespace SeekerDungeon.Solana
                 if (roomPda == null)
                 {
                     LogError("Failed to derive room PDA");
+                    return null;
+                }
+
+                if (!await AccountHasData(roomPda))
+                {
+                    Log($"Room at ({x}, {y}) not initialized");
                     return null;
                 }
 
@@ -455,6 +509,13 @@ namespace SeekerDungeon.Solana
             try
             {
                 var profilePda = DeriveProfilePda(Web3.Wallet.Account.PublicKey);
+                if (!await AccountHasData(profilePda))
+                {
+                    CurrentProfileState = null;
+                    OnProfileStateUpdated?.Invoke(null);
+                    return null;
+                }
+
                 var result = await _client.GetPlayerProfileAsync(profilePda.Key, Commitment.Confirmed);
                 if (!result.WasSuccessful || result.ParsedResult == null)
                 {
@@ -566,6 +627,12 @@ namespace SeekerDungeon.Solana
         /// </summary>
         public async UniTask StartRoomOccupantSubscriptions(int roomX, int roomY)
         {
+            if (_streamingRpcClient == null)
+            {
+                Log("Streaming RPC not configured; skipping room occupant subscriptions.");
+                return;
+            }
+
             var occupants = await FetchRoomOccupants(roomX, roomY);
             foreach (var occupant in occupants)
             {
@@ -585,11 +652,18 @@ namespace SeekerDungeon.Solana
                     continue;
                 }
 
-                await _client.SubscribeRoomPresenceAsync(
-                    presencePda.Key,
-                    (_, _, _) => { FetchRoomOccupants(roomX, roomY).Forget(); },
-                    Commitment.Confirmed
-                );
+                try
+                {
+                    await _client.SubscribeRoomPresenceAsync(
+                        presencePda.Key,
+                        (_, _, _) => { FetchRoomOccupants(roomX, roomY).Forget(); },
+                        Commitment.Confirmed
+                    );
+                }
+                catch (Exception subscriptionError)
+                {
+                    LogError($"Room presence subscribe failed for {presencePda.Key}: {subscriptionError.Message}");
+                }
             }
         }
 

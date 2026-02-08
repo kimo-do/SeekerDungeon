@@ -65,6 +65,7 @@ namespace SeekerDungeon.Solana
 
         private void Awake()
         {
+            LGUiInputSystemGuard.EnsureEventSystemForRuntimeUi();
             _document = GetComponent<UIDocument>();
         }
 

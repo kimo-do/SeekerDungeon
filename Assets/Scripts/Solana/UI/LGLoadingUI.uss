@@ -1,0 +1,104 @@
+.loading-root {
+    flex-grow: 1;
+    justify-content: center;
+    align-items: center;
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.connect-panel {
+    width: 90%;
+    max-width: 620px;
+    min-width: 280px;
+    min-height: 260px;
+    justify-content: center;
+    align-items: center;
+    padding: 30px;
+    background-color: rgba(0, 0, 0, 0.68);
+    border-top-left-radius: 14px;
+    border-top-right-radius: 14px;
+    border-bottom-left-radius: 14px;
+    border-bottom-right-radius: 14px;
+    border-width: 2px;
+    border-top-color: rgba(126, 138, 157, 0.85);
+    border-left-color: rgba(108, 120, 140, 0.85);
+    border-right-color: rgba(35, 44, 58, 0.9);
+    border-bottom-color: rgba(26, 33, 45, 0.9);
+}
+
+.connect-button-stack {
+    width: 78%;
+    max-width: 420px;
+    min-width: 240px;
+    height: 106px;
+    position: relative;
+}
+
+.connect-button-shadow {
+    position: absolute;
+    left: 10px;
+    top: 12px;
+    right: 0;
+    bottom: 0;
+    background-color: rgb(0, 0, 0);
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
+}
+
+.connect-button {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 10px;
+    bottom: 12px;
+    font-size: 30px;
+    -unity-font-style: bold;
+    color: rgb(248, 252, 255);
+    background-color: rgb(40, 138, 255);
+    border-width: 3px;
+    border-top-color: rgb(180, 223, 255);
+    border-left-color: rgb(142, 205, 255);
+    border-right-color: rgb(15, 72, 154);
+    border-bottom-color: rgb(10, 56, 123);
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
+    margin-top: 0;
+    margin-bottom: 0;
+    transition-property: background-color, margin-top, margin-bottom;
+    transition-duration: 0.06s;
+}
+
+.connect-button:hover {
+    background-color: rgb(74, 160, 255);
+}
+
+.connect-button:active {
+    background-color: rgb(22, 110, 221);
+    margin-top: 6px;
+    margin-bottom: -6px;
+    margin-left: 6px;
+    margin-right: -6px;
+    border-top-color: rgb(58, 129, 220);
+    border-left-color: rgb(46, 116, 206);
+    border-right-color: rgb(149, 213, 255);
+    border-bottom-color: rgb(192, 232, 255);
+}
+
+.connect-button:disabled {
+    background-color: rgb(67, 81, 98);
+    color: rgb(157, 172, 189);
+    border-top-color: rgb(104, 114, 129);
+    border-left-color: rgb(95, 104, 118);
+    border-right-color: rgb(48, 56, 68);
+    border-bottom-color: rgb(42, 50, 60);
+}
+
+.connect-status {
+    margin-top: 18px;
+    font-size: 26px;
+    color: rgb(223, 232, 245);
+    -unity-text-align: middle-center;
+}

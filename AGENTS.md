@@ -33,6 +33,10 @@ Project defaults for this repo.
   3. Update domain wrappers/mappers in `Assets/Scripts/Solana/LGDomainModels.cs` when needed.
 - Keep game-facing code using DomainModels/wrappers instead of raw generated account structs where practical.
 
+## Unity Naming
+- Do not add `LG` prefix to every new script by default.
+- Use clear feature-based names (e.g. `PlayerController`, `MainMenuCharacterUI`) unless a prefix is required for legacy integration or generated-client consistency.
+
 ## Safety
 - Never print or commit private key contents.
 - Do not edit wallet JSON files unless explicitly asked.
