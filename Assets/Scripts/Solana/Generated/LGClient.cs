@@ -1159,6 +1159,17 @@ namespace Chaindepth
             public PublicKey TokenProgram { get; set; } = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
         }
 
+        public class EnsureStartRoomAccounts
+        {
+            public PublicKey Authority { get; set; }
+
+            public PublicKey Global { get; set; }
+
+            public PublicKey StartRoom { get; set; }
+
+            public PublicKey SystemProgram { get; set; } = new PublicKey("11111111111111111111111111111111");
+        }
+
         public class EquipItemAccounts
         {
             public PublicKey Authority { get; set; }
@@ -1553,6 +1564,20 @@ namespace Chaindepth
                 return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
             }
 
+            public static Solana.Unity.Rpc.Models.TransactionInstruction EnsureStartRoom(EnsureStartRoomAccounts accounts, PublicKey programId = null)
+            {
+                programId ??= new(ID);
+                List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
+                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Authority, true), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Global, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.StartRoom, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
+                byte[] _data = new byte[1200];
+                int offset = 0;
+                _data.WriteU64(3961151750032972163UL, offset);
+                offset += 8;
+                byte[] resultData = new byte[offset];
+                Array.Copy(_data, resultData, offset);
+                return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
+            }
+
             public static Solana.Unity.Rpc.Models.TransactionInstruction EquipItem(EquipItemAccounts accounts, ushort item_id, PublicKey programId = null)
             {
                 programId ??= new(ID);
@@ -1693,7 +1718,7 @@ namespace Chaindepth
             {
                 programId ??= new(ID);
                 List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
-                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Authority, true), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Player, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Global, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.PlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Profile, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.CurrentRoom, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.TargetRoom, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.CurrentPresence, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.TargetPresence, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.SessionAuthority == null ? programId : accounts.SessionAuthority, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
+                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Authority, true), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Player, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Global, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.PlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Profile, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.CurrentRoom, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.TargetRoom, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.CurrentPresence, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.TargetPresence, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.SessionAuthority == null ? programId : accounts.SessionAuthority, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
                 byte[] _data = new byte[1200];
                 int offset = 0;
                 _data.WriteU64(16684840164937447953UL, offset);

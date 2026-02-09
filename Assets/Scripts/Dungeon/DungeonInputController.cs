@@ -135,18 +135,20 @@ namespace SeekerDungeon.Dungeon
                     var wasDoorOpenBeforeInteraction = IsDoorOpenInCurrentState(door.Direction);
                     var hadRoomBefore = TryGetCurrentRoomCoordinates(out var previousRoomX, out var previousRoomY);
                     var signature = await _lgManager.InteractWithDoor((byte)door.Direction);
-                    if (!string.IsNullOrWhiteSpace(signature))
+                    await _lgManager.FetchPlayerState();
+                    var hasHelperStakeAfterInteraction = await _lgManager.HasHelperStakeInCurrentRoom((byte)door.Direction);
+                    var playerMovedRooms = hadRoomBefore &&
+                                           TryGetCurrentRoomCoordinates(out var currentRoomX, out var currentRoomY) &&
+                                           (currentRoomX != previousRoomX || currentRoomY != previousRoomY);
+                    var openDoorMoveAttempted = wasDoorOpenBeforeInteraction && !string.IsNullOrWhiteSpace(signature);
+                    var shouldTransitionRoom = (playerMovedRooms || openDoorMoveAttempted) && dungeonManager != null;
+                    if (shouldTransitionRoom)
                     {
-                        var playerMovedRooms = hadRoomBefore &&
-                                               TryGetCurrentRoomCoordinates(out var currentRoomX, out var currentRoomY) &&
-                                               (currentRoomX != previousRoomX || currentRoomY != previousRoomY);
-                        var fallbackRoomMove = !hadRoomBefore && wasDoorOpenBeforeInteraction;
-
-                        if ((playerMovedRooms || fallbackRoomMove) && dungeonManager != null)
-                        {
-                            await dungeonManager.TransitionToCurrentPlayerRoomAsync();
-                        }
-                        else if (localPlayerJobMover != null)
+                        await dungeonManager.TransitionToCurrentPlayerRoomAsync();
+                    }
+                    else if (!string.IsNullOrWhiteSpace(signature) || hasHelperStakeAfterInteraction)
+                    {
+                        if (localPlayerJobMover != null)
                         {
                             if (roomController != null &&
                                 roomController.TryGetDoorStandPosition(door.Direction, out var standPosition))

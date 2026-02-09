@@ -177,6 +177,19 @@ impl RoomAccount {
             .saturating_mul(id_multiplier);
         hp.min(MAX_BOSS_HP)
     }
+
+    pub fn generate_start_walls(season_seed: u64) -> [u8; 4] {
+        let mut walls = [WALL_RUBBLE; 4];
+        for (direction, wall) in walls.iter_mut().enumerate() {
+            let direction_hash = season_seed.wrapping_mul(31).wrapping_add(direction as u64);
+            if (direction_hash % 2) == 0 {
+                *wall = WALL_OPEN;
+            } else {
+                *wall = WALL_RUBBLE;
+            }
+        }
+        walls
+    }
 }
 
 /// Escrow account for holding staked SKR during jobs

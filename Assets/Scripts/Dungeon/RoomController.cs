@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using SeekerDungeon.Solana;
+using TMPro;
 using UnityEngine;
 
 namespace SeekerDungeon.Dungeon
@@ -20,6 +21,10 @@ namespace SeekerDungeon.Dungeon
     public sealed class RoomController : MonoBehaviour
     {
         [SerializeField] private List<DoorLayerBinding> doorLayers = new();
+        [Header("Door Job Timers")]
+        [SerializeField] private GameObject timerCanvasPrefab;
+        [SerializeField] private Vector3 timerWorldOffset = new(0f, 1.2f, 0f);
+        [SerializeField] private float slotSecondsEstimate = 0.4f;
         [Header("Backgrounds")]
         [SerializeField] private List<GameObject> roomBackgrounds = new();
         [Header("Occupant Visuals")]
@@ -32,9 +37,11 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private GameObject centerFallbackVisualRoot;
         [SerializeField] private DungeonChestVisualController chestVisualController;
         [SerializeField] private DungeonBossVisualController bossVisualController;
+        [SerializeField] private CenterInteractable centerInteractable;
 
         private readonly Dictionary<RoomDirection, DoorOccupantLayer2D> _doorLayerByDirection = new();
         private readonly Dictionary<RoomDirection, DoorVisualController> _doorVisualByDirection = new();
+        private readonly Dictionary<RoomDirection, DoorTimerView> _doorTimers = new();
         private bool _hasBackgroundRoomKey;
         private int _backgroundRoomX;
         private int _backgroundRoomY;
@@ -43,6 +50,11 @@ namespace SeekerDungeon.Dungeon
         {
             EnsureOccupantVisualSpawnRoot();
             BuildDoorLayerIndex();
+
+            if (centerInteractable == null)
+            {
+                centerInteractable = UnityEngine.Object.FindFirstObjectByType<CenterInteractable>();
+            }
         }
 
         public void ApplySnapshot(DungeonRoomSnapshot snapshot)
@@ -78,6 +90,8 @@ namespace SeekerDungeon.Dungeon
 
         public void ApplyDoorState(RoomDirection direction, DoorJobView door)
         {
+            UpdateDoorTimer(direction, door);
+
             if (_doorVisualByDirection.TryGetValue(direction, out var visualController) && visualController != null)
             {
                 visualController.ApplyDoorState(door);
@@ -110,6 +124,34 @@ namespace SeekerDungeon.Dungeon
             return layer.TryGetLocalPlayerStandPosition(out worldPosition);
         }
 
+        public bool TryGetIdleStandPosition(out Vector3 worldPosition)
+        {
+            worldPosition = default;
+            if (idleOccupantLayer == null)
+            {
+                return false;
+            }
+
+            return idleOccupantLayer.TryGetLocalPlayerSpawnPosition(out worldPosition);
+        }
+
+        public bool TryGetCenterStandPosition(out Vector3 worldPosition)
+        {
+            worldPosition = default;
+            if (centerInteractable == null)
+            {
+                centerInteractable = UnityEngine.Object.FindFirstObjectByType<CenterInteractable>();
+            }
+
+            if (centerInteractable == null)
+            {
+                return false;
+            }
+
+            worldPosition = centerInteractable.InteractWorldPosition;
+            return true;
+        }
+
         public void SetBossOccupants(IReadOnlyList<DungeonOccupantVisual> occupants)
         {
             var count = occupants?.Count ?? 0;
@@ -124,6 +166,7 @@ namespace SeekerDungeon.Dungeon
             SetDoorOccupants(RoomDirection.West, Array.Empty<DungeonOccupantVisual>());
             SetIdleOccupants(Array.Empty<DungeonOccupantVisual>());
             SetBossOccupants(Array.Empty<DungeonOccupantVisual>());
+            SetAllDoorTimersVisible(false);
         }
 
         public void SetIdleOccupants(IReadOnlyList<DungeonOccupantVisual> occupants)
@@ -269,6 +312,116 @@ namespace SeekerDungeon.Dungeon
             rootObject.transform.rotation = Quaternion.identity;
             rootObject.transform.localScale = Vector3.one;
             occupantVisualSpawnRoot = rootObject.transform;
+        }
+
+        private void UpdateDoorTimer(RoomDirection direction, DoorJobView door)
+        {
+            if (door == null || timerCanvasPrefab == null)
+            {
+                return;
+            }
+
+            var isActiveJob = door.WallState == RoomWallState.Rubble &&
+                              !door.IsCompleted &&
+                              door.HelperCount > 0 &&
+                              door.RequiredProgress > 0;
+
+            var timerView = GetOrCreateDoorTimer(direction);
+            if (timerView == null || timerView.Root == null)
+            {
+                return;
+            }
+
+            timerView.Root.SetActive(isActiveJob);
+            if (!isActiveJob || timerView.Label == null)
+            {
+                return;
+            }
+
+            var remainingProgress = door.Progress >= door.RequiredProgress ? 0UL : door.RequiredProgress - door.Progress;
+            var secondsRemaining = door.HelperCount == 0
+                ? 0f
+                : (remainingProgress / (float)door.HelperCount) * Mathf.Max(0.01f, slotSecondsEstimate);
+
+            timerView.Label.text = FormatRemainingTime(secondsRemaining);
+        }
+
+        private DoorTimerView GetOrCreateDoorTimer(RoomDirection direction)
+        {
+            if (_doorTimers.TryGetValue(direction, out var existing) && existing?.Root != null)
+            {
+                return existing;
+            }
+
+            if (timerCanvasPrefab == null)
+            {
+                return null;
+            }
+
+            var anchor = ResolveDoorTimerAnchor(direction);
+            if (anchor == null)
+            {
+                return null;
+            }
+
+            var root = Instantiate(timerCanvasPrefab, anchor.position + timerWorldOffset, Quaternion.identity, anchor);
+            root.name = $"{timerCanvasPrefab.name}_{direction}";
+            root.transform.localRotation = Quaternion.identity;
+
+            var label = root.GetComponentInChildren<TMP_Text>(true);
+            var timerView = new DoorTimerView(root, label);
+            _doorTimers[direction] = timerView;
+            root.SetActive(false);
+            return timerView;
+        }
+
+        private Transform ResolveDoorTimerAnchor(RoomDirection direction)
+        {
+            if (_doorLayerByDirection.TryGetValue(direction, out var layer) && layer != null)
+            {
+                return layer.transform;
+            }
+
+            if (_doorVisualByDirection.TryGetValue(direction, out var visual) && visual != null)
+            {
+                return visual.transform;
+            }
+
+            return transform;
+        }
+
+        private void SetAllDoorTimersVisible(bool isVisible)
+        {
+            foreach (var timer in _doorTimers.Values)
+            {
+                if (timer?.Root == null)
+                {
+                    continue;
+                }
+
+                timer.Root.SetActive(isVisible);
+            }
+        }
+
+        private static string FormatRemainingTime(float secondsRemaining)
+        {
+            var clampedSeconds = Mathf.Max(0f, secondsRemaining);
+            var totalSeconds = Mathf.CeilToInt(clampedSeconds);
+            var minutes = totalSeconds / 60;
+            var seconds = totalSeconds % 60;
+            return $"{minutes:00}:{seconds:00}";
+        }
+
+        private sealed class DoorTimerView
+        {
+            public DoorTimerView(GameObject root, TMP_Text label)
+            {
+                Root = root;
+                Label = label;
+            }
+
+            public GameObject Root { get; }
+            public TMP_Text Label { get; }
         }
     }
 }

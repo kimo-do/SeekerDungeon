@@ -33,6 +33,11 @@ pub mod chaindepth {
         instructions::force_reset_season::handler(ctx)
     }
 
+    /// Ensure the start room exists for the current season seed.
+    pub fn ensure_start_room(ctx: Context<EnsureStartRoom>) -> Result<()> {
+        instructions::ensure_start_room::handler(ctx)
+    }
+
     /// Initialize a new player at the spawn point
     pub fn init_player(ctx: Context<InitPlayer>) -> Result<()> {
         instructions::move_player::init_player_handler(ctx)

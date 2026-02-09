@@ -215,6 +215,7 @@ wsl -d Ubuntu -- bash scripts/wsl/run.sh "export ANCHOR_PROVIDER_URL=https://api
 |--------|---------|
 | `npm run check-state` | Query current game state on devnet |
 | `npm run force-reset-season` | Admin-only immediate season reset override |
+| `ensure_start_room` instruction | Admin helper to bootstrap start room `(5,5)` for current season |
 | `npm run init-devnet` | Initialize game (create token, global state) |
 | `npm run mint-tokens <wallet> [amount]` | Mint test SKR tokens |
 | `npm run smoke-door` | End-to-end devnet smoke test (init/move/join/tick/complete/claim flow) |

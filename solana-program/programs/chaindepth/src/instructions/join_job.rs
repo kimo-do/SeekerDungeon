@@ -39,7 +39,9 @@ pub struct JoinJob<'info> {
     pub room: Account<'info, RoomAccount>,
 
     #[account(
-        mut,
+        init_if_needed,
+        payer = player,
+        space = RoomPresence::DISCRIMINATOR.len() + RoomPresence::INIT_SPACE,
         seeds = [
             RoomPresence::SEED_PREFIX,
             &global.season_seed.to_le_bytes(),
@@ -47,7 +49,7 @@ pub struct JoinJob<'info> {
             &[player_account.current_room_y as u8],
             player.key().as_ref()
         ],
-        bump = room_presence.bump
+        bump
     )]
     pub room_presence: Account<'info, RoomPresence>,
 
@@ -132,6 +134,16 @@ pub fn handler(ctx: Context<JoinJob>, direction: u8) -> Result<()> {
         .ok_or(ChainDepthError::Overflow)?;
 
     player_account.add_job(room.x, room.y, direction)?;
+    if ctx.accounts.room_presence.player == Pubkey::default() {
+        ctx.accounts.room_presence.player = player_key;
+        ctx.accounts.room_presence.season_seed = ctx.accounts.global.season_seed;
+        ctx.accounts.room_presence.room_x = room.x;
+        ctx.accounts.room_presence.room_y = room.y;
+        ctx.accounts.room_presence.skin_id = 0;
+        ctx.accounts.room_presence.equipped_item_id = player_account.equipped_item_id;
+        ctx.accounts.room_presence.is_current = true;
+        ctx.accounts.room_presence.bump = ctx.bumps.room_presence;
+    }
     ctx.accounts.room_presence.set_door_job(direction);
 
     let helper_stake = &mut ctx.accounts.helper_stake;

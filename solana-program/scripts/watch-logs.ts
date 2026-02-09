@@ -43,13 +43,14 @@ async function main(): Promise<void> {
 
   const connection = connect(DEVNET_RPC_URL, DEVNET_WS_URL);
   const programAddress = address(PROGRAM_ID);
+  const abortController = new AbortController();
 
   // Subscribe to program logs using Kite's RPC subscriptions
   const rpcSubscriptions = connection.rpcSubscriptions;
 
-  const logsSubscription = await rpcSubscriptions
+  const logsNotifications = await rpcSubscriptions
     .logsNotifications({ mentions: [programAddress] }, { commitment: "confirmed" })
-    .subscribe();
+    .subscribe({ abortSignal: abortController.signal });
 
   log("Subscription active");
 
@@ -57,13 +58,13 @@ async function main(): Promise<void> {
   process.on("SIGINT", async () => {
     log("");
     log("Stopping log watcher...");
-    logsSubscription.abort();
+    abortController.abort();
     process.exit(0);
   });
 
   // Process incoming logs
   try {
-    for await (const notification of logsSubscription) {
+    for await (const notification of logsNotifications) {
       const { value, context } = notification;
       const { signature, logs, err } = value;
 

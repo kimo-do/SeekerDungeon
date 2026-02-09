@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
 use crate::events::GlobalInitialized;
-use crate::state::{GlobalAccount, RoomAccount, CENTER_EMPTY, WALL_OPEN, WALL_RUBBLE};
+use crate::state::{GlobalAccount, RoomAccount, CENTER_EMPTY};
 
 #[derive(Accounts)]
 #[instruction(initial_prize_pool_amount: u64, season_seed: u64)]
@@ -80,7 +80,7 @@ pub fn handler(ctx: Context<InitGlobal>, initial_prize_pool_amount: u64, season_
     start_room.y = GlobalAccount::START_Y;
     start_room.season_seed = season_seed;
     
-    start_room.walls = generate_start_walls(season_seed);
+    start_room.walls = RoomAccount::generate_start_walls(season_seed);
     
     // Initialize directional job state
     start_room.helper_counts = [0; 4];
@@ -126,17 +126,4 @@ pub fn handler(ctx: Context<InitGlobal>, initial_prize_pool_amount: u64, season_
     });
 
     Ok(())
-}
-
-fn generate_start_walls(season_seed: u64) -> [u8; 4] {
-    let mut walls = [WALL_RUBBLE; 4];
-    for (direction, wall) in walls.iter_mut().enumerate() {
-        let direction_hash = season_seed.wrapping_mul(31).wrapping_add(direction as u64);
-        if (direction_hash % 2) == 0 {
-            *wall = WALL_OPEN;
-        } else {
-            *wall = WALL_RUBBLE;
-        }
-    }
-    walls
 }

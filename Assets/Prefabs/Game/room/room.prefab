@@ -60,6 +60,9 @@ MonoBehaviour:
   - direction: 3
     occupantLayer: {fileID: 1567635255702418035}
     visualController: {fileID: 2198417347352365987}
+  timerCanvasPrefab: {fileID: 5616949728426483737, guid: 3527c93fd14d6b24db5234d1a4188ae8, type: 3}
+  timerWorldOffset: {x: 0, y: 0, z: 0}
+  slotSecondsEstimate: 0.4
   roomBackgrounds:
   - {fileID: 6433607871569952718}
   - {fileID: 1680805724131516215}
@@ -73,6 +76,7 @@ MonoBehaviour:
   centerFallbackVisualRoot: {fileID: 7446244268801710120}
   chestVisualController: {fileID: 5777477575130576900}
   bossVisualController: {fileID: 5634324976242158691}
+  centerInteractable: {fileID: 1883290538640470015}
 --- !u!114 &8759631977785499067
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1087,6 +1091,17 @@ GameObject:
   m_CorrespondingSourceObject: {fileID: 817040971082254966, guid: 2a5fe6d672124da44bc651c97fd3350f, type: 3}
   m_PrefabInstance: {fileID: 986426087986219370}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &1883290538640470015 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 1698621807287608981, guid: 2a5fe6d672124da44bc651c97fd3350f, type: 3}
+  m_PrefabInstance: {fileID: 986426087986219370}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cfc425083690bb34aa6a74e7e0396d3a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Dungeon.CenterInteractable
 --- !u!1 &3034583203702264424 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 2859077765696756482, guid: 2a5fe6d672124da44bc651c97fd3350f, type: 3}

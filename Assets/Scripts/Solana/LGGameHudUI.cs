@@ -253,7 +253,7 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
-            for (var i = 0; i < activeJobs.Length; i += 1)
+            for (var i = activeJobs.Length - 1; i >= 0; i -= 1)
             {
                 var job = activeJobs[i];
                 if (job == null || job.RoomX != player.CurrentRoomX || job.RoomY != player.CurrentRoomY)

@@ -136,6 +136,7 @@ This creates a client in `generated/client/` that can replace the Anchor TypeScr
 - `loot_chest` - Collect items from a room's chest
 - `reset_season` - Admin: Start a new season
 - `force_reset_season` - Admin: Immediate season reset override (ignores season end gate)
+- `ensure_start_room` - Admin: Ensure `(5,5)` start room exists for current season
 
 ### Accounts
 - **GlobalAccount** - Game state (depth, season, prize pool)

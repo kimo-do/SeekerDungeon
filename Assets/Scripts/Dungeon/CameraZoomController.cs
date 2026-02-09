@@ -2,6 +2,8 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using Unity.Cinemachine;
 using System.Collections.Generic;
+using Cysharp.Threading.Tasks;
+using SeekerDungeon.Solana;
 
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
@@ -31,6 +33,9 @@ namespace SeekerDungeon.Dungeon
         [Header("Pan Bounds")]
         [SerializeField] private Vector2 panBoundsX = new Vector2(-3f, 3f);
         [SerializeField] private Vector2 panBoundsY = new Vector2(-3f, 3f);
+        [Header("Startup Framing")]
+        [SerializeField] private bool snapToLocalPlayerOnStart = true;
+        [SerializeField] private int localPlayerSnapFrameAttempts = 30;
 
         private float _targetZoom;
         private Vector3 _targetPanPosition;
@@ -81,6 +86,11 @@ namespace SeekerDungeon.Dungeon
             _targetPanPosition = ClampPanPosition(_targetPanPosition);
             panTarget.position = _targetPanPosition;
             _targetZoom = GetCurrentZoom();
+
+            if (snapToLocalPlayerOnStart)
+            {
+                SnapToLocalPlayerOnStartAsync().Forget();
+            }
         }
 
         private void Update()
@@ -247,11 +257,71 @@ namespace SeekerDungeon.Dungeon
             }
         }
 
+        public void SnapToWorldPositionInstant(Vector3 worldPosition)
+        {
+            SnapPanTargetInstant(worldPosition);
+        }
+
+        private async UniTaskVoid SnapToLocalPlayerOnStartAsync()
+        {
+            var attempts = Mathf.Max(1, localPlayerSnapFrameAttempts);
+            for (var index = 0; index < attempts; index += 1)
+            {
+                if (TryFindLocalPlayerTransform(out var localPlayerTransform))
+                {
+                    SnapPanTargetInstant(localPlayerTransform.position);
+                    return;
+                }
+
+                await UniTask.Yield(PlayerLoopTiming.Update);
+            }
+        }
+
         private Vector3 ClampPanPosition(Vector3 position)
         {
             position.x = Mathf.Clamp(position.x, panBoundsX.x, panBoundsX.y);
             position.y = Mathf.Clamp(position.y, panBoundsY.x, panBoundsY.y);
             return position;
+        }
+
+        private void SnapPanTargetInstant(Vector3 worldPosition)
+        {
+            if (panTarget == null)
+            {
+                return;
+            }
+
+            worldPosition.z = panTarget.position.z;
+            _targetPanPosition = ClampPanPosition(worldPosition);
+            panTarget.position = _targetPanPosition;
+        }
+
+        private static bool TryFindLocalPlayerTransform(out Transform localPlayerTransform)
+        {
+            localPlayerTransform = null;
+
+            var playerControllers = Object.FindObjectsByType<LGPlayerController>(
+                FindObjectsInactive.Exclude,
+                FindObjectsSortMode.None);
+
+            for (var index = 0; index < playerControllers.Length; index += 1)
+            {
+                var playerController = playerControllers[index];
+                if (playerController == null)
+                {
+                    continue;
+                }
+
+                if (playerController.GetComponentInParent<DoorOccupantVisual2D>() != null)
+                {
+                    continue;
+                }
+
+                localPlayerTransform = playerController.transform;
+                return true;
+            }
+
+            return false;
         }
 
         private float GetCurrentZoom()

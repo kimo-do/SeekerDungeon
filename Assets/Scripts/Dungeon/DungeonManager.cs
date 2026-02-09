@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
 using SeekerDungeon;
 using SeekerDungeon.Solana;
+using Solana.Unity.SDK;
 using UnityEngine;
 
 namespace SeekerDungeon.Dungeon
@@ -13,6 +14,10 @@ namespace SeekerDungeon.Dungeon
         private LGManager _lgManager;
         private RoomController _roomController;
         [SerializeField] private RoomController roomControllerPrefab;
+        [SerializeField] private LGPlayerController localPlayerController;
+        [SerializeField] private LGPlayerController localPlayerPrefab;
+        [SerializeField] private Transform localPlayerSpawnPoint;
+        [SerializeField] private CameraZoomController cameraZoomController;
 
         public event Action<DungeonRoomSnapshot> OnRoomSnapshotUpdated;
         public event Action<DoorOccupancyDelta> OnDoorOccupancyDelta;
@@ -23,6 +28,8 @@ namespace SeekerDungeon.Dungeon
         private readonly List<DungeonOccupantVisual> _bossOccupants = new();
         private readonly List<DungeonOccupantVisual> _idleOccupants = new();
         private bool _releasedGameplayDoorsReadyHold;
+        private DungeonOccupantVisual _localRoomOccupant;
+        private string _localPlacementSignature = string.Empty;
 
         private void Awake()
         {
@@ -38,6 +45,11 @@ namespace SeekerDungeon.Dungeon
 
             EnsureDoorCollections();
             EnsureRoomController();
+            EnsureLocalPlayerController();
+            if (cameraZoomController == null)
+            {
+                cameraZoomController = UnityEngine.Object.FindFirstObjectByType<CameraZoomController>();
+            }
         }
 
         private void OnEnable()
@@ -74,6 +86,7 @@ namespace SeekerDungeon.Dungeon
             EnsureRoomController();
 
             await _lgManager.RefreshAllState();
+            SyncLocalPlayerVisual();
             await ResolveCurrentRoomCoordinatesAsync();
             await RefreshCurrentRoomSnapshotAsync();
 
@@ -106,9 +119,11 @@ namespace SeekerDungeon.Dungeon
 
             try
             {
+                _localPlacementSignature = string.Empty;
                 _roomController?.PrepareForRoomTransition();
                 await ResolveCurrentRoomCoordinatesAsync();
                 await RefreshCurrentRoomSnapshotAsync();
+                SyncLocalPlayerVisual();
                 if (_lgManager != null)
                 {
                     await _lgManager.StartRoomOccupantSubscriptions(_currentRoomX, _currentRoomY);
@@ -197,10 +212,18 @@ namespace SeekerDungeon.Dungeon
             };
             _bossOccupants.Clear();
             _idleOccupants.Clear();
+            _localRoomOccupant = null;
+            var localWalletKey = ResolveLocalWalletKey();
 
             foreach (var occupant in occupants)
             {
                 var visual = ToDungeonOccupantVisual(occupant);
+                if (!string.IsNullOrWhiteSpace(localWalletKey) &&
+                    string.Equals(visual.WalletKey, localWalletKey, StringComparison.Ordinal))
+                {
+                    _localRoomOccupant = visual;
+                    continue;
+                }
 
                 if (occupant.Activity == OccupantActivity.BossFight)
                 {
@@ -304,6 +327,7 @@ namespace SeekerDungeon.Dungeon
 
         private void PushSnapshot(DungeonRoomSnapshot snapshot)
         {
+            UpdateLocalPlayerPlacement(snapshot);
             TryReleaseGameplayDoorsReadyHold(snapshot);
             _roomController?.ApplySnapshot(snapshot);
             OnRoomSnapshotUpdated?.Invoke(snapshot);
@@ -404,6 +428,207 @@ namespace SeekerDungeon.Dungeon
 
             _roomController = Instantiate(roomControllerPrefab, transform);
             _roomController.name = roomControllerPrefab.name;
+        }
+
+        private void EnsureLocalPlayerController()
+        {
+            if (localPlayerController != null)
+            {
+                if (!localPlayerController.gameObject.activeSelf)
+                {
+                    localPlayerController.gameObject.SetActive(true);
+                }
+                return;
+            }
+
+            var playerControllers = UnityEngine.Object.FindObjectsByType<LGPlayerController>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+
+            for (var index = 0; index < playerControllers.Length; index += 1)
+            {
+                var playerController = playerControllers[index];
+                if (playerController == null)
+                {
+                    continue;
+                }
+
+                if (playerController.GetComponentInParent<DoorOccupantVisual2D>() != null)
+                {
+                    continue;
+                }
+
+                localPlayerController = playerController;
+                if (!localPlayerController.gameObject.activeSelf)
+                {
+                    localPlayerController.gameObject.SetActive(true);
+                }
+
+                return;
+            }
+
+            if (localPlayerPrefab == null)
+            {
+                Log("No local player found in GameScene. Assign localPlayerPrefab on DungeonManager to auto-spawn one.");
+                return;
+            }
+
+            var spawnPosition = localPlayerSpawnPoint != null ? localPlayerSpawnPoint.position : Vector3.zero;
+            var spawnedPlayer = Instantiate(localPlayerPrefab, spawnPosition, Quaternion.identity);
+            localPlayerController = spawnedPlayer;
+        }
+
+        private void SyncLocalPlayerVisual()
+        {
+            EnsureLocalPlayerController();
+            if (localPlayerController == null)
+            {
+                return;
+            }
+
+            var skinId = _lgManager?.CurrentProfileState?.SkinId;
+            if (skinId.HasValue)
+            {
+                localPlayerController.ApplySkin((PlayerSkinId)skinId.Value);
+            }
+
+            localPlayerController.transform.rotation = Quaternion.identity;
+        }
+
+        private void UpdateLocalPlayerPlacement(DungeonRoomSnapshot snapshot)
+        {
+            if (snapshot?.Room == null)
+            {
+                return;
+            }
+
+            EnsureLocalPlayerController();
+            if (localPlayerController == null)
+            {
+                return;
+            }
+
+            SyncLocalPlayerVisual();
+
+            var activity = _localRoomOccupant?.Activity ?? OccupantActivity.Idle;
+            var activityDirection = _localRoomOccupant?.ActivityDirection;
+            if (_localRoomOccupant == null &&
+                TryResolveLocalActivityFromPlayerState(snapshot.Room.X, snapshot.Room.Y, out var fallbackActivity, out var fallbackDirection))
+            {
+                activity = fallbackActivity;
+                activityDirection = fallbackDirection;
+            }
+            var placementSignature = $"{snapshot.Room.X}:{snapshot.Room.Y}:{activity}:{activityDirection}";
+            if (string.Equals(placementSignature, _localPlacementSignature, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (!TryResolveLocalPlacement(activity, activityDirection, out var worldPosition))
+            {
+                return;
+            }
+
+            var currentPosition = localPlayerController.transform.position;
+            localPlayerController.transform.position = new Vector3(worldPosition.x, worldPosition.y, currentPosition.z);
+            localPlayerController.transform.rotation = Quaternion.identity;
+            if (!localPlayerController.gameObject.activeSelf)
+            {
+                localPlayerController.gameObject.SetActive(true);
+            }
+
+            if (cameraZoomController != null)
+            {
+                cameraZoomController.SnapToWorldPositionInstant(localPlayerController.transform.position);
+            }
+
+            _localPlacementSignature = placementSignature;
+        }
+
+        private bool TryResolveLocalPlacement(
+            OccupantActivity activity,
+            RoomDirection? activityDirection,
+            out Vector3 worldPosition)
+        {
+            worldPosition = default;
+
+            if (activity == OccupantActivity.DoorJob && activityDirection.HasValue)
+            {
+                if (_roomController != null &&
+                    _roomController.TryGetDoorStandPosition(activityDirection.Value, out worldPosition))
+                {
+                    return true;
+                }
+            }
+
+            if (activity == OccupantActivity.BossFight)
+            {
+                if (_roomController != null && _roomController.TryGetCenterStandPosition(out worldPosition))
+                {
+                    return true;
+                }
+            }
+
+            if (_roomController != null && _roomController.TryGetIdleStandPosition(out worldPosition))
+            {
+                return true;
+            }
+
+            if (localPlayerSpawnPoint != null)
+            {
+                worldPosition = localPlayerSpawnPoint.position;
+                return true;
+            }
+
+            worldPosition = localPlayerController != null ? localPlayerController.transform.position : Vector3.zero;
+            return localPlayerController != null;
+        }
+
+        private bool TryResolveLocalActivityFromPlayerState(
+            int roomX,
+            int roomY,
+            out OccupantActivity activity,
+            out RoomDirection? activityDirection)
+        {
+            activity = OccupantActivity.Idle;
+            activityDirection = null;
+
+            var playerState = _lgManager?.CurrentPlayerState;
+            if (playerState?.ActiveJobs == null || playerState.ActiveJobs.Length == 0)
+            {
+                return false;
+            }
+
+            for (var index = playerState.ActiveJobs.Length - 1; index >= 0; index -= 1)
+            {
+                var activeJob = playerState.ActiveJobs[index];
+                if (activeJob == null || activeJob.RoomX != roomX || activeJob.RoomY != roomY)
+                {
+                    continue;
+                }
+
+                if (!LGDomainMapper.TryToDirection(activeJob.Direction, out var mappedDirection))
+                {
+                    continue;
+                }
+
+                activity = OccupantActivity.DoorJob;
+                activityDirection = mappedDirection;
+                return true;
+            }
+
+            return false;
+        }
+
+        private string ResolveLocalWalletKey()
+        {
+            var walletKey = Web3.Wallet?.Account?.PublicKey?.Key;
+            if (!string.IsNullOrWhiteSpace(walletKey))
+            {
+                return walletKey;
+            }
+
+            return _lgManager?.CurrentPlayerState?.Owner?.Key ?? string.Empty;
         }
 
         private void Log(string message)

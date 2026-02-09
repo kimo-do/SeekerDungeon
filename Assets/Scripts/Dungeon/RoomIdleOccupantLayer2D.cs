@@ -27,6 +27,35 @@ namespace SeekerDungeon.Dungeon
             visualSpawnRoot = spawnRoot;
         }
 
+        public bool TryGetLocalPlayerSpawnPosition(out Vector3 worldPosition)
+        {
+            worldPosition = default;
+
+            if (spawnZones == null || spawnZones.Count == 0)
+            {
+                return false;
+            }
+
+            var reservedPositions = new List<Vector2>();
+            foreach (var visual in _activeByOccupantKey.Values)
+            {
+                if (visual == null)
+                {
+                    continue;
+                }
+
+                reservedPositions.Add(new Vector2(visual.transform.position.x, visual.transform.position.y));
+            }
+
+            if (!TryFindSpawnPosition(reservedPositions, out var spawnPosition))
+            {
+                return false;
+            }
+
+            worldPosition = new Vector3(spawnPosition.x, spawnPosition.y, 0f);
+            return true;
+        }
+
         public void SetOccupants(IReadOnlyList<DungeonOccupantVisual> occupants)
         {
             if (occupantVisualPrefab == null || spawnZones == null || spawnZones.Count == 0 || occupants == null)

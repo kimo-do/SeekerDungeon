@@ -42,10 +42,31 @@ async function main(): Promise<void> {
     })
     .rpc();
 
-  const after = await program.account.globalAccount.fetch(globalPda);
+  const afterReset = await program.account.globalAccount.fetch(globalPda);
+
+  const ensureStartRoomSignature = await program.methods
+    .ensureStartRoom()
+    .accountsPartial({
+      authority: provider.wallet.publicKey,
+      global: globalPda,
+      startRoom: anchor.web3.PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("room"),
+          afterReset.seasonSeed.toArrayLike(Buffer, "le", 8),
+          Buffer.from([5]),
+          Buffer.from([5]),
+        ],
+        program.programId
+      )[0],
+      systemProgram: anchor.web3.SystemProgram.programId,
+    })
+    .rpc();
+
+  const verified = await program.account.globalAccount.fetch(globalPda);
   console.log("Reset signature:", signature);
-  console.log("After season seed:", after.seasonSeed.toString());
-  console.log("After end slot:", after.endSlot.toString());
+  console.log("Ensure start room signature:", ensureStartRoomSignature);
+  console.log("After season seed:", verified.seasonSeed.toString());
+  console.log("After end slot:", verified.endSlot.toString());
 }
 
 main().catch((thrownObject: unknown) => {

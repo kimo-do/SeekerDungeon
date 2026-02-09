@@ -55,6 +55,7 @@ namespace SeekerDungeon.Solana
         private IStreamingRpcClient _streamingRpcClient;
         private ChaindepthClient _client;
         private readonly HashSet<string> _roomPresenceSubscriptionKeys = new();
+        private uint? _lastProgramErrorCode;
 
         private void Awake()
         {
@@ -727,11 +728,7 @@ namespace SeekerDungeon.Solana
                 if (wallState == LGConfig.WALL_OPEN)
                 {
                     Log($"Door {LGConfig.GetDirectionName(direction)} is open. Moving player through door.");
-                    var (targetX, targetY) = LGConfig.GetAdjacentCoords(
-                        CurrentPlayerState.CurrentRoomX,
-                        CurrentPlayerState.CurrentRoomY,
-                        direction);
-                    return await MovePlayer(targetX, targetY);
+                    return await MoveThroughDoor(direction);
                 }
                 else
                 {
@@ -741,6 +738,11 @@ namespace SeekerDungeon.Solana
             }
 
             var hasActiveJob = HasActiveJobInCurrentRoom(direction);
+            if (!hasActiveJob)
+            {
+                // Onchain helper stake is the source of truth; player ActiveJobs can lag briefly.
+                hasActiveJob = await HasHelperStakeInCurrentRoom(direction);
+            }
             var jobCompleted = room.JobCompleted != null && room.JobCompleted.Length > dir && room.JobCompleted[dir];
 
             if (jobCompleted)
@@ -755,17 +757,102 @@ namespace SeekerDungeon.Solana
 
             if (!hasActiveJob)
             {
-                return await JoinJob(direction);
+                var joinSignature = await JoinJob(direction);
+                if (!string.IsNullOrWhiteSpace(joinSignature))
+                {
+                    return joinSignature;
+                }
+
+                if (IsAlreadyJoinedError())
+                {
+                    Log("JoinJob returned AlreadyJoined. Refreshing and continuing as active helper.");
+                    await RefreshAllState();
+                    hasActiveJob = await HasHelperStakeInCurrentRoom(direction);
+                    if (hasActiveJob)
+                    {
+                        room = await FetchCurrentRoom();
+                        if (room == null)
+                        {
+                            return null;
+                        }
+                    }
+                }
+                else if (IsFrameworkAccountNotInitializedError())
+                {
+                    Log("JoinJob hit AccountNotInitialized. Refreshing and retrying once with latest room/player state.");
+                    await RefreshAllState();
+                    room = await FetchCurrentRoom();
+                    if (room == null)
+                    {
+                        return null;
+                    }
+
+                    if (room.Walls[dir] == LGConfig.WALL_OPEN)
+                    {
+                        Log("Door became open during retry. Moving through door.");
+                        return await MoveThroughDoor(direction);
+                    }
+
+                    hasActiveJob = await HasHelperStakeInCurrentRoom(direction);
+                    if (!hasActiveJob)
+                    {
+                        var retryJoinSignature = await JoinJob(direction);
+                        if (!string.IsNullOrWhiteSpace(retryJoinSignature))
+                        {
+                            return retryJoinSignature;
+                        }
+                        hasActiveJob = await HasHelperStakeInCurrentRoom(direction);
+                    }
+                }
+
+                if (!hasActiveJob)
+                {
+                    return null;
+                }
             }
 
             var progress = room.Progress[dir];
             var required = room.BaseSlots[dir];
             if (progress >= required)
             {
-                return await CompleteJob(direction);
+                var completeSignature = await CompleteJob(direction);
+                if (!string.IsNullOrWhiteSpace(completeSignature))
+                {
+                    return completeSignature;
+                }
+
+                if (IsMissingActiveJobError())
+                {
+                    Log("CompleteJob failed with NoActiveJob. Refreshing state and trying JoinJob if needed.");
+                    await RefreshAllState();
+                    var hasHelperStakeAfterRefresh = await HasHelperStakeInCurrentRoom(direction);
+                    if (!hasHelperStakeAfterRefresh)
+                    {
+                        return await JoinJob(direction);
+                    }
+                }
+
+                return null;
             }
 
-            return await TickJob(direction);
+            var tickSignature = await TickJob(direction);
+            if (!string.IsNullOrWhiteSpace(tickSignature))
+            {
+                return tickSignature;
+            }
+
+            if (IsMissingActiveJobError())
+            {
+                Log("TickJob failed with NoActiveJob. Refreshing state and trying JoinJob if needed.");
+                await RefreshAllState();
+                var hasHelperStakeAfterRefresh = await HasHelperStakeInCurrentRoom(direction);
+                if (!hasHelperStakeAfterRefresh)
+                {
+                    return await JoinJob(direction);
+                }
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -856,6 +943,45 @@ namespace SeekerDungeon.Solana
             {
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Returns true if helper stake PDA exists for current room/direction/player.
+        /// This is the onchain source of truth for whether player is an active helper.
+        /// </summary>
+        public async UniTask<bool> HasHelperStakeInCurrentRoom(byte direction)
+        {
+            if (Web3.Wallet == null)
+            {
+                return false;
+            }
+
+            if (CurrentGlobalState == null || CurrentPlayerState == null)
+            {
+                await RefreshAllState();
+            }
+
+            if (CurrentGlobalState == null || CurrentPlayerState == null)
+            {
+                return false;
+            }
+
+            var roomPda = DeriveRoomPda(
+                CurrentGlobalState.SeasonSeed,
+                CurrentPlayerState.CurrentRoomX,
+                CurrentPlayerState.CurrentRoomY);
+            if (roomPda == null)
+            {
+                return false;
+            }
+
+            var helperStakePda = DeriveHelperStakePda(roomPda, direction, Web3.Wallet.Account.PublicKey);
+            if (helperStakePda == null)
+            {
+                return false;
+            }
+
+            return await AccountHasData(helperStakePda);
         }
 
         /// <summary>
@@ -1028,6 +1154,12 @@ namespace SeekerDungeon.Solana
                     Web3.Wallet.Account.PublicKey,
                     CurrentGlobalState.SkrMint
                 );
+                if (!await AccountHasData(playerTokenAccount))
+                {
+                    LogError("JoinJob blocked: your SKR token account (ATA) is not initialized for this wallet.");
+                    LogError("Mint/fund SKR first, then retry JoinJob.");
+                    return null;
+                }
 
                 // Use generated instruction builder
                 var instruction = ChaindepthProgram.JoinJob(
@@ -1855,12 +1987,14 @@ namespace SeekerDungeon.Solana
 
                 if (result.WasSuccessful)
                 {
+                    _lastProgramErrorCode = null;
                     Log($"Transaction sent: {result.Result}");
                     OnTransactionSent?.Invoke(result.Result);
                     return result.Result;
                 }
                 else
                 {
+                    _lastProgramErrorCode = ExtractCustomProgramErrorCode(result.Reason);
                     LogError($"Transaction failed: {result.Reason}");
                     LogFrameworkErrorDetails(result.Reason);
                     if (result.ServerErrorCode != 0)
@@ -1879,15 +2013,36 @@ namespace SeekerDungeon.Solana
 
         private void LogFrameworkErrorDetails(string reason)
         {
-            if (string.IsNullOrWhiteSpace(reason))
+            var errorCode = ExtractCustomProgramErrorCode(reason);
+            if (!errorCode.HasValue)
             {
                 return;
+            }
+
+            var hexValue = errorCode.Value.ToString("x");
+            if (TryMapProgramError(errorCode.Value, out var programErrorMessage))
+            {
+                LogError($"Program error {errorCode.Value} (0x{hexValue}): {programErrorMessage}");
+                return;
+            }
+
+            if (TryMapAnchorFrameworkError(errorCode.Value, out var mappedMessage))
+            {
+                LogError($"Program framework error {errorCode.Value} (0x{hexValue}): {mappedMessage}");
+            }
+        }
+
+        private static uint? ExtractCustomProgramErrorCode(string reason)
+        {
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                return null;
             }
 
             var markerIndex = reason.IndexOf("custom program error: 0x", StringComparison.OrdinalIgnoreCase);
             if (markerIndex < 0)
             {
-                return;
+                return null;
             }
 
             var hexStart = markerIndex + "custom program error: 0x".Length;
@@ -1899,25 +2054,87 @@ namespace SeekerDungeon.Solana
 
             if (hexEnd <= hexStart)
             {
-                return;
+                return null;
             }
 
             var hexValue = reason.Substring(hexStart, hexEnd - hexStart);
             if (!uint.TryParse(hexValue, System.Globalization.NumberStyles.HexNumber, null, out var errorCode))
             {
-                return;
+                return null;
             }
 
-            if (TryMapAnchorFrameworkError(errorCode, out var mappedMessage))
+            return errorCode;
+        }
+
+        private bool IsMissingActiveJobError()
+        {
+            return _lastProgramErrorCode.HasValue &&
+                   _lastProgramErrorCode.Value == (uint)Chaindepth.Errors.ChaindepthErrorKind.NoActiveJob;
+        }
+
+        private bool IsAlreadyJoinedError()
+        {
+            return _lastProgramErrorCode.HasValue &&
+                   _lastProgramErrorCode.Value == (uint)Chaindepth.Errors.ChaindepthErrorKind.AlreadyJoined;
+        }
+
+        private bool IsFrameworkAccountNotInitializedError()
+        {
+            return _lastProgramErrorCode.HasValue && _lastProgramErrorCode.Value == 3012;
+        }
+
+        private async UniTask<string> MoveThroughDoor(byte direction)
+        {
+            if (CurrentPlayerState == null)
             {
-                LogError($"Program framework error {errorCode} (0x{hexValue}): {mappedMessage}");
+                await FetchPlayerState();
+                if (CurrentPlayerState == null)
+                {
+                    return null;
+                }
             }
+
+            var (targetX, targetY) = LGConfig.GetAdjacentCoords(
+                CurrentPlayerState.CurrentRoomX,
+                CurrentPlayerState.CurrentRoomY,
+                direction);
+
+            var moveSignature = await MovePlayer(targetX, targetY);
+            if (!string.IsNullOrWhiteSpace(moveSignature))
+            {
+                return moveSignature;
+            }
+
+            if (IsFrameworkAccountNotInitializedError())
+            {
+                Log("MovePlayer hit AccountNotInitialized. Refreshing state and retrying once.");
+                await RefreshAllState();
+                moveSignature = await MovePlayer(targetX, targetY);
+            }
+
+            return moveSignature;
+        }
+
+        private static bool TryMapProgramError(uint errorCode, out string message)
+        {
+            if (Enum.IsDefined(typeof(Chaindepth.Errors.ChaindepthErrorKind), errorCode))
+            {
+                var errorKind = (Chaindepth.Errors.ChaindepthErrorKind)errorCode;
+                message = errorKind.ToString();
+                return true;
+            }
+
+            message = null;
+            return false;
         }
 
         private static bool TryMapAnchorFrameworkError(uint errorCode, out string message)
         {
             switch (errorCode)
             {
+                case 2006:
+                    message = "Constraint seeds mismatch (client/account context is stale vs expected PDA seeds).";
+                    return true;
                 case 3000:
                     message = "Account discriminator already set.";
                     return true;
