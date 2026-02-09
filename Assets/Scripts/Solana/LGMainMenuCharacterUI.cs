@@ -7,6 +7,9 @@ namespace SeekerDungeon.Solana
     [RequireComponent(typeof(UIDocument))]
     public sealed class LGMainMenuCharacterUI : MonoBehaviour
     {
+        private const int SkinLabelMaxFontSize = 49;
+        private const int SkinLabelMinFontSize = 24;
+
         [SerializeField] private LGMainMenuCharacterManager characterManager;
 
         private UIDocument _document;
@@ -17,6 +20,7 @@ namespace SeekerDungeon.Solana
         private VisualElement _existingContainer;
         private VisualElement _skinNavPanel;
         private Label _skinNameLabel;
+        private Label _lockedNameLabel;
         private TextField _displayNameInput;
         private Label _statusLabel;
         private Label _existingNameLabel;
@@ -82,8 +86,9 @@ namespace SeekerDungeon.Solana
             _existingIdentityPanel = root.Q<VisualElement>("existing-identity-panel");
             _createContainer = root.Q<VisualElement>("create-character-container");
             _existingContainer = root.Q<VisualElement>("existing-character-container");
-            _skinNavPanel = root.Q<VisualElement>("skin-nav-panel");
+            _skinNavPanel = root.Q<VisualElement>("skin-nav-row");
             _skinNameLabel = root.Q<Label>("selected-skin-label");
+            _lockedNameLabel = root.Q<Label>("locked-display-name-label");
             _displayNameInput = root.Q<TextField>("display-name-input");
             _statusLabel = root.Q<Label>("menu-status-label");
             _existingNameLabel = root.Q<Label>("existing-display-name-label");
@@ -266,7 +271,7 @@ namespace SeekerDungeon.Solana
 
             if (_skinNameLabel != null)
             {
-                _skinNameLabel.text = state.SelectedSkinLabel;
+                _skinNameLabel.style.display = DisplayStyle.None;
             }
 
             if (_displayNameInput != null && _displayNameInput.value != state.DisplayName)
@@ -282,7 +287,15 @@ namespace SeekerDungeon.Solana
 
             if (_existingNameLabel != null)
             {
-                _existingNameLabel.text = $"Name: {state.DisplayName}";
+                _existingNameLabel.text = string.Empty;
+            }
+
+            var isLockedProfile = state.HasProfile && !state.HasUnsavedProfileChanges;
+
+            if (_lockedNameLabel != null)
+            {
+                _lockedNameLabel.text = string.Empty;
+                _lockedNameLabel.style.display = DisplayStyle.None;
             }
 
             if (_statusLabel != null)
@@ -294,38 +307,64 @@ namespace SeekerDungeon.Solana
 
             if (_createIdentityPanel != null)
             {
-                _createIdentityPanel.style.display = state.HasProfile ? DisplayStyle.None : DisplayStyle.Flex;
+                _createIdentityPanel.style.display = DisplayStyle.None;
             }
 
             if (_existingIdentityPanel != null)
             {
-                _existingIdentityPanel.style.display = state.HasProfile ? DisplayStyle.Flex : DisplayStyle.None;
+                _existingIdentityPanel.style.display = DisplayStyle.None;
             }
 
             if (_createContainer != null)
             {
-                _createContainer.style.display = state.HasProfile ? DisplayStyle.None : DisplayStyle.Flex;
+                _createContainer.style.display = isLockedProfile ? DisplayStyle.None : DisplayStyle.Flex;
             }
 
             if (_existingContainer != null)
             {
-                _existingContainer.style.display = state.HasProfile ? DisplayStyle.Flex : DisplayStyle.None;
+                _existingContainer.style.display = isLockedProfile ? DisplayStyle.Flex : DisplayStyle.None;
             }
 
             if (_skinNavPanel != null)
             {
-                _skinNavPanel.style.display = state.HasProfile ? DisplayStyle.None : DisplayStyle.Flex;
+                _skinNavPanel.style.display = isLockedProfile ? DisplayStyle.None : DisplayStyle.Flex;
             }
 
-            var canCreate = !state.IsBusy && state.IsReady && !state.HasProfile;
-            var canEnter = !state.IsBusy && state.IsReady && state.HasProfile;
+            var canEditProfile = !state.IsBusy && state.IsReady;
+            var canEnter = !state.IsBusy && state.IsReady && isLockedProfile;
 
-            _previousSkinButton?.SetEnabled(canCreate);
-            _nextSkinButton?.SetEnabled(canCreate);
-            _displayNameInput?.SetEnabled(canCreate);
-            _confirmCreateButton?.SetEnabled(canCreate);
+            if (_confirmCreateButton != null)
+            {
+                _confirmCreateButton.text = state.HasProfile
+                    ? "Save Character"
+                    : "Create Character";
+            }
+
+            _previousSkinButton?.SetEnabled(canEditProfile);
+            _nextSkinButton?.SetEnabled(canEditProfile);
+            _displayNameInput?.SetEnabled(false);
+            _confirmCreateButton?.SetEnabled(
+                canEditProfile &&
+                (!state.HasProfile || state.HasUnsavedProfileChanges));
             _enterDungeonButton?.SetEnabled(canEnter);
             _disconnectButton?.SetEnabled(!state.IsBusy);
+        }
+
+        private void ApplySkinLabelSizing(string labelText)
+        {
+            if (_skinNameLabel == null)
+            {
+                return;
+            }
+
+            var safeText = string.IsNullOrWhiteSpace(labelText) ? "Unknown Skin" : labelText.Trim();
+            _skinNameLabel.text = safeText;
+
+            var length = safeText.Length;
+            var clampedLength = Mathf.Clamp(length, 8, 24);
+            var t = (clampedLength - 8f) / 16f;
+            var fontSize = Mathf.RoundToInt(Mathf.Lerp(SkinLabelMaxFontSize, SkinLabelMinFontSize, t));
+            _skinNameLabel.style.fontSize = Mathf.Clamp(fontSize, SkinLabelMinFontSize, SkinLabelMaxFontSize);
         }
 
         private void HandleError(string message)

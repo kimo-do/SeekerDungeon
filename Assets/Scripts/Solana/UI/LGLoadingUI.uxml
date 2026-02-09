@@ -7,6 +7,14 @@
                 <ui:Button name="btn-connect-wallet" text="" class="connect-button" style="background-image: url(&quot;project://database/Assets/Sprites/connectwlt.png?fileID=2800000&amp;guid=42bcf1940a673064cbdb02b124720670&amp;type=3#connectwlt&quot;); top: -170px; -unity-background-scale-mode: scale-to-fit; right: -50px; left: -50px;"/>
             </ui:VisualElement>
             <ui:Label name="connect-status" text="Connect your wallet to continue" class="connect-status" style="font-size: 35px;"/>
+            <ui:VisualElement name="editor-wallet-controls" class="editor-wallet-controls" style="display: none;">
+                <ui:Label text="Editor Dev Wallet" class="editor-wallet-title"/>
+                <ui:DropdownField name="editor-wallet-slot-dropdown" label="Slot" class="editor-wallet-dropdown"/>
+                <ui:VisualElement class="editor-wallet-button-row">
+                    <ui:Button name="btn-use-selected-editor-wallet" text="Use Selected" class="editor-wallet-button"/>
+                    <ui:Button name="btn-use-new-editor-wallet" text="Use New" class="editor-wallet-button"/>
+                </ui:VisualElement>
+            </ui:VisualElement>
         </ui:VisualElement>
     </ui:VisualElement>
 </ui:UXML>

@@ -54,6 +54,7 @@ namespace SeekerDungeon.Solana
     public sealed class LGWalletSessionManager : MonoBehaviour
     {
         private const string WalletConnectIntentPrefKey = "LG_WALLET_CONNECT_INTENT_V1";
+        private const string EditorWalletSlotPrefKey = "LG_EDITOR_DEV_WALLET_SLOT_V1";
 
         public static LGWalletSessionManager Instance { get; private set; }
 
@@ -68,6 +69,10 @@ namespace SeekerDungeon.Solana
         [SerializeField] private WalletLoginMode startupLoginMode = WalletLoginMode.Auto;
         [SerializeField] private bool autoUseEditorDevWallet = true;
         [SerializeField] private string editorDevWalletPassword = "seeker-dev-wallet";
+        [SerializeField] private bool useEditorWalletSlots = true;
+        [SerializeField] private string editorWalletPasswordPrefix = "seeker-dev-wallet-slot-";
+        [SerializeField] private int editorWalletSlot = 0;
+        [SerializeField] private bool persistEditorWalletSlot = true;
         [SerializeField] private bool createEditorDevWalletIfMissing = true;
         [SerializeField] private bool requestAirdropIfLowSolInEditor = true;
         [SerializeField] private double editorLowSolThreshold = 0.2d;
@@ -108,6 +113,7 @@ namespace SeekerDungeon.Solana
         public PublicKey ConnectedWalletPublicKey => Web3.Wallet?.Account?.PublicKey;
         public WalletLoginMode ActiveWalletMode { get; private set; } = WalletLoginMode.Auto;
         public bool HasWalletConnectIntent => PlayerPrefs.GetInt(WalletConnectIntentPrefKey, 0) == 1;
+        public int EditorWalletSlot => editorWalletSlot;
 
         public bool HasActiveOnchainSession => _hasActiveOnchainSession && _sessionSignerAccount != null;
         public bool CanUseLocalSessionSigning =>
@@ -147,6 +153,7 @@ namespace SeekerDungeon.Solana
 
             _programId = new PublicKey(LGConfig.PROGRAM_ID);
             _globalPda = new PublicKey(LGConfig.GLOBAL_PDA);
+            InitializeEditorWalletSlot();
             rpcUrl = NormalizeRpcUrl(rpcUrl, LGConfig.RPC_URL);
             fallbackRpcUrl = NormalizeRpcUrl(fallbackRpcUrl, LGConfig.RPC_FALLBACK_URL);
             _fallbackRpcClient = ClientFactory.GetClient(rpcUrl);
@@ -220,7 +227,13 @@ namespace SeekerDungeon.Solana
                 {
                     MarkWalletConnectIntent();
                 }
-                EmitStatus($"Wallet connected ({resolvedMode}): {ConnectedWalletPublicKey}");
+                var editorSlotSuffix =
+                    resolvedMode == WalletLoginMode.EditorDevWallet &&
+                    Application.isEditor &&
+                    useEditorWalletSlots
+                        ? $" slot=#{editorWalletSlot}"
+                        : string.Empty;
+                EmitStatus($"Wallet connected ({resolvedMode}{editorSlotSuffix}): {ConnectedWalletPublicKey}");
 
                 if (requestAirdropIfLowSolInEditor && Application.isEditor)
                 {
@@ -259,6 +272,48 @@ namespace SeekerDungeon.Solana
             PlayerPrefs.Save();
         }
 
+        public async UniTask<bool> SwitchEditorWalletSlotAsync(int slot, bool reconnect = true)
+        {
+            if (!Application.isEditor)
+            {
+                EmitError("Editor wallet slot switching is only available in Unity Editor.");
+                return false;
+            }
+
+            SetEditorWalletSlot(slot);
+            if (!reconnect)
+            {
+                return true;
+            }
+
+            if (IsWalletConnected)
+            {
+                Disconnect();
+            }
+
+            return await ConnectAsync(WalletLoginMode.EditorDevWallet);
+        }
+
+        public async UniTask<bool> UseNextEditorWalletAsync(bool reconnect = true)
+        {
+            return await SwitchEditorWalletSlotAsync(editorWalletSlot + 1, reconnect);
+        }
+
+        public async UniTask<bool> UsePreviousEditorWalletAsync(bool reconnect = true)
+        {
+            return await SwitchEditorWalletSlotAsync(Math.Max(0, editorWalletSlot - 1), reconnect);
+        }
+
+        public string GetEditorWalletSelectionLabel()
+        {
+            if (!Application.isEditor || !useEditorWalletSlots)
+            {
+                return string.Empty;
+            }
+
+            return $"Editor wallet slot #{editorWalletSlot}";
+        }
+
         public async UniTask<bool> BeginGameplaySessionAsync(
             SessionInstructionAllowlist? allowlistOverride = null,
             ulong? maxTokenSpendOverride = null,
@@ -276,6 +331,13 @@ namespace SeekerDungeon.Solana
                 player,
                 new PublicKey(LGConfig.SKR_MINT)
             );
+
+            var playerTokenAccountReady = await EnsurePlayerTokenAccountExistsAsync(player, playerTokenAccount);
+            if (!playerTokenAccountReady)
+            {
+                ClearSessionState();
+                return false;
+            }
 
             var durationMinutes = Math.Max(1, durationMinutesOverride ?? sessionDurationMinutes);
             var resolvedAllowlist = allowlistOverride ?? (SessionInstructionAllowlist)defaultAllowlistMask;
@@ -351,6 +413,39 @@ namespace SeekerDungeon.Solana
                 _isSessionSignerFunded = true;
             }
 
+            return true;
+        }
+
+        private async UniTask<bool> EnsurePlayerTokenAccountExistsAsync(PublicKey player, PublicKey playerTokenAccount)
+        {
+            var rpc = GetRpcClient();
+            if (rpc == null)
+            {
+                EmitError("RPC unavailable while validating player token account.");
+                return false;
+            }
+
+            var accountInfo = await rpc.GetAccountInfoAsync(playerTokenAccount, commitment);
+            if (accountInfo.WasSuccessful && accountInfo.Result?.Value != null)
+            {
+                return true;
+            }
+
+            EmitStatus("Creating player SKR token account...");
+            var createAtaInstruction = AssociatedTokenAccountProgram.CreateAssociatedTokenAccount(
+                player,
+                player,
+                new PublicKey(LGConfig.SKR_MINT));
+            var createAtaSignature = await SendInstructionSignedByLocalAccounts(
+                createAtaInstruction,
+                new List<Account> { Web3.Wallet.Account });
+            if (string.IsNullOrWhiteSpace(createAtaSignature))
+            {
+                EmitError("Failed to create player SKR token account.");
+                return false;
+            }
+
+            EmitStatus($"Player SKR token account ready. tx={createAtaSignature}");
             return true;
         }
 
@@ -553,11 +648,20 @@ namespace SeekerDungeon.Solana
 
         private async UniTask ConnectEditorDevWalletAsync()
         {
-            var account = await Web3.Instance.LoginInGameWallet(editorDevWalletPassword);
+            var editorWalletPassword = ResolveEditorWalletPassword();
+            var account = await Web3.Instance.LoginInGameWallet(editorWalletPassword);
             if (account == null && createEditorDevWalletIfMissing)
             {
-                EmitStatus("No existing editor in-game wallet found. Creating one now.");
-                account = await Web3.Instance.CreateAccount(null, editorDevWalletPassword);
+                if (useEditorWalletSlots)
+                {
+                    EmitStatus($"No existing editor wallet at slot #{editorWalletSlot}. Creating one now.");
+                }
+                else
+                {
+                    EmitStatus("No existing editor in-game wallet found. Creating one now.");
+                }
+
+                account = await Web3.Instance.CreateAccount(null, editorWalletPassword);
             }
 
             if (account == null)
@@ -567,6 +671,49 @@ namespace SeekerDungeon.Solana
                     "If this is first run, enable createEditorDevWalletIfMissing.");
             }
 
+        }
+
+        private void InitializeEditorWalletSlot()
+        {
+            editorWalletSlot = Math.Max(0, editorWalletSlot);
+            if (!Application.isEditor || !persistEditorWalletSlot)
+            {
+                return;
+            }
+
+            var storedSlot = PlayerPrefs.GetInt(EditorWalletSlotPrefKey, editorWalletSlot);
+            editorWalletSlot = Math.Max(0, storedSlot);
+        }
+
+        private void SetEditorWalletSlot(int slot)
+        {
+            var sanitizedSlot = Math.Max(0, slot);
+            if (editorWalletSlot == sanitizedSlot)
+            {
+                return;
+            }
+
+            editorWalletSlot = sanitizedSlot;
+            if (Application.isEditor && persistEditorWalletSlot)
+            {
+                PlayerPrefs.SetInt(EditorWalletSlotPrefKey, editorWalletSlot);
+                PlayerPrefs.Save();
+            }
+
+            EmitStatus($"Using editor wallet slot #{editorWalletSlot}");
+        }
+
+        private string ResolveEditorWalletPassword()
+        {
+            if (!useEditorWalletSlots)
+            {
+                return editorDevWalletPassword;
+            }
+
+            var safePrefix = string.IsNullOrWhiteSpace(editorWalletPasswordPrefix)
+                ? "seeker-dev-wallet-slot-"
+                : editorWalletPasswordPrefix.Trim();
+            return $"{safePrefix}{editorWalletSlot}";
         }
 
         private async UniTask ConnectWalletAdapterAsync()

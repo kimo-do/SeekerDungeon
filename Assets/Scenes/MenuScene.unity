@@ -684,9 +684,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Solana.LGMainMenuCharacterManager
   lgManager: {fileID: 0}
   playerController: {fileID: 0}
+  walletSessionManager: {fileID: 0}
   gameplaySceneName: GameScene
   loadingSceneName: Loading
   maxDisplayNameLength: 24
+  prepareGameplaySessionInMenu: 1
   logDebugMessages: 1
 --- !u!4 &1459274710
 Transform:
@@ -956,7 +958,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6673592912793491093, guid: 801d1000ca6b4874a85a4ca31780a2ec, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -0.046
+      value: 0.009
       objectReference: {fileID: 0}
     - target: {fileID: 6673592912793491093, guid: 801d1000ca6b4874a85a4ca31780a2ec, type: 3}
       propertyPath: m_LocalPosition.y

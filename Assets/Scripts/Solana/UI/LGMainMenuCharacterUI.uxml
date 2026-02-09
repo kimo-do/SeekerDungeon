@@ -1,15 +1,16 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
     <Style src="project://database/Assets/Scripts/Solana/UI/LGMainMenuCharacterUI.uss?fileID=7433441132597879392&amp;guid=ddafedc00b875714d8f9ebdadf077410&amp;type=3#LGMainMenuCharacterUI"/>
     <ui:VisualElement name="menu-root" class="menu-root">
-        <ui:VisualElement name="top-right-actions" class="top-right-actions" style="top: 24px; right: 31px;">
+        <ui:VisualElement name="top-right-actions" class="top-right-actions" style="top: 24px; right: auto; left: 16px; margin-left: 20px;">
             <ui:Button name="btn-disconnect-wallet" text="Disconnect" class="disconnect-button" style="font-size: 30px; margin-top: 13px; margin-bottom: 13px; padding-bottom: 35px; padding-top: 35px; padding-left: 28px; padding-right: 28px;"/>
         </ui:VisualElement>
-        <ui:VisualElement name="top-center-layer" class="top-center-layer" style="top: 28%;">
-            <ui:VisualElement name="skin-nav-row" class="skin-nav-row" style="width: 645px; opacity: 1;">
-                <ui:Button name="btn-prev-skin" text="&lt;" class="skin-nav-button"/>
-                <ui:Label name="selected-skin-label" text="GOBLIN" class="selected-skin-label" style="font-size: 49px; -unity-font-definition: url(&quot;project://database/Assets/UI%20Toolkit/UnityThemes/UnityDefaultRuntimeTheme.tss?fileID=2230732570650464555&amp;guid=cee11d2bb1864dd42a8426b077917ae0&amp;type=3#NotInter-Regular&quot;); margin-right: 61px; margin-left: 61px;"/>
-                <ui:Button name="btn-next-skin" text="&gt;" class="skin-nav-button"/>
+        <ui:VisualElement name="top-center-layer" class="top-center-layer" style="top: 44%;">
+            <ui:VisualElement name="skin-nav-row" class="skin-nav-row">
+                <ui:Button name="btn-prev-skin" text="&lt;" class="skin-nav-button" style="background-image: url(&quot;project://database/Assets/Sprites/selectors.png?fileID=-1870953563060713810&amp;guid=f17681645497b7445a814f9e40781059&amp;type=3#selectors_0&quot;); -unity-background-scale-mode: scale-to-fit; background-color: rgba(47, 85, 145, 0); border-top-width: 0; border-right-width: 0; border-bottom-width: 0; border-left-width: 0; text-overflow: clip; color: rgba(244, 248, 255, 0);"/>
+                <ui:Label name="selected-skin-label" text="Cave Goblin" class="selected-skin-label" style="display: none;"/>
+                <ui:Button name="btn-next-skin" text="&gt;" class="skin-nav-button" style="background-image: url(&quot;project://database/Assets/Sprites/selectors.png?fileID=2217153556447756492&amp;guid=f17681645497b7445a814f9e40781059&amp;type=3#selectors_1&quot;); -unity-background-scale-mode: scale-to-fit; background-color: rgba(47, 85, 145, 0); border-top-width: 0; border-right-width: 0; border-bottom-width: 0; border-left-width: 0; color: rgba(244, 248, 255, 0);"/>
             </ui:VisualElement>
+            <ui:Label name="locked-display-name-label" text="" class="locked-name-label" style="display: none;"/>
         </ui:VisualElement>
         <ui:VisualElement name="bottom-center-layer" class="bottom-center-layer">
             <ui:Label name="menu-status-label" text="Loading..." class="status-label" style="font-size: 35px;"/>
@@ -20,7 +21,7 @@
                 <ui:Label name="existing-display-name-label" text="Name: --" class="existing-name-label"/>
             </ui:VisualElement>
             <ui:VisualElement name="create-character-container" class="cta-wrap">
-                <ui:Button name="btn-create-character" text="Create Character" class="action-button cta-button" style="font-size: 39px; padding-top: 50px; padding-bottom: 50px;"/>
+                <ui:Button name="btn-create-character" text="CREATE CHARACTER" class="action-button cta-button" style="font-size: 23px; padding-top: 50px; padding-bottom: 50px; -unity-font-definition: url(&quot;project://database/Assets/Pixeled.ttf?fileID=12800000&amp;guid=09038dbc64c02354897ffcf49bbfbed7&amp;type=3#Pixeled&quot;); -unity-text-align: upper-center; color: rgb(255, 250, 235); -unity-text-outline-color: rgb(0, 0, 0);"/>
             </ui:VisualElement>
             <ui:VisualElement name="existing-character-container" class="cta-wrap" style="display: none;">
                 <ui:Button name="btn-enter-dungeon" text="Enter the Dungeon" class="action-button"/>

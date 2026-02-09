@@ -12,6 +12,7 @@ namespace SeekerDungeon.Solana
     {
         public bool IsReady { get; init; }
         public bool HasProfile { get; init; }
+        public bool HasUnsavedProfileChanges { get; init; }
         public bool IsBusy { get; init; }
         public PlayerSkinId SelectedSkin { get; init; }
         public string SelectedSkinLabel { get; init; }
@@ -55,7 +56,10 @@ namespace SeekerDungeon.Solana
         public bool IsBusy { get; private set; }
         public PlayerSkinId SelectedSkin { get; private set; } = PlayerSkinId.Goblin;
         public string PendingDisplayName { get; private set; } = string.Empty;
+        public bool HasUnsavedProfileChanges { get; private set; }
         private readonly List<PlayerSkinId> _selectableSkins = new();
+        private PlayerSkinId _savedProfileSkin = PlayerSkinId.Goblin;
+        private string _savedDisplayName = string.Empty;
 
         private void Awake()
         {
@@ -106,7 +110,7 @@ namespace SeekerDungeon.Solana
 
         public void SelectNextSkin()
         {
-            if (IsBusy || HasExistingProfile)
+            if (IsBusy)
             {
                 return;
             }
@@ -120,12 +124,13 @@ namespace SeekerDungeon.Solana
             var nextIndex = (currentIndex + 1) % _selectableSkins.Count;
             SelectedSkin = _selectableSkins[nextIndex];
             ApplySelectedSkinVisual();
+            RefreshUnsavedProfileChanges();
             EmitState("Choose your character");
         }
 
         public void SelectPreviousSkin()
         {
-            if (IsBusy || HasExistingProfile)
+            if (IsBusy)
             {
                 return;
             }
@@ -139,17 +144,19 @@ namespace SeekerDungeon.Solana
             var previousIndex = currentIndex <= 0 ? _selectableSkins.Count - 1 : currentIndex - 1;
             SelectedSkin = _selectableSkins[previousIndex];
             ApplySelectedSkinVisual();
+            RefreshUnsavedProfileChanges();
             EmitState("Choose your character");
         }
 
         public void SetPendingDisplayName(string nameInput)
         {
-            if (HasExistingProfile)
+            if (IsBusy)
             {
                 return;
             }
 
             PendingDisplayName = SanitizeDisplayName(nameInput);
+            RefreshUnsavedProfileChanges();
             EmitState("Choose your character");
         }
 
@@ -157,12 +164,6 @@ namespace SeekerDungeon.Solana
         {
             if (IsBusy)
             {
-                return;
-            }
-
-            if (HasExistingProfile)
-            {
-                EmitState("Character already exists");
                 return;
             }
 
@@ -181,9 +182,12 @@ namespace SeekerDungeon.Solana
             var displayName = string.IsNullOrWhiteSpace(PendingDisplayName)
                 ? GetShortWalletAddress()
                 : PendingDisplayName;
+            var isUpdatingExistingProfile = HasExistingProfile;
 
             IsBusy = true;
-            EmitState("Creating character onchain...");
+            EmitState(isUpdatingExistingProfile
+                ? "Saving character onchain..."
+                : "Creating character onchain...");
 
             try
             {
@@ -210,13 +214,15 @@ namespace SeekerDungeon.Solana
                 PendingDisplayName = string.IsNullOrWhiteSpace(onchainProfile.DisplayName)
                     ? GetShortWalletAddress()
                     : onchainProfile.DisplayName;
+                SetSavedProfileSnapshot(SelectedSkin, PendingDisplayName);
+                RefreshUnsavedProfileChanges();
 
                 ApplySelectedSkinVisual();
-                EmitState("Character created");
+                EmitState(isUpdatingExistingProfile ? "Character saved" : "Character created");
             }
             catch (Exception exception)
             {
-                EmitError($"Create character failed: {exception.Message}");
+                EmitError($"Save character failed: {exception.Message}");
             }
             finally
             {
@@ -308,6 +314,7 @@ namespace SeekerDungeon.Solana
                     PendingDisplayName = string.IsNullOrWhiteSpace(profile.DisplayName)
                         ? GetShortWalletAddress()
                         : profile.DisplayName;
+                    SetSavedProfileSnapshot(SelectedSkin, PendingDisplayName);
                     ApplySelectedSkinVisual();
                 }
                 else
@@ -318,6 +325,7 @@ namespace SeekerDungeon.Solana
                     }
 
                     PendingDisplayName = GetShortWalletAddress();
+                    HasUnsavedProfileChanges = false;
                     ApplySelectedSkinVisual();
                 }
 
@@ -469,9 +477,24 @@ namespace SeekerDungeon.Solana
         {
             return SelectedSkin switch
             {
-                PlayerSkinId.Goblin => "GOBLIN",
-                PlayerSkinId.Dwarf => "DWARF",
-                _ => SelectedSkin.ToString().ToUpperInvariant()
+                PlayerSkinId.CheekyGoblin => "Cheeky Goblin",
+                PlayerSkinId.ScrappyDwarfCharacter => "Scrappy Dwarf",
+                PlayerSkinId.DrunkDwarfCharacter => "Drunk Dwarf",
+                PlayerSkinId.FatDwarfCharacter => "Fat Dwarf",
+                PlayerSkinId.FriendlyGoblin => "Friendly Goblin",
+                PlayerSkinId.GingerBearDwarfVariant => "Ginger Dwarf",
+                PlayerSkinId.HappyDrunkDwarf => "Happy Dwarf",
+                PlayerSkinId.IdleGoblin => "Idle Goblin",
+                PlayerSkinId.IdleHumanCharacter => "Idle Human",
+                PlayerSkinId.JollyDwarfCharacter => "Jolly Dwarf",
+                PlayerSkinId.JollyDwarfVariant => "Jolly Dwarf II",
+                PlayerSkinId.OldDwarfCharacter => "Old Dwarf",
+                PlayerSkinId.ScrappyDwarfGingerBeard => "Ginger Beard",
+                PlayerSkinId.ScrappyDwarfVariant => "Scrappy Dwarf II",
+                PlayerSkinId.ScrappyHumanAssassin => "Human Assassin",
+                PlayerSkinId.ScrappySkeleton => "Scrappy Skeleton",
+                PlayerSkinId.SinisterHoodedFigure => "Hooded Figure",
+                _ => SelectedSkin.ToString()
             };
         }
 
@@ -497,6 +520,28 @@ namespace SeekerDungeon.Solana
             return trimmedValue.Substring(0, maxDisplayNameLength);
         }
 
+        private void SetSavedProfileSnapshot(PlayerSkinId skin, string displayName)
+        {
+            _savedProfileSkin = skin;
+            _savedDisplayName = SanitizeDisplayName(displayName);
+        }
+
+        private void RefreshUnsavedProfileChanges()
+        {
+            if (!HasExistingProfile)
+            {
+                HasUnsavedProfileChanges = false;
+                return;
+            }
+
+            HasUnsavedProfileChanges =
+                SelectedSkin != _savedProfileSkin ||
+                !string.Equals(
+                    SanitizeDisplayName(PendingDisplayName),
+                    _savedDisplayName,
+                    StringComparison.Ordinal);
+        }
+
         private void EmitState(string statusMessage)
         {
             var state = BuildState(statusMessage);
@@ -514,6 +559,7 @@ namespace SeekerDungeon.Solana
             {
                 IsReady = IsReady,
                 HasProfile = HasExistingProfile,
+                HasUnsavedProfileChanges = HasUnsavedProfileChanges,
                 IsBusy = IsBusy,
                 SelectedSkin = SelectedSkin,
                 SelectedSkinLabel = GetSelectedSkinLabel(),

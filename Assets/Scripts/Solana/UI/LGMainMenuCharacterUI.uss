@@ -48,14 +48,18 @@
 
 .skin-nav-row {
     flex-direction: row;
-    justify-content: center;
+    justify-content: space-between;
     align-items: center;
+    width: 900px;
+    max-width: 96%;
+    min-height: 72px;
 }
 
 .skin-nav-button {
-    width: 62px;
-    height: 56px;
-    font-size: 24px;
+    width: 174px;
+    height: 168px;
+    flex-shrink: 0;
+    font-size: 48px;
     -unity-font-style: bold;
     color: rgb(244, 248, 255);
     background-color: rgb(47, 85, 145);
@@ -76,12 +80,21 @@
 }
 
 .selected-skin-label {
-    min-width: 180px;
-    margin-left: 10px;
-    margin-right: 10px;
-    font-size: 24px;
+    flex-grow: 1;
+    min-width: 0;
+    margin-left: 16px;
+    margin-right: 16px;
+    font-size: 49px;
     -unity-font-style: bold;
     color: rgb(233, 242, 255);
+    -unity-text-align: middle-center;
+}
+
+.locked-name-label {
+    margin-top: 12px;
+    font-size: 42px;
+    -unity-font-style: bold;
+    color: rgb(236, 243, 255);
     -unity-text-align: middle-center;
 }
 
@@ -100,13 +113,13 @@
 }
 
 .action-button {
-    width: 100%;
-    max-width: 560px;
-    height: 64px;
+    width: 101%;
+    max-width: 543px;
+    height: 84px;
     font-size: 22px;
     -unity-font-style: bold;
-    color: rgb(245, 250, 255);
-    background-color: rgb(44, 138, 85);
+    color: rgb(255, 217, 85);
+    background-color: rgba(0, 0, 0, 0);
     border-width: 3px;
     border-top-color: rgb(176, 237, 200);
     border-left-color: rgb(151, 221, 183);
@@ -116,6 +129,17 @@
     border-top-right-radius: 12px;
     border-bottom-left-radius: 12px;
     border-bottom-right-radius: 12px;
+    background-image: url("project://database/Assets/Sprites/minimalbutton.png?fileID=2800000&guid=bbc64981d8401bd42a16c3c5b5039c7c&type=3#minimalbutton");
+    -unity-background-scale-mode: scale-to-fit;
+    max-height: 0;
+    min-height: 182px;
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgb(87, 52, 0);
+    text-shadow: 5px 5px 5px rgba(0, 0, 0, 0.43);
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
 }
 
 .action-button:active {
@@ -139,12 +163,12 @@
 }
 
 .disconnect-button {
-    min-width: 142px;
-    height: 44px;
+    min-width: 100px;
+    height: 100px;
     font-size: 16px;
     -unity-font-style: bold;
-    color: rgb(252, 242, 245);
-    background-color: rgb(140, 44, 58);
+    color: rgba(252, 242, 245, 0);
+    background-color: rgba(140, 44, 58, 0);
     border-width: 2px;
     border-top-color: rgb(227, 140, 153);
     border-left-color: rgb(210, 112, 127);
@@ -154,6 +178,10 @@
     border-top-right-radius: 10px;
     border-bottom-left-radius: 10px;
     border-bottom-right-radius: 10px;
+    background-image: url("project://database/Assets/Sprites/red_disconnect_button%20(1).png?fileID=2800000&guid=abac4800e8f8e5d49a0d96d696a40916&type=3#red_disconnect_button (1)");
+    -unity-background-scale-mode: scale-to-fit;
+    width: 100px;
+    min-height: 100px;
 }
 
 .disconnect-button:active {
