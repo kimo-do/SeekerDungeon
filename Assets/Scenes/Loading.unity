@@ -692,6 +692,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Solana.LGManager
   logDebugMessages: 1
   rpcUrl: https://api.devnet.solana.com
+  fallbackRpcUrl: https://rpc.magicblock.app/devnet/
 --- !u!114 &674770250
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -705,12 +706,17 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Solana.LGWalletSessionManager
   rpcUrl: https://api.devnet.solana.com
+  fallbackRpcUrl: https://rpc.magicblock.app/devnet/
   commitment: 1
   connectOnStart: 1
   allowAutoConnectOnDeviceBuilds: 0
   startupLoginMode: 0
   autoUseEditorDevWallet: 1
   editorDevWalletPassword: seeker-dev-wallet
+  useEditorWalletSlots: 1
+  editorWalletPasswordPrefix: seeker-dev-wallet-slot-
+  editorWalletSlot: 0
+  persistEditorWalletSlot: 1
   createEditorDevWalletIfMissing: 1
   requestAirdropIfLowSolInEditor: 1
   editorLowSolThreshold: 0.2
@@ -718,6 +724,9 @@ MonoBehaviour:
   autoBeginSessionAfterConnect: 0
   sessionDurationMinutes: 60
   defaultSessionMaxTokenSpend: 200000000
+  autoFundSessionSigner: 1
+  sessionSignerMinLamports: 5000000
+  sessionSignerTopUpLamports: 10000000
   defaultAllowlistMask: 8159
   logDebugMessages: 1
 --- !u!4 &674770251
@@ -1392,7 +1401,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 2100000, guid: af137082f4d0d664e8c079a159b6c25a, type: 2}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}

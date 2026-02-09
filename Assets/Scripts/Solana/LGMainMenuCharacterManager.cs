@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
 using SeekerDungeon;
+using Solana.Unity.Programs;
+using Solana.Unity.Rpc.Types;
 using Solana.Unity.SDK;
+using Solana.Unity.Wallet;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -18,6 +21,11 @@ namespace SeekerDungeon.Solana
         public string SelectedSkinLabel { get; init; }
         public string WalletShortAddress { get; init; }
         public string DisplayName { get; init; }
+        public string PlayerDisplayName { get; init; }
+        public string SolBalanceText { get; init; }
+        public string SkrBalanceText { get; init; }
+        public bool IsSessionReady { get; init; }
+        public string SessionStatusText { get; init; }
         public string StatusMessage { get; init; }
     }
 
@@ -60,6 +68,11 @@ namespace SeekerDungeon.Solana
         private readonly List<PlayerSkinId> _selectableSkins = new();
         private PlayerSkinId _savedProfileSkin = PlayerSkinId.Goblin;
         private string _savedDisplayName = string.Empty;
+        private string _solBalanceText = "--";
+        private string _skrBalanceText = "--";
+        private bool _isSessionReady;
+        private bool _isRefreshingWalletPanel;
+        private bool _isEnsuringSessionFromMenu;
 
         private void Awake()
         {
@@ -218,6 +231,7 @@ namespace SeekerDungeon.Solana
                 RefreshUnsavedProfileChanges();
 
                 ApplySelectedSkinVisual();
+                await RefreshWalletPanelAsync();
                 EmitState(isUpdatingExistingProfile ? "Character saved" : "Character created");
             }
             catch (Exception exception)
@@ -277,6 +291,11 @@ namespace SeekerDungeon.Solana
             }
         }
 
+        public void EnsureSessionReadyFromMenu()
+        {
+            EnsureSessionReadyFromMenuAsync().Forget();
+        }
+
         private async UniTaskVoid InitializeAsync()
         {
             if (lgManager == null)
@@ -330,6 +349,7 @@ namespace SeekerDungeon.Solana
                 }
 
                 IsReady = true;
+                await RefreshWalletPanelAsync();
                 if (prepareGameplaySessionInMenu &&
                     walletSessionManager != null &&
                     !walletSessionManager.CanUseLocalSessionSigning)
@@ -400,6 +420,86 @@ namespace SeekerDungeon.Solana
             }
 
             EmitState("Session unavailable. Gameplay may prompt wallet approvals.");
+        }
+
+        private async UniTaskVoid EnsureSessionReadyFromMenuAsync()
+        {
+            if (_isEnsuringSessionFromMenu || walletSessionManager == null)
+            {
+                return;
+            }
+
+            _isEnsuringSessionFromMenu = true;
+            try
+            {
+                EmitState("Preparing gameplay session...");
+                await walletSessionManager.EnsureGameplaySessionAsync(emitPromptStatus: true);
+                await RefreshWalletPanelAsync();
+                if (_isSessionReady)
+                {
+                    EmitState("Session ready");
+                }
+                else
+                {
+                    EmitState("Session unavailable. Gameplay may prompt wallet approvals.");
+                }
+            }
+            finally
+            {
+                _isEnsuringSessionFromMenu = false;
+            }
+        }
+
+        private async UniTask RefreshWalletPanelAsync()
+        {
+            if (_isRefreshingWalletPanel)
+            {
+                return;
+            }
+
+            _isRefreshingWalletPanel = true;
+            try
+            {
+                var wallet = Web3.Wallet;
+                var account = wallet?.Account;
+                if (wallet?.ActiveRpcClient == null || account == null)
+                {
+                    _solBalanceText = "--";
+                    _skrBalanceText = "--";
+                    _isSessionReady = false;
+                    return;
+                }
+
+                _isSessionReady = walletSessionManager != null && walletSessionManager.CanUseLocalSessionSigning;
+
+                var solResult = await wallet.ActiveRpcClient.GetBalanceAsync(account.PublicKey, Commitment.Confirmed);
+                if (solResult.WasSuccessful && solResult.Result != null)
+                {
+                    _solBalanceText = $"{(solResult.Result.Value / 1_000_000_000d):F3}";
+                }
+                else
+                {
+                    _solBalanceText = "--";
+                }
+
+                var skrMint = new PublicKey(LGConfig.SKR_MINT);
+                var playerAta = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(account.PublicKey, skrMint);
+                var tokenResult = await wallet.ActiveRpcClient.GetTokenAccountBalanceAsync(playerAta, Commitment.Confirmed);
+                if (tokenResult.WasSuccessful && tokenResult.Result?.Value != null)
+                {
+                    var rawAmount = tokenResult.Result.Value.Amount ?? "0";
+                    var amountLamports = ulong.TryParse(rawAmount, out var parsedAmount) ? parsedAmount : 0UL;
+                    _skrBalanceText = $"{(amountLamports / (double)LGConfig.SKR_MULTIPLIER):F3}";
+                }
+                else
+                {
+                    _skrBalanceText = "0";
+                }
+            }
+            finally
+            {
+                _isRefreshingWalletPanel = false;
+            }
         }
 
         private async UniTask<bool> WaitForPlayerAccountAfterInitAsync()
@@ -555,6 +655,9 @@ namespace SeekerDungeon.Solana
 
         private MainMenuCharacterState BuildState(string statusMessage)
         {
+            var playerName = HasExistingProfile && !string.IsNullOrWhiteSpace(PendingDisplayName)
+                ? PendingDisplayName
+                : GetShortWalletAddress();
             return new MainMenuCharacterState
             {
                 IsReady = IsReady,
@@ -565,6 +668,11 @@ namespace SeekerDungeon.Solana
                 SelectedSkinLabel = GetSelectedSkinLabel(),
                 WalletShortAddress = GetShortWalletAddress(),
                 DisplayName = PendingDisplayName,
+                PlayerDisplayName = playerName,
+                SolBalanceText = _solBalanceText,
+                SkrBalanceText = _skrBalanceText,
+                IsSessionReady = _isSessionReady,
+                SessionStatusText = _isSessionReady ? "Ready" : "Not Ready",
                 StatusMessage = statusMessage
             };
         }

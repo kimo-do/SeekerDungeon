@@ -18,17 +18,24 @@ namespace SeekerDungeon.Solana
         private VisualElement _existingIdentityPanel;
         private VisualElement _createContainer;
         private VisualElement _existingContainer;
+        private VisualElement _topCenterLayer;
         private VisualElement _skinNavPanel;
         private Label _skinNameLabel;
         private Label _lockedNameLabel;
         private TextField _displayNameInput;
         private Label _statusLabel;
         private Label _existingNameLabel;
+        private Label _walletSolBalanceLabel;
+        private Label _walletSkrBalanceLabel;
+        private Label _walletSessionActionLabel;
+        private VisualElement _walletSessionIconInactive;
+        private VisualElement _walletSessionIconActive;
         private Button _previousSkinButton;
         private Button _nextSkinButton;
         private Button _confirmCreateButton;
         private Button _enterDungeonButton;
         private Button _disconnectButton;
+        private Button _sessionPillButton;
         private TouchScreenKeyboard _mobileKeyboard;
         private bool _isApplyingKeyboardText;
         private VisualElement _boundRoot;
@@ -86,17 +93,24 @@ namespace SeekerDungeon.Solana
             _existingIdentityPanel = root.Q<VisualElement>("existing-identity-panel");
             _createContainer = root.Q<VisualElement>("create-character-container");
             _existingContainer = root.Q<VisualElement>("existing-character-container");
+            _topCenterLayer = root.Q<VisualElement>("top-center-layer");
             _skinNavPanel = root.Q<VisualElement>("skin-nav-row");
             _skinNameLabel = root.Q<Label>("selected-skin-label");
             _lockedNameLabel = root.Q<Label>("locked-display-name-label");
             _displayNameInput = root.Q<TextField>("display-name-input");
             _statusLabel = root.Q<Label>("menu-status-label");
             _existingNameLabel = root.Q<Label>("existing-display-name-label");
+            _walletSolBalanceLabel = root.Q<Label>("wallet-sol-balance-label");
+            _walletSkrBalanceLabel = root.Q<Label>("wallet-skr-balance-label");
+            _walletSessionActionLabel = root.Q<Label>("wallet-session-action-label");
+            _walletSessionIconInactive = root.Q<VisualElement>("wallet-session-icon-inactive");
+            _walletSessionIconActive = root.Q<VisualElement>("wallet-session-icon-active");
             _previousSkinButton = root.Q<Button>("btn-prev-skin");
             _nextSkinButton = root.Q<Button>("btn-next-skin");
             _confirmCreateButton = root.Q<Button>("btn-create-character");
             _enterDungeonButton = root.Q<Button>("btn-enter-dungeon");
             _disconnectButton = root.Q<Button>("btn-disconnect-wallet");
+            _sessionPillButton = root.Q<Button>("btn-session-pill");
 
             if (_previousSkinButton != null)
             {
@@ -121,6 +135,11 @@ namespace SeekerDungeon.Solana
             if (_disconnectButton != null)
             {
                 _disconnectButton.clicked += HandleDisconnectWalletClicked;
+            }
+
+            if (_sessionPillButton != null)
+            {
+                _sessionPillButton.clicked += HandleEnableSessionClicked;
             }
 
             if (_displayNameInput != null)
@@ -160,6 +179,11 @@ namespace SeekerDungeon.Solana
                 _disconnectButton.clicked -= HandleDisconnectWalletClicked;
             }
 
+            if (_sessionPillButton != null)
+            {
+                _sessionPillButton.clicked -= HandleEnableSessionClicked;
+            }
+
             if (_displayNameInput != null)
             {
                 _displayNameInput.UnregisterValueChangedCallback(HandleDisplayNameChanged);
@@ -193,6 +217,11 @@ namespace SeekerDungeon.Solana
         private void HandleDisconnectWalletClicked()
         {
             characterManager?.DisconnectWallet();
+        }
+
+        private void HandleEnableSessionClicked()
+        {
+            characterManager?.EnsureSessionReadyFromMenu();
         }
 
         private void HandleDisplayNameChanged(ChangeEvent<string> changeEvent)
@@ -294,8 +323,33 @@ namespace SeekerDungeon.Solana
 
             if (_lockedNameLabel != null)
             {
-                _lockedNameLabel.text = string.Empty;
-                _lockedNameLabel.style.display = DisplayStyle.None;
+                _lockedNameLabel.text = state.PlayerDisplayName;
+                _lockedNameLabel.style.display = isLockedProfile ? DisplayStyle.Flex : DisplayStyle.None;
+            }
+
+            if (_walletSolBalanceLabel != null)
+            {
+                _walletSolBalanceLabel.text = state.SolBalanceText;
+            }
+
+            if (_walletSkrBalanceLabel != null)
+            {
+                _walletSkrBalanceLabel.text = state.SkrBalanceText;
+            }
+
+            if (_walletSessionActionLabel != null)
+            {
+                _walletSessionActionLabel.text = state.IsSessionReady ? "ACTIVE" : "ACTIVATE";
+            }
+
+            if (_walletSessionIconInactive != null)
+            {
+                _walletSessionIconInactive.style.display = state.IsSessionReady ? DisplayStyle.None : DisplayStyle.Flex;
+            }
+
+            if (_walletSessionIconActive != null)
+            {
+                _walletSessionIconActive.style.display = state.IsSessionReady ? DisplayStyle.Flex : DisplayStyle.None;
             }
 
             if (_statusLabel != null)
@@ -330,14 +384,24 @@ namespace SeekerDungeon.Solana
                 _skinNavPanel.style.display = isLockedProfile ? DisplayStyle.None : DisplayStyle.Flex;
             }
 
+            if (_topCenterLayer != null)
+            {
+                _topCenterLayer.style.top = Length.Percent(isLockedProfile ? 32f : 44f);
+            }
+
             var canEditProfile = !state.IsBusy && state.IsReady;
             var canEnter = !state.IsBusy && state.IsReady && isLockedProfile;
 
             if (_confirmCreateButton != null)
             {
-                _confirmCreateButton.text = state.HasProfile
+                _confirmCreateButton.text = (state.HasProfile
                     ? "Save Character"
-                    : "Create Character";
+                    : "Create Character").ToUpperInvariant();
+            }
+
+            if (_enterDungeonButton != null)
+            {
+                _enterDungeonButton.text = "ENTER THE DUNGEON";
             }
 
             _previousSkinButton?.SetEnabled(canEditProfile);
@@ -348,6 +412,11 @@ namespace SeekerDungeon.Solana
                 (!state.HasProfile || state.HasUnsavedProfileChanges));
             _enterDungeonButton?.SetEnabled(canEnter);
             _disconnectButton?.SetEnabled(!state.IsBusy);
+            if (_sessionPillButton != null)
+            {
+                var canActivateSession = !state.IsSessionReady && state.IsReady && !state.IsBusy;
+                _sessionPillButton.SetEnabled(canActivateSession);
+            }
         }
 
         private void ApplySkinLabelSizing(string labelText)

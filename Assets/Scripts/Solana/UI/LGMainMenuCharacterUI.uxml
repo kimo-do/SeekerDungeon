@@ -1,8 +1,25 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
     <Style src="project://database/Assets/Scripts/Solana/UI/LGMainMenuCharacterUI.uss?fileID=7433441132597879392&amp;guid=ddafedc00b875714d8f9ebdadf077410&amp;type=3#LGMainMenuCharacterUI"/>
     <ui:VisualElement name="menu-root" class="menu-root">
-        <ui:VisualElement name="top-right-actions" class="top-right-actions" style="top: 24px; right: auto; left: 16px; margin-left: 20px;">
+        <ui:VisualElement name="top-left-actions" class="top-left-actions">
             <ui:Button name="btn-disconnect-wallet" text="Disconnect" class="disconnect-button" style="font-size: 30px; margin-top: 13px; margin-bottom: 13px; padding-bottom: 35px; padding-top: 35px; padding-left: 28px; padding-right: 28px;"/>
+        </ui:VisualElement>
+        <ui:VisualElement name="top-right-actions" class="top-right-actions">
+            <ui:VisualElement name="wallet-pill-stack" class="wallet-pill-stack">
+                <ui:VisualElement name="wallet-sol-pill" class="wallet-pill">
+                    <ui:VisualElement name="wallet-sol-icon-image" class="wallet-pill-icon-image wallet-sol-icon-image"/>
+                    <ui:Label name="wallet-sol-balance-label" text="23" class="wallet-pill-value"/>
+                </ui:VisualElement>
+                <ui:VisualElement name="wallet-skr-pill" class="wallet-pill">
+                    <ui:Label name="wallet-skr-icon-label" text="SKR" class="wallet-pill-icon-text"/>
+                    <ui:Label name="wallet-skr-balance-label" text="88" class="wallet-pill-value"/>
+                </ui:VisualElement>
+                <ui:Button name="btn-session-pill" text="" class="wallet-pill wallet-session-pill">
+                    <ui:VisualElement name="wallet-session-icon-inactive" class="wallet-session-gem wallet-session-gem-inactive"/>
+                    <ui:VisualElement name="wallet-session-icon-active" class="wallet-session-gem wallet-session-gem-active" style="display: none;"/>
+                    <ui:Label name="wallet-session-action-label" text="ACTIVATE" class="wallet-pill-value"/>
+                </ui:Button>
+            </ui:VisualElement>
         </ui:VisualElement>
         <ui:VisualElement name="top-center-layer" class="top-center-layer" style="top: 44%;">
             <ui:VisualElement name="skin-nav-row" class="skin-nav-row">
@@ -21,10 +38,10 @@
                 <ui:Label name="existing-display-name-label" text="Name: --" class="existing-name-label"/>
             </ui:VisualElement>
             <ui:VisualElement name="create-character-container" class="cta-wrap">
-                <ui:Button name="btn-create-character" text="CREATE CHARACTER" class="action-button cta-button" style="font-size: 23px; padding-top: 50px; padding-bottom: 50px; -unity-font-definition: url(&quot;project://database/Assets/Pixeled.ttf?fileID=12800000&amp;guid=09038dbc64c02354897ffcf49bbfbed7&amp;type=3#Pixeled&quot;); -unity-text-align: upper-center; color: rgb(255, 250, 235); -unity-text-outline-color: rgb(0, 0, 0);"/>
+                <ui:Button name="btn-create-character" text="CREATE CHARACTER" class="action-button cta-button" style="width: 500px;"/>
             </ui:VisualElement>
             <ui:VisualElement name="existing-character-container" class="cta-wrap" style="display: none;">
-                <ui:Button name="btn-enter-dungeon" text="Enter the Dungeon" class="action-button"/>
+                <ui:Button name="btn-enter-dungeon" text="ENTER THE DUNGEON" class="action-button"/>
             </ui:VisualElement>
         </ui:VisualElement>
     </ui:VisualElement>
