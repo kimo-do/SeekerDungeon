@@ -23,6 +23,11 @@
     border-left-color: rgba(108, 120, 140, 0.85);
     border-right-color: rgba(35, 44, 58, 0.9);
     border-bottom-color: rgba(26, 33, 45, 0.9);
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+    margin-top: 150px;
 }
 
 .connect-button-stack {
@@ -35,65 +40,55 @@
 
 .connect-button-shadow {
     position: absolute;
-    left: 10px;
-    top: 12px;
-    right: 0;
-    bottom: 0;
+    left: -18px;
+    top: -14px;
+    right: -18px;
+    bottom: -14px;
     background-color: rgb(0, 0, 0);
-    border-top-left-radius: 12px;
-    border-top-right-radius: 12px;
-    border-bottom-left-radius: 12px;
-    border-bottom-right-radius: 12px;
+    opacity: 0.34;
+    border-top-left-radius: 52px;
+    border-top-right-radius: 52px;
+    border-bottom-left-radius: 52px;
+    border-bottom-right-radius: 52px;
 }
 
 .connect-button {
     position: absolute;
     left: 0;
     top: 0;
-    right: 10px;
-    bottom: 12px;
-    font-size: 30px;
-    -unity-font-style: bold;
-    color: rgb(248, 252, 255);
-    background-color: rgb(40, 138, 255);
-    border-width: 3px;
-    border-top-color: rgb(180, 223, 255);
-    border-left-color: rgb(142, 205, 255);
-    border-right-color: rgb(15, 72, 154);
-    border-bottom-color: rgb(10, 56, 123);
-    border-top-left-radius: 12px;
-    border-top-right-radius: 12px;
-    border-bottom-left-radius: 12px;
-    border-bottom-right-radius: 12px;
+    right: 8px;
+    bottom: 10px;
+    color: rgba(0, 0, 0, 0);
+    background-color: rgba(0, 0, 0, 0);
+    border-width: 0;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    background-image: url("project://database/Assets/Sprites/walltbutton.png?fileID=2800000&guid=1bd14f0f93f50764185ae47831eaf479&type=3");
+    -unity-background-scale-mode: scale-to-fit;
     margin-top: 0;
     margin-bottom: 0;
-    transition-property: background-color, margin-top, margin-bottom;
+    margin-left: 0;
+    margin-right: 0;
+    transition-property: margin-top, margin-bottom, margin-left, margin-right, opacity;
     transition-duration: 0.06s;
 }
 
 .connect-button:hover {
-    background-color: rgb(74, 160, 255);
+    opacity: 0.95;
 }
 
 .connect-button:active {
-    background-color: rgb(22, 110, 221);
-    margin-top: 6px;
-    margin-bottom: -6px;
-    margin-left: 6px;
-    margin-right: -6px;
-    border-top-color: rgb(58, 129, 220);
-    border-left-color: rgb(46, 116, 206);
-    border-right-color: rgb(149, 213, 255);
-    border-bottom-color: rgb(192, 232, 255);
+    opacity: 1;
+    margin-top: 5px;
+    margin-bottom: -5px;
+    margin-left: 5px;
+    margin-right: -5px;
 }
 
 .connect-button:disabled {
-    background-color: rgb(67, 81, 98);
-    color: rgb(157, 172, 189);
-    border-top-color: rgb(104, 114, 129);
-    border-left-color: rgb(95, 104, 118);
-    border-right-color: rgb(48, 56, 68);
-    border-bottom-color: rgb(42, 50, 60);
+    opacity: 0.45;
 }
 
 .connect-status {

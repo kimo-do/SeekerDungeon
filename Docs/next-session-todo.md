@@ -1,69 +1,47 @@
-# Next Session TODO (Auth + Real-time Scale)
+# Next Session TODO
 
 Context:
-- We added `PlayerProfile` (`skin_id`, `display_name`) and `RoomPresence` indexing.
-- Onboarding flow now supports `create_player_profile(skin_id, display_name)` and grants starter bronze pickaxe once.
-- Next bottlenecks are signature friction and high-frequency room updates.
+- Core dungeon flow is mostly working (join/tick/complete/move/transition).
+- We now want to harden session-based gameplay and finish chest/inventory gameplay loop.
 
-## 1) Session Keys / Delegated Signing (High Priority)
-
-Goal:
-- Avoid Seed Vault prompt on every gameplay action.
-
-Why:
-- Current model needs wallet signature for each tx.
-- For mobile gameplay this kills UX (too many confirmations).
-
-Implement:
-- [x] Add a `SessionAuthority` PDA tying:
-  - player wallet
-  - session pubkey
-  - expiry slot/timestamp
-  - instruction allowlist
-  - max token spend cap / scope
-- [x] Add `begin_session` instruction (wallet signs once).
-- [ ] Update gameplay instructions to accept either:
-  - wallet signer
-  - valid session signer with policy checks.
-- [x] Add `end_session` / revoke support.
-  - done in this pass:
-    - `boost_job` (session allowlist + spend cap tracked on `SessionAuthority`)
-    - `abandon_job`
-    - `claim_job_reward`
-    - `equip_item`
-    - `set_player_skin`
-    - `remove_inventory_item`
-    - `move_player`
-    - `complete_job`
-    - `create_player_profile`
-    - `join_boss_fight`
-    - `loot_chest`
-    - `loot_boss`
-    - `join_job_with_session` (dedicated session-only path to avoid BPF account-validation stack overflow on `join_job`)
-
-## 2) Real-time Room Occupant Sync via Presence Subscriptions (High Priority)
+## 1) Use Sessions For All Gameplay Actions (High Priority)
 
 Goal:
-- Spawn/update nearby players instantly with skin + weapon + activity.
-
-Why:
-- Polling is wasteful and laggy.
-- We already have indexed `RoomPresence` designed exactly for this.
+- On Seeker, avoid wallet approval prompts for each action after initial session start.
 
 Implement:
-- On room load:
-  - fetch room presences for current room
-  - call `StartRoomOccupantSubscriptions(roomX, roomY)`
-- Maintain local `Dictionary<wallet, occupant>` cache in Unity.
-- On presence update:
-  - spawn/despawn/update character model
-  - switch animation by activity:
-    - idle
-    - door job + direction
-    - boss fight
-- Add unsubscribe/cleanup when leaving a room.
+- [ ] Audit all gameplay calls in Unity and ensure they route through session-enabled instruction paths.
+- [ ] Confirm session policy/allowlist includes every action used in dungeon flow.
+- [ ] Add fallback behavior: if session is missing/expired, prompt to re-start session once, then continue action.
+- [ ] Verify end-to-end on device: move, join job, tick, complete, claim, loot chest/boss, equip.
 
-## 3) Optional Follow-up
+## 2) Validate Room Routing Logic (High Priority)
 
-- Add `skin_id` + `display_name` fields to in-room nameplates.
-- Add profile edit screen (rename + reskin) with cooldown or fee if needed.
+Goal:
+- Ensure door topology is consistent and directional travel is correct.
+
+Implement:
+- [ ] Test edge case: room with a single open door must return player to the room they came from.
+- [ ] Add debug validation/logging for door state + target coordinates before move.
+- [ ] Add a lightweight regression script/test path for repeated move chains (forward/backward loops).
+
+## 3) Chest Loot + Inventory UX (High Priority)
+
+Goal:
+- Looting chest should award items and visibly update player inventory in Unity.
+
+Implement:
+- [ ] Confirm onchain chest loot writes to `InventoryAccount` correctly for all chest outcomes.
+- [ ] Add/finish Unity inventory view binding to onchain inventory items.
+- [ ] Refresh UI immediately after successful loot transaction.
+- [ ] Show clear player feedback (loot result + inventory update).
+
+## 4) Unity Dev Task: Mining Animation
+
+Owner:
+- Unity (you)
+
+Implement:
+- [ ] Play mining animation while player is actively on a rubble job.
+- [ ] Stop animation when leaving/completing/abandoning the job.
+- [ ] Keep idle/move/combat animation transitions clean.
