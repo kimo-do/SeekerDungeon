@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using Cysharp.Threading.Tasks;
 using Solana.Unity.Programs;
 using Solana.Unity.Rpc;
@@ -17,6 +18,7 @@ using Chaindepth;
 using Chaindepth.Accounts;
 using Chaindepth.Program;
 using Chaindepth.Types;
+using UnityEngine.Networking;
 
 namespace SeekerDungeon.Solana
 {
@@ -32,7 +34,8 @@ namespace SeekerDungeon.Solana
         [SerializeField] private bool logDebugMessages = true;
 
         [Header("RPC Settings")]
-        [SerializeField] private string rpcUrl = "https://api.devnet.solana.com";
+        [SerializeField] private string rpcUrl = LGConfig.RPC_URL;
+        [SerializeField] private string fallbackRpcUrl = LGConfig.RPC_FALLBACK_URL;
 
         // Cached state (using generated account types)
         public GlobalAccount CurrentGlobalState { get; private set; }
@@ -52,10 +55,25 @@ namespace SeekerDungeon.Solana
         private PublicKey _programId;
         private PublicKey _globalPda;
         private IRpcClient _rpcClient;
+        private IRpcClient _fallbackRpcClient;
         private IStreamingRpcClient _streamingRpcClient;
         private ChaindepthClient _client;
         private readonly HashSet<string> _roomPresenceSubscriptionKeys = new();
         private uint? _lastProgramErrorCode;
+
+        private struct GameplaySigningContext
+        {
+            public Account SignerAccount;
+            public PublicKey Authority;
+            public PublicKey Player;
+            public PublicKey SessionAuthority;
+            public bool UsesSessionSigner;
+        }
+
+        private const int MaxTransientSendAttemptsPerRpc = 2;
+        private const int BaseTransientRetryDelayMs = 300;
+        private const int RawHttpProbeTimeoutSeconds = 20;
+        private const int RawHttpBodyLogLimit = 400;
 
         private void Awake()
         {
@@ -69,9 +87,15 @@ namespace SeekerDungeon.Solana
 
             _programId = new PublicKey(LGConfig.PROGRAM_ID);
             _globalPda = new PublicKey(LGConfig.GLOBAL_PDA);
-            
+
+            rpcUrl = NormalizeRpcUrl(rpcUrl, LGConfig.RPC_URL);
+            fallbackRpcUrl = NormalizeRpcUrl(fallbackRpcUrl, LGConfig.RPC_FALLBACK_URL);
+
             // Initialize RPC client
             _rpcClient = ClientFactory.GetClient(rpcUrl);
+            _fallbackRpcClient = string.Equals(rpcUrl, fallbackRpcUrl, StringComparison.OrdinalIgnoreCase)
+                ? null
+                : ClientFactory.GetClient(fallbackRpcUrl);
 
             // Initialize streaming RPC client for account subscriptions.
             // If this fails, we still run with polling-only behavior.
@@ -91,6 +115,7 @@ namespace SeekerDungeon.Solana
             _client = new ChaindepthClient(_rpcClient, _streamingRpcClient, _programId);
             
             Log($"LG Manager initialized. Program: {LGConfig.PROGRAM_ID}");
+            Log($"RPC primary={rpcUrl} fallback={fallbackRpcUrl}");
         }
 
         /// <summary>
@@ -98,9 +123,7 @@ namespace SeekerDungeon.Solana
         /// </summary>
         private IRpcClient GetRpcClient()
         {
-            if (Web3.Wallet?.ActiveRpcClient != null)
-                return Web3.Wallet.ActiveRpcClient;
-            return _rpcClient;
+            return _rpcClient ?? Web3.Wallet?.ActiveRpcClient;
         }
 
         private void Log(string message)
@@ -1059,54 +1082,95 @@ namespace SeekerDungeon.Solana
             }
 
             Log($"Moving player to ({newX}, {newY})...");
+            if (CurrentPlayerState != null &&
+                TryGetMoveDirection(
+                    CurrentPlayerState.CurrentRoomX,
+                    CurrentPlayerState.CurrentRoomY,
+                    newX,
+                    newY,
+                    out var moveDirection))
+            {
+                var currentWallState = CurrentRoomState != null &&
+                    CurrentRoomState.Walls != null &&
+                    moveDirection < CurrentRoomState.Walls.Length
+                    ? CurrentRoomState.Walls[moveDirection]
+                    : byte.MaxValue;
+
+                Log(
+                    $"Move validation: from=({CurrentPlayerState.CurrentRoomX},{CurrentPlayerState.CurrentRoomY}) " +
+                    $"to=({newX},{newY}) direction={LGConfig.GetDirectionName(moveDirection)} " +
+                    $"currentWall={LGConfig.GetWallStateName(currentWallState)}");
+            }
 
             try
             {
-                var playerPda = DerivePlayerPda(Web3.Wallet.Account.PublicKey);
-                var profilePda = DeriveProfilePda(Web3.Wallet.Account.PublicKey);
-                var currentRoomPda = DeriveRoomPda(CurrentGlobalState.SeasonSeed, 
-                    CurrentPlayerState?.CurrentRoomX ?? LGConfig.START_X,
-                    CurrentPlayerState?.CurrentRoomY ?? LGConfig.START_Y);
-                var targetRoomPda = DeriveRoomPda(CurrentGlobalState.SeasonSeed, newX, newY);
-                var currentPresencePda = DeriveRoomPresencePda(
-                    CurrentGlobalState.SeasonSeed,
-                    CurrentPlayerState?.CurrentRoomX ?? LGConfig.START_X,
-                    CurrentPlayerState?.CurrentRoomY ?? LGConfig.START_Y,
-                    Web3.Wallet.Account.PublicKey
-                );
-                var targetPresencePda = DeriveRoomPresencePda(
-                    CurrentGlobalState.SeasonSeed,
-                    newX,
-                    newY,
-                    Web3.Wallet.Account.PublicKey
-                );
-
-                // Use generated instruction builder
-                var instruction = ChaindepthProgram.MovePlayer(
-                    new MovePlayerAccounts
+                var signature = await ExecuteGameplayActionAsync(
+                    "MovePlayer",
+                    (context) =>
                     {
-                        Authority = Web3.Wallet.Account.PublicKey,
-                        Player = Web3.Wallet.Account.PublicKey,
-                        Global = _globalPda,
-                        PlayerAccount = playerPda,
-                        Profile = profilePda,
-                        CurrentRoom = currentRoomPda,
-                        TargetRoom = targetRoomPda,
-                        CurrentPresence = currentPresencePda,
-                        TargetPresence = targetPresencePda,
-                        SystemProgram = SystemProgram.ProgramIdKey
-                    },
-                    (sbyte)newX,
-                    (sbyte)newY,
-                    _programId
-                );
+                        var playerPda = DerivePlayerPda(context.Player);
+                        var profilePda = DeriveProfilePda(context.Player);
+                        var currentRoomPda = DeriveRoomPda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState?.CurrentRoomX ?? LGConfig.START_X,
+                            CurrentPlayerState?.CurrentRoomY ?? LGConfig.START_Y);
+                        var targetRoomPda = DeriveRoomPda(CurrentGlobalState.SeasonSeed, newX, newY);
+                        var currentPresencePda = DeriveRoomPresencePda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState?.CurrentRoomX ?? LGConfig.START_X,
+                            CurrentPlayerState?.CurrentRoomY ?? LGConfig.START_Y,
+                            context.Player
+                        );
+                        var targetPresencePda = DeriveRoomPresencePda(
+                            CurrentGlobalState.SeasonSeed,
+                            newX,
+                            newY,
+                            context.Player
+                        );
 
-                var signature = await SendTransaction(instruction);
-                if (signature != null)
-                {
-                    Log($"Move transaction sent: {signature}");
-                    await RefreshAllState();
-                }
+                        return ChaindepthProgram.MovePlayer(
+                            new MovePlayerAccounts
+                            {
+                                Authority = context.Authority,
+                                Player = context.Player,
+                                Global = _globalPda,
+                                PlayerAccount = playerPda,
+                                Profile = profilePda,
+                                CurrentRoom = currentRoomPda,
+                                TargetRoom = targetRoomPda,
+                                CurrentPresence = currentPresencePda,
+                                TargetPresence = targetPresencePda,
+                                SessionAuthority = context.SessionAuthority,
+                                SystemProgram = SystemProgram.ProgramIdKey
+                            },
+                            (sbyte)newX,
+                            (sbyte)newY,
+                            _programId
+                        );
+                    },
+                    async (signature) =>
+                    {
+                        Log($"Move transaction sent: {signature}");
+                        await RefreshAllState();
+                        if (CurrentPlayerState != null &&
+                            TryGetMoveDirection(
+                                newX,
+                                newY,
+                                CurrentPlayerState.CurrentRoomX,
+                                CurrentPlayerState.CurrentRoomY,
+                                out var returnDirection) &&
+                            CurrentRoomState != null &&
+                            CurrentRoomState.Walls != null &&
+                            returnDirection < CurrentRoomState.Walls.Length)
+                        {
+                            var returnWallState = CurrentRoomState.Walls[returnDirection];
+                            Log(
+                                $"Move topology check: room=({CurrentPlayerState.CurrentRoomX},{CurrentPlayerState.CurrentRoomY}) " +
+                                $"returnDirection={LGConfig.GetDirectionName(returnDirection)} " +
+                                $"returnWall={LGConfig.GetWallStateName(returnWallState)}");
+                        }
+                    });
+
                 return signature;
             }
             catch (Exception e)
@@ -1137,19 +1201,6 @@ namespace SeekerDungeon.Solana
 
             try
             {
-                var playerPda = DerivePlayerPda(Web3.Wallet.Account.PublicKey);
-                var roomPda = DeriveRoomPda(CurrentGlobalState.SeasonSeed, 
-                    CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY);
-                var escrowPda = DeriveEscrowPda(roomPda, direction);
-                var helperStakePda = DeriveHelperStakePda(roomPda, direction, Web3.Wallet.Account.PublicKey);
-                var roomPresencePda = DeriveRoomPresencePda(
-                    CurrentGlobalState.SeasonSeed,
-                    CurrentPlayerState.CurrentRoomX,
-                    CurrentPlayerState.CurrentRoomY,
-                    Web3.Wallet.Account.PublicKey
-                );
-
-                // Get player's token account (ATA)
                 var playerTokenAccount = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(
                     Web3.Wallet.Account.PublicKey,
                     CurrentGlobalState.SkrMint
@@ -1161,32 +1212,73 @@ namespace SeekerDungeon.Solana
                     return null;
                 }
 
-                // Use generated instruction builder
-                var instruction = ChaindepthProgram.JoinJob(
-                    new JoinJobAccounts
+                var signature = await ExecuteGameplayActionAsync(
+                    "JoinJob",
+                    (context) =>
                     {
-                        Player = Web3.Wallet.Account.PublicKey,
-                        Global = _globalPda,
-                        PlayerAccount = playerPda,
-                        Room = roomPda,
-                        RoomPresence = roomPresencePda,
-                        Escrow = escrowPda,
-                        HelperStake = helperStakePda,
-                        PlayerTokenAccount = playerTokenAccount,
-                        SkrMint = CurrentGlobalState.SkrMint,
-                        TokenProgram = TokenProgram.ProgramIdKey,
-                        SystemProgram = SystemProgram.ProgramIdKey
-                    },
-                    direction,
-                    _programId
-                );
+                        var playerPda = DerivePlayerPda(context.Player);
+                        var roomPda = DeriveRoomPda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY);
+                        var escrowPda = DeriveEscrowPda(roomPda, direction);
+                        var helperStakePda = DeriveHelperStakePda(roomPda, direction, context.Player);
+                        var roomPresencePda = DeriveRoomPresencePda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY,
+                            context.Player
+                        );
 
-                var signature = await SendTransaction(instruction);
-                if (signature != null)
-                {
-                    Log($"Joined job! TX: {signature}");
-                    await RefreshAllState();
-                }
+                        if (context.UsesSessionSigner)
+                        {
+                            return ChaindepthProgram.JoinJobWithSession(
+                                new JoinJobWithSessionAccounts
+                                {
+                                    Authority = context.Authority,
+                                    Player = context.Player,
+                                    Global = _globalPda,
+                                    PlayerAccount = playerPda,
+                                    Room = roomPda,
+                                    RoomPresence = roomPresencePda,
+                                    Escrow = escrowPda,
+                                    HelperStake = helperStakePda,
+                                    PlayerTokenAccount = playerTokenAccount,
+                                    SkrMint = CurrentGlobalState.SkrMint,
+                                    SessionAuthority = context.SessionAuthority,
+                                    TokenProgram = TokenProgram.ProgramIdKey,
+                                    SystemProgram = SystemProgram.ProgramIdKey
+                                },
+                                direction,
+                                _programId
+                            );
+                        }
+
+                        return ChaindepthProgram.JoinJob(
+                            new JoinJobAccounts
+                            {
+                                Player = context.Player,
+                                Global = _globalPda,
+                                PlayerAccount = playerPda,
+                                Room = roomPda,
+                                RoomPresence = roomPresencePda,
+                                Escrow = escrowPda,
+                                HelperStake = helperStakePda,
+                                PlayerTokenAccount = playerTokenAccount,
+                                SkrMint = CurrentGlobalState.SkrMint,
+                                TokenProgram = TokenProgram.ProgramIdKey,
+                                SystemProgram = SystemProgram.ProgramIdKey
+                            },
+                            direction,
+                            _programId
+                        );
+                    },
+                    async (signature) =>
+                    {
+                        Log($"Joined job! TX: {signature}");
+                        await RefreshAllState();
+                    });
+
                 return signature;
             }
             catch (Exception e)
@@ -1217,43 +1309,49 @@ namespace SeekerDungeon.Solana
 
             try
             {
-                var playerPda = DerivePlayerPda(Web3.Wallet.Account.PublicKey);
-                var roomPda = DeriveRoomPda(CurrentGlobalState.SeasonSeed, 
-                    CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY);
-                
-                // Calculate adjacent room coordinates
-                var (adjX, adjY) = LGConfig.GetAdjacentCoords(
-                    CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY, direction);
-                var adjacentRoomPda = DeriveRoomPda(CurrentGlobalState.SeasonSeed, adjX, adjY);
-                var escrowPda = DeriveEscrowPda(roomPda, direction);
-                var helperStakePda = DeriveHelperStakePda(roomPda, direction, Web3.Wallet.Account.PublicKey);
-
-                // Use generated instruction builder
-                var instruction = ChaindepthProgram.CompleteJob(
-                    new CompleteJobAccounts
+                var signature = await ExecuteGameplayActionAsync(
+                    "CompleteJob",
+                    (context) =>
                     {
-                        Authority = Web3.Wallet.Account.PublicKey,
-                        Player = Web3.Wallet.Account.PublicKey,
-                        Global = _globalPda,
-                        PlayerAccount = playerPda,
-                        Room = roomPda,
-                        HelperStake = helperStakePda,
-                        AdjacentRoom = adjacentRoomPda,
-                        Escrow = escrowPda,
-                        PrizePool = CurrentGlobalState.PrizePool,
-                        TokenProgram = TokenProgram.ProgramIdKey,
-                        SystemProgram = SystemProgram.ProgramIdKey
-                    },
-                    direction,
-                    _programId
-                );
+                        var playerPda = DerivePlayerPda(context.Player);
+                        var roomPda = DeriveRoomPda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY);
+                        var (adjX, adjY) = LGConfig.GetAdjacentCoords(
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY,
+                            direction);
+                        var adjacentRoomPda = DeriveRoomPda(CurrentGlobalState.SeasonSeed, adjX, adjY);
+                        var escrowPda = DeriveEscrowPda(roomPda, direction);
+                        var helperStakePda = DeriveHelperStakePda(roomPda, direction, context.Player);
 
-                var signature = await SendTransaction(instruction);
-                if (signature != null)
-                {
-                    Log($"Job completed! TX: {signature}");
-                    await RefreshAllState();
-                }
+                        return ChaindepthProgram.CompleteJob(
+                            new CompleteJobAccounts
+                            {
+                                Authority = context.Authority,
+                                Player = context.Player,
+                                Global = _globalPda,
+                                PlayerAccount = playerPda,
+                                Room = roomPda,
+                                HelperStake = helperStakePda,
+                                AdjacentRoom = adjacentRoomPda,
+                                Escrow = escrowPda,
+                                PrizePool = CurrentGlobalState.PrizePool,
+                                SessionAuthority = context.SessionAuthority,
+                                TokenProgram = TokenProgram.ProgramIdKey,
+                                SystemProgram = SystemProgram.ProgramIdKey
+                            },
+                            direction,
+                            _programId
+                        );
+                    },
+                    async (signature) =>
+                    {
+                        Log($"Job completed! TX: {signature}");
+                        await RefreshAllState();
+                    });
+
                 return signature;
             }
             catch (Exception e)
@@ -1284,48 +1382,54 @@ namespace SeekerDungeon.Solana
 
             try
             {
-                var playerPda = DerivePlayerPda(Web3.Wallet.Account.PublicKey);
-                var roomPda = DeriveRoomPda(CurrentGlobalState.SeasonSeed, 
-                    CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY);
-                var escrowPda = DeriveEscrowPda(roomPda, direction);
-                var helperStakePda = DeriveHelperStakePda(roomPda, direction, Web3.Wallet.Account.PublicKey);
-                var roomPresencePda = DeriveRoomPresencePda(
-                    CurrentGlobalState.SeasonSeed,
-                    CurrentPlayerState.CurrentRoomX,
-                    CurrentPlayerState.CurrentRoomY,
-                    Web3.Wallet.Account.PublicKey
-                );
-                var playerTokenAccount = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(
-                    Web3.Wallet.Account.PublicKey,
-                    CurrentGlobalState.SkrMint
-                );
-
-                // Use generated instruction builder
-                var instruction = ChaindepthProgram.AbandonJob(
-                    new AbandonJobAccounts
+                var signature = await ExecuteGameplayActionAsync(
+                    "AbandonJob",
+                    (context) =>
                     {
-                        Authority = Web3.Wallet.Account.PublicKey,
-                        Player = Web3.Wallet.Account.PublicKey,
-                        Global = _globalPda,
-                        PlayerAccount = playerPda,
-                        Room = roomPda,
-                        RoomPresence = roomPresencePda,
-                        Escrow = escrowPda,
-                        HelperStake = helperStakePda,
-                        PrizePool = CurrentGlobalState.PrizePool,
-                        PlayerTokenAccount = playerTokenAccount,
-                        TokenProgram = TokenProgram.ProgramIdKey
-                    },
-                    direction,
-                    _programId
-                );
+                        var playerPda = DerivePlayerPda(context.Player);
+                        var roomPda = DeriveRoomPda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY);
+                        var escrowPda = DeriveEscrowPda(roomPda, direction);
+                        var helperStakePda = DeriveHelperStakePda(roomPda, direction, context.Player);
+                        var roomPresencePda = DeriveRoomPresencePda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY,
+                            context.Player
+                        );
+                        var playerTokenAccount = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(
+                            context.Player,
+                            CurrentGlobalState.SkrMint
+                        );
 
-                var signature = await SendTransaction(instruction);
-                if (signature != null)
-                {
-                    Log($"Job abandoned! TX: {signature}");
-                    await RefreshAllState();
-                }
+                        return ChaindepthProgram.AbandonJob(
+                            new AbandonJobAccounts
+                            {
+                                Authority = context.Authority,
+                                Player = context.Player,
+                                Global = _globalPda,
+                                PlayerAccount = playerPda,
+                                Room = roomPda,
+                                RoomPresence = roomPresencePda,
+                                Escrow = escrowPda,
+                                HelperStake = helperStakePda,
+                                PrizePool = CurrentGlobalState.PrizePool,
+                                PlayerTokenAccount = playerTokenAccount,
+                                SessionAuthority = context.SessionAuthority,
+                                TokenProgram = TokenProgram.ProgramIdKey
+                            },
+                            direction,
+                            _programId
+                        );
+                    },
+                    async (signature) =>
+                    {
+                        Log($"Job abandoned! TX: {signature}");
+                        await RefreshAllState();
+                    });
+
                 return signature;
             }
             catch (Exception e)
@@ -1333,6 +1437,40 @@ namespace SeekerDungeon.Solana
                 LogError($"AbandonJob failed: {e.Message}");
                 return null;
             }
+        }
+
+        private static bool TryGetMoveDirection(
+            int fromX,
+            int fromY,
+            int toX,
+            int toY,
+            out byte direction)
+        {
+            direction = 0;
+            var dx = toX - fromX;
+            var dy = toY - fromY;
+            if (dx == 0 && dy == 1)
+            {
+                direction = LGConfig.DIRECTION_NORTH;
+                return true;
+            }
+            if (dx == 0 && dy == -1)
+            {
+                direction = LGConfig.DIRECTION_SOUTH;
+                return true;
+            }
+            if (dx == 1 && dy == 0)
+            {
+                direction = LGConfig.DIRECTION_EAST;
+                return true;
+            }
+            if (dx == -1 && dy == 0)
+            {
+                direction = LGConfig.DIRECTION_WEST;
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -1356,49 +1494,54 @@ namespace SeekerDungeon.Solana
 
             try
             {
-                var playerPda = DerivePlayerPda(Web3.Wallet.Account.PublicKey);
-                var roomPda = DeriveRoomPda(
-                    CurrentGlobalState.SeasonSeed,
-                    CurrentPlayerState.CurrentRoomX,
-                    CurrentPlayerState.CurrentRoomY
-                );
-                var escrowPda = DeriveEscrowPda(roomPda, direction);
-                var helperStakePda = DeriveHelperStakePda(roomPda, direction, Web3.Wallet.Account.PublicKey);
-                var roomPresencePda = DeriveRoomPresencePda(
-                    CurrentGlobalState.SeasonSeed,
-                    CurrentPlayerState.CurrentRoomX,
-                    CurrentPlayerState.CurrentRoomY,
-                    Web3.Wallet.Account.PublicKey
-                );
-                var playerTokenAccount = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(
-                    Web3.Wallet.Account.PublicKey,
-                    CurrentGlobalState.SkrMint
-                );
-
-                var instruction = ChaindepthProgram.ClaimJobReward(
-                    new ClaimJobRewardAccounts
+                var signature = await ExecuteGameplayActionAsync(
+                    "ClaimJobReward",
+                    (context) =>
                     {
-                        Authority = Web3.Wallet.Account.PublicKey,
-                        Player = Web3.Wallet.Account.PublicKey,
-                        Global = _globalPda,
-                        PlayerAccount = playerPda,
-                        Room = roomPda,
-                        RoomPresence = roomPresencePda,
-                        Escrow = escrowPda,
-                        HelperStake = helperStakePda,
-                        PlayerTokenAccount = playerTokenAccount,
-                        TokenProgram = TokenProgram.ProgramIdKey
-                    },
-                    direction,
-                    _programId
-                );
+                        var playerPda = DerivePlayerPda(context.Player);
+                        var roomPda = DeriveRoomPda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY
+                        );
+                        var escrowPda = DeriveEscrowPda(roomPda, direction);
+                        var helperStakePda = DeriveHelperStakePda(roomPda, direction, context.Player);
+                        var roomPresencePda = DeriveRoomPresencePda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY,
+                            context.Player
+                        );
+                        var playerTokenAccount = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(
+                            context.Player,
+                            CurrentGlobalState.SkrMint
+                        );
 
-                var signature = await SendTransaction(instruction);
-                if (signature != null)
-                {
-                    Log($"Job reward claimed! TX: {signature}");
-                    await RefreshAllState();
-                }
+                        return ChaindepthProgram.ClaimJobReward(
+                            new ClaimJobRewardAccounts
+                            {
+                                Authority = context.Authority,
+                                Player = context.Player,
+                                Global = _globalPda,
+                                PlayerAccount = playerPda,
+                                Room = roomPda,
+                                RoomPresence = roomPresencePda,
+                                Escrow = escrowPda,
+                                HelperStake = helperStakePda,
+                                PlayerTokenAccount = playerTokenAccount,
+                                SessionAuthority = context.SessionAuthority,
+                                TokenProgram = TokenProgram.ProgramIdKey
+                            },
+                            direction,
+                            _programId
+                        );
+                    },
+                    async (signature) =>
+                    {
+                        Log($"Job reward claimed! TX: {signature}");
+                        await RefreshAllState();
+                    });
+
                 return signature;
             }
             catch (Exception e)
@@ -1429,31 +1572,38 @@ namespace SeekerDungeon.Solana
 
             try
             {
-                var playerPda = DerivePlayerPda(Web3.Wallet.Account.PublicKey);
-                var roomPda = DeriveRoomPda(CurrentGlobalState.SeasonSeed, 
-                    CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY);
-                var inventoryPda = DeriveInventoryPda(Web3.Wallet.Account.PublicKey);
-
-                // Use generated instruction builder
-                var instruction = ChaindepthProgram.LootChest(
-                    new LootChestAccounts
+                var signature = await ExecuteGameplayActionAsync(
+                    "LootChest",
+                    (context) =>
                     {
-                        Player = Web3.Wallet.Account.PublicKey,
-                        Global = _globalPda,
-                        PlayerAccount = playerPda,
-                        Room = roomPda,
-                        Inventory = inventoryPda,
-                        SystemProgram = SystemProgram.ProgramIdKey
-                    },
-                    _programId
-                );
+                        var playerPda = DerivePlayerPda(context.Player);
+                        var roomPda = DeriveRoomPda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY);
+                        var inventoryPda = DeriveInventoryPda(context.Player);
 
-                var signature = await SendTransaction(instruction);
-                if (signature != null)
-                {
-                    Log($"Chest looted! TX: {signature}");
-                    await RefreshAllState();
-                }
+                        return ChaindepthProgram.LootChest(
+                            new LootChestAccounts
+                            {
+                                Authority = context.Authority,
+                                Player = context.Player,
+                                Global = _globalPda,
+                                PlayerAccount = playerPda,
+                                Room = roomPda,
+                                Inventory = inventoryPda,
+                                SessionAuthority = context.SessionAuthority,
+                                SystemProgram = SystemProgram.ProgramIdKey
+                            },
+                            _programId
+                        );
+                    },
+                    async (signature) =>
+                    {
+                        Log($"Chest looted! TX: {signature}");
+                        await RefreshAllState();
+                    });
+
                 return signature;
             }
             catch (Exception e)
@@ -1484,35 +1634,40 @@ namespace SeekerDungeon.Solana
 
             try
             {
-                var playerPda = DerivePlayerPda(Web3.Wallet.Account.PublicKey);
-                var inventoryPda = DeriveInventoryPda(Web3.Wallet.Account.PublicKey);
-                var roomPresencePda = DeriveRoomPresencePda(
-                    CurrentGlobalState.SeasonSeed,
-                    CurrentPlayerState.CurrentRoomX,
-                    CurrentPlayerState.CurrentRoomY,
-                    Web3.Wallet.Account.PublicKey
-                );
-
-                var instruction = ChaindepthProgram.EquipItem(
-                    new EquipItemAccounts
+                var signature = await ExecuteGameplayActionAsync(
+                    "EquipItem",
+                    (context) =>
                     {
-                        Authority = Web3.Wallet.Account.PublicKey,
-                        Player = Web3.Wallet.Account.PublicKey,
-                        Global = _globalPda,
-                        PlayerAccount = playerPda,
-                        Inventory = inventoryPda,
-                        RoomPresence = roomPresencePda
-                    },
-                    itemId,
-                    _programId
-                );
+                        var playerPda = DerivePlayerPda(context.Player);
+                        var inventoryPda = DeriveInventoryPda(context.Player);
+                        var roomPresencePda = DeriveRoomPresencePda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY,
+                            context.Player
+                        );
 
-                var signature = await SendTransaction(instruction);
-                if (signature != null)
-                {
-                    Log($"Equipped item. TX: {signature}");
-                    await FetchPlayerState();
-                }
+                        return ChaindepthProgram.EquipItem(
+                            new EquipItemAccounts
+                            {
+                                Authority = context.Authority,
+                                Player = context.Player,
+                                Global = _globalPda,
+                                PlayerAccount = playerPda,
+                                Inventory = inventoryPda,
+                                RoomPresence = roomPresencePda,
+                                SessionAuthority = context.SessionAuthority
+                            },
+                            itemId,
+                            _programId
+                        );
+                    },
+                    async (signature) =>
+                    {
+                        Log($"Equipped item. TX: {signature}");
+                        await FetchPlayerState();
+                    });
+
                 return signature;
             }
             catch (Exception e)
@@ -1541,34 +1696,36 @@ namespace SeekerDungeon.Solana
 
             try
             {
-                var playerPda = DerivePlayerPda(Web3.Wallet.Account.PublicKey);
-                var profilePda = DeriveProfilePda(Web3.Wallet.Account.PublicKey);
-                var roomPresencePda = DeriveRoomPresencePda(
-                    CurrentGlobalState.SeasonSeed,
-                    CurrentPlayerState.CurrentRoomX,
-                    CurrentPlayerState.CurrentRoomY,
-                    Web3.Wallet.Account.PublicKey
-                );
-
-                var instruction = ChaindepthProgram.SetPlayerSkin(
-                    new SetPlayerSkinAccounts
+                var signature = await ExecuteGameplayActionAsync(
+                    "SetPlayerSkin",
+                    (context) =>
                     {
-                        Authority = Web3.Wallet.Account.PublicKey,
-                        Player = Web3.Wallet.Account.PublicKey,
-                        Global = _globalPda,
-                        PlayerAccount = playerPda,
-                        Profile = profilePda,
-                        RoomPresence = roomPresencePda
-                    },
-                    skinId,
-                    _programId
-                );
+                        var playerPda = DerivePlayerPda(context.Player);
+                        var profilePda = DeriveProfilePda(context.Player);
+                        var roomPresencePda = DeriveRoomPresencePda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY,
+                            context.Player
+                        );
 
-                var signature = await SendTransaction(instruction);
-                if (signature != null)
-                {
-                    await FetchPlayerProfile();
-                }
+                        return ChaindepthProgram.SetPlayerSkin(
+                            new SetPlayerSkinAccounts
+                            {
+                                Authority = context.Authority,
+                                Player = context.Player,
+                                Global = _globalPda,
+                                PlayerAccount = playerPda,
+                                Profile = profilePda,
+                                RoomPresence = roomPresencePda,
+                                SessionAuthority = context.SessionAuthority
+                            },
+                            skinId,
+                            _programId
+                        );
+                    },
+                    async (_) => { await FetchPlayerProfile(); });
+
                 return signature;
             }
             catch (Exception error)
@@ -1597,38 +1754,40 @@ namespace SeekerDungeon.Solana
 
             try
             {
-                var playerPda = DerivePlayerPda(Web3.Wallet.Account.PublicKey);
-                var profilePda = DeriveProfilePda(Web3.Wallet.Account.PublicKey);
-                var inventoryPda = DeriveInventoryPda(Web3.Wallet.Account.PublicKey);
-                var roomPresencePda = DeriveRoomPresencePda(
-                    CurrentGlobalState.SeasonSeed,
-                    CurrentPlayerState.CurrentRoomX,
-                    CurrentPlayerState.CurrentRoomY,
-                    Web3.Wallet.Account.PublicKey
-                );
-
-                var instruction = ChaindepthProgram.CreatePlayerProfile(
-                    new CreatePlayerProfileAccounts
+                var signature = await ExecuteGameplayActionAsync(
+                    "CreatePlayerProfile",
+                    (context) =>
                     {
-                        Authority = Web3.Wallet.Account.PublicKey,
-                        Player = Web3.Wallet.Account.PublicKey,
-                        Global = _globalPda,
-                        PlayerAccount = playerPda,
-                        Profile = profilePda,
-                        Inventory = inventoryPda,
-                        RoomPresence = roomPresencePda,
-                        SystemProgram = SystemProgram.ProgramIdKey
-                    },
-                    skinId,
-                    displayName ?? string.Empty,
-                    _programId
-                );
+                        var playerPda = DerivePlayerPda(context.Player);
+                        var profilePda = DeriveProfilePda(context.Player);
+                        var inventoryPda = DeriveInventoryPda(context.Player);
+                        var roomPresencePda = DeriveRoomPresencePda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY,
+                            context.Player
+                        );
 
-                var signature = await SendTransaction(instruction);
-                if (signature != null)
-                {
-                    await RefreshAllState();
-                }
+                        return ChaindepthProgram.CreatePlayerProfile(
+                            new CreatePlayerProfileAccounts
+                            {
+                                Authority = context.Authority,
+                                Player = context.Player,
+                                Global = _globalPda,
+                                PlayerAccount = playerPda,
+                                Profile = profilePda,
+                                Inventory = inventoryPda,
+                                RoomPresence = roomPresencePda,
+                                SessionAuthority = context.SessionAuthority,
+                                SystemProgram = SystemProgram.ProgramIdKey
+                            },
+                            skinId,
+                            displayName ?? string.Empty,
+                            _programId
+                        );
+                    },
+                    async (_) => { await RefreshAllState(); });
+
                 return signature;
             }
             catch (Exception error)
@@ -1659,43 +1818,48 @@ namespace SeekerDungeon.Solana
 
             try
             {
-                var playerPda = DerivePlayerPda(Web3.Wallet.Account.PublicKey);
-                var profilePda = DeriveProfilePda(Web3.Wallet.Account.PublicKey);
-                var roomPda = DeriveRoomPda(
-                    CurrentGlobalState.SeasonSeed,
-                    CurrentPlayerState.CurrentRoomX,
-                    CurrentPlayerState.CurrentRoomY
-                );
-                var roomPresencePda = DeriveRoomPresencePda(
-                    CurrentGlobalState.SeasonSeed,
-                    CurrentPlayerState.CurrentRoomX,
-                    CurrentPlayerState.CurrentRoomY,
-                    Web3.Wallet.Account.PublicKey
-                );
-                var bossFightPda = DeriveBossFightPda(roomPda, Web3.Wallet.Account.PublicKey);
-
-                var instruction = ChaindepthProgram.JoinBossFight(
-                    new JoinBossFightAccounts
+                var signature = await ExecuteGameplayActionAsync(
+                    "JoinBossFight",
+                    (context) =>
                     {
-                        Authority = Web3.Wallet.Account.PublicKey,
-                        Player = Web3.Wallet.Account.PublicKey,
-                        Global = _globalPda,
-                        PlayerAccount = playerPda,
-                        Profile = profilePda,
-                        Room = roomPda,
-                        RoomPresence = roomPresencePda,
-                        BossFight = bossFightPda,
-                        SystemProgram = SystemProgram.ProgramIdKey
-                    },
-                    _programId
-                );
+                        var playerPda = DerivePlayerPda(context.Player);
+                        var profilePda = DeriveProfilePda(context.Player);
+                        var roomPda = DeriveRoomPda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY
+                        );
+                        var roomPresencePda = DeriveRoomPresencePda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY,
+                            context.Player
+                        );
+                        var bossFightPda = DeriveBossFightPda(roomPda, context.Player);
 
-                var signature = await SendTransaction(instruction);
-                if (signature != null)
-                {
-                    Log($"Joined boss fight! TX: {signature}");
-                    await FetchRoomState(CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY);
-                }
+                        return ChaindepthProgram.JoinBossFight(
+                            new JoinBossFightAccounts
+                            {
+                                Authority = context.Authority,
+                                Player = context.Player,
+                                Global = _globalPda,
+                                PlayerAccount = playerPda,
+                                Profile = profilePda,
+                                Room = roomPda,
+                                RoomPresence = roomPresencePda,
+                                BossFight = bossFightPda,
+                                SessionAuthority = context.SessionAuthority,
+                                SystemProgram = SystemProgram.ProgramIdKey
+                            },
+                            _programId
+                        );
+                    },
+                    async (signature) =>
+                    {
+                        Log($"Joined boss fight! TX: {signature}");
+                        await FetchRoomState(CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY);
+                    });
+
                 return signature;
             }
             catch (Exception e)
@@ -1726,28 +1890,32 @@ namespace SeekerDungeon.Solana
 
             try
             {
-                var roomPda = DeriveRoomPda(
-                    CurrentGlobalState.SeasonSeed,
-                    CurrentPlayerState.CurrentRoomX,
-                    CurrentPlayerState.CurrentRoomY
-                );
-
-                var instruction = ChaindepthProgram.TickBossFight(
-                    new TickBossFightAccounts
+                var signature = await ExecuteGameplayActionAsync(
+                    "TickBossFight",
+                    (context) =>
                     {
-                        Caller = Web3.Wallet.Account.PublicKey,
-                        Global = _globalPda,
-                        Room = roomPda
-                    },
-                    _programId
-                );
+                        var roomPda = DeriveRoomPda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY
+                        );
 
-                var signature = await SendTransaction(instruction);
-                if (signature != null)
-                {
-                    Log($"Boss ticked! TX: {signature}");
-                    await FetchRoomState(CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY);
-                }
+                        return ChaindepthProgram.TickBossFight(
+                            new TickBossFightAccounts
+                            {
+                                Caller = context.Authority,
+                                Global = _globalPda,
+                                Room = roomPda
+                            },
+                            _programId
+                        );
+                    },
+                    async (signature) =>
+                    {
+                        Log($"Boss ticked! TX: {signature}");
+                        await FetchRoomState(CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY);
+                    });
+
                 return signature;
             }
             catch (Exception e)
@@ -1778,43 +1946,48 @@ namespace SeekerDungeon.Solana
 
             try
             {
-                var playerPda = DerivePlayerPda(Web3.Wallet.Account.PublicKey);
-                var roomPda = DeriveRoomPda(
-                    CurrentGlobalState.SeasonSeed,
-                    CurrentPlayerState.CurrentRoomX,
-                    CurrentPlayerState.CurrentRoomY
-                );
-                var roomPresencePda = DeriveRoomPresencePda(
-                    CurrentGlobalState.SeasonSeed,
-                    CurrentPlayerState.CurrentRoomX,
-                    CurrentPlayerState.CurrentRoomY,
-                    Web3.Wallet.Account.PublicKey
-                );
-                var bossFightPda = DeriveBossFightPda(roomPda, Web3.Wallet.Account.PublicKey);
-                var inventoryPda = DeriveInventoryPda(Web3.Wallet.Account.PublicKey);
-
-                var instruction = ChaindepthProgram.LootBoss(
-                    new LootBossAccounts
+                var signature = await ExecuteGameplayActionAsync(
+                    "LootBoss",
+                    (context) =>
                     {
-                        Authority = Web3.Wallet.Account.PublicKey,
-                        Player = Web3.Wallet.Account.PublicKey,
-                        Global = _globalPda,
-                        PlayerAccount = playerPda,
-                        Room = roomPda,
-                        RoomPresence = roomPresencePda,
-                        BossFight = bossFightPda,
-                        Inventory = inventoryPda,
-                        SystemProgram = SystemProgram.ProgramIdKey
-                    },
-                    _programId
-                );
+                        var playerPda = DerivePlayerPda(context.Player);
+                        var roomPda = DeriveRoomPda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY
+                        );
+                        var roomPresencePda = DeriveRoomPresencePda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY,
+                            context.Player
+                        );
+                        var bossFightPda = DeriveBossFightPda(roomPda, context.Player);
+                        var inventoryPda = DeriveInventoryPda(context.Player);
 
-                var signature = await SendTransaction(instruction);
-                if (signature != null)
-                {
-                    Log($"Boss looted! TX: {signature}");
-                    await RefreshAllState();
-                }
+                        return ChaindepthProgram.LootBoss(
+                            new LootBossAccounts
+                            {
+                                Authority = context.Authority,
+                                Player = context.Player,
+                                Global = _globalPda,
+                                PlayerAccount = playerPda,
+                                Room = roomPda,
+                                RoomPresence = roomPresencePda,
+                                BossFight = bossFightPda,
+                                Inventory = inventoryPda,
+                                SessionAuthority = context.SessionAuthority,
+                                SystemProgram = SystemProgram.ProgramIdKey
+                            },
+                            _programId
+                        );
+                    },
+                    async (signature) =>
+                    {
+                        Log($"Boss looted! TX: {signature}");
+                        await RefreshAllState();
+                    });
+
                 return signature;
             }
             catch (Exception e)
@@ -1845,27 +2018,32 @@ namespace SeekerDungeon.Solana
 
             try
             {
-                var roomPda = DeriveRoomPda(CurrentGlobalState.SeasonSeed, 
-                    CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY);
-
-                // Use generated instruction builder
-                var instruction = ChaindepthProgram.TickJob(
-                    new TickJobAccounts
+                var signature = await ExecuteGameplayActionAsync(
+                    "TickJob",
+                    (context) =>
                     {
-                        Caller = Web3.Wallet.Account.PublicKey,
-                        Global = _globalPda,
-                        Room = roomPda
-                    },
-                    direction,
-                    _programId
-                );
+                        var roomPda = DeriveRoomPda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY);
 
-                var signature = await SendTransaction(instruction);
-                if (signature != null)
-                {
-                    Log($"Job ticked! TX: {signature}");
-                    await FetchRoomState(CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY);
-                }
+                        return ChaindepthProgram.TickJob(
+                            new TickJobAccounts
+                            {
+                                Caller = context.Authority,
+                                Global = _globalPda,
+                                Room = roomPda
+                            },
+                            direction,
+                            _programId
+                        );
+                    },
+                    async (signature) =>
+                    {
+                        Log($"Job ticked! TX: {signature}");
+                        await FetchRoomState(CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY);
+                    });
+
                 return signature;
             }
             catch (Exception e)
@@ -1896,36 +2074,42 @@ namespace SeekerDungeon.Solana
 
             try
             {
-                var roomPda = DeriveRoomPda(CurrentGlobalState.SeasonSeed, 
-                    CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY);
-                var playerTokenAccount = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(
-                    Web3.Wallet.Account.PublicKey,
-                    CurrentGlobalState.SkrMint
-                );
-
-                // Use generated instruction builder
-                var instruction = ChaindepthProgram.BoostJob(
-                    new BoostJobAccounts
+                var signature = await ExecuteGameplayActionAsync(
+                    "BoostJob",
+                    (context) =>
                     {
-                        Authority = Web3.Wallet.Account.PublicKey,
-                        Player = Web3.Wallet.Account.PublicKey,
-                        Global = _globalPda,
-                        Room = roomPda,
-                        PrizePool = CurrentGlobalState.PrizePool,
-                        PlayerTokenAccount = playerTokenAccount,
-                        TokenProgram = TokenProgram.ProgramIdKey
-                    },
-                    direction,
-                    boostAmount,
-                    _programId
-                );
+                        var roomPda = DeriveRoomPda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY);
+                        var playerTokenAccount = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(
+                            context.Player,
+                            CurrentGlobalState.SkrMint
+                        );
 
-                var signature = await SendTransaction(instruction);
-                if (signature != null)
-                {
-                    Log($"Job boosted! TX: {signature}");
-                    await FetchRoomState(CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY);
-                }
+                        return ChaindepthProgram.BoostJob(
+                            new BoostJobAccounts
+                            {
+                                Authority = context.Authority,
+                                Player = context.Player,
+                                Global = _globalPda,
+                                Room = roomPda,
+                                PrizePool = CurrentGlobalState.PrizePool,
+                                PlayerTokenAccount = playerTokenAccount,
+                                SessionAuthority = context.SessionAuthority,
+                                TokenProgram = TokenProgram.ProgramIdKey
+                            },
+                            direction,
+                            boostAmount,
+                            _programId
+                        );
+                    },
+                    async (signature) =>
+                    {
+                        Log($"Job boosted! TX: {signature}");
+                        await FetchRoomState(CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY);
+                    });
+
                 return signature;
             }
             catch (Exception e)
@@ -1939,6 +2123,126 @@ namespace SeekerDungeon.Solana
 
         #region Helper Methods
 
+        private LGWalletSessionManager GetWalletSessionManager()
+        {
+            var walletSessionManager = LGWalletSessionManager.Instance;
+            if (walletSessionManager != null)
+            {
+                return walletSessionManager;
+            }
+
+            return UnityEngine.Object.FindFirstObjectByType<LGWalletSessionManager>();
+        }
+
+        private GameplaySigningContext BuildGameplaySigningContext(LGWalletSessionManager walletSessionManager)
+        {
+            var walletAccount = Web3.Wallet?.Account;
+            var context = new GameplaySigningContext
+            {
+                SignerAccount = walletAccount,
+                Authority = walletAccount?.PublicKey,
+                Player = walletAccount?.PublicKey,
+                SessionAuthority = null,
+                UsesSessionSigner = false
+            };
+
+            if (walletSessionManager == null || !walletSessionManager.CanUseLocalSessionSigning)
+            {
+                return context;
+            }
+
+            var sessionSigner = walletSessionManager.ActiveSessionSignerAccount;
+            var sessionAuthority = walletSessionManager.ActiveSessionAuthorityPda;
+            if (sessionSigner == null || sessionAuthority == null)
+            {
+                return context;
+            }
+
+            context.SignerAccount = sessionSigner;
+            context.Authority = sessionSigner.PublicKey;
+            context.SessionAuthority = sessionAuthority;
+            context.UsesSessionSigner = true;
+            return context;
+        }
+
+        private async UniTask<string> ExecuteGameplayActionAsync(
+            string actionName,
+            Func<GameplaySigningContext, TransactionInstruction> buildInstruction,
+            Func<string, UniTask> onSuccess = null)
+        {
+            if (Web3.Wallet?.Account == null)
+            {
+                LogError($"{actionName} failed: wallet not connected.");
+                return null;
+            }
+
+            var walletSessionManager = GetWalletSessionManager();
+            if (walletSessionManager != null && !walletSessionManager.CanUseLocalSessionSigning)
+            {
+                var ensured = await walletSessionManager.EnsureGameplaySessionAsync();
+                if (!ensured)
+                {
+                    Log($"{actionName}: session unavailable. Falling back to wallet signing.");
+                }
+            }
+
+            var signingContext = BuildGameplaySigningContext(walletSessionManager);
+            if (signingContext.SignerAccount == null || signingContext.Authority == null || signingContext.Player == null)
+            {
+                LogError($"{actionName} failed: signer context is missing.");
+                return null;
+            }
+
+            var signature = await SendTransaction(
+                buildInstruction(signingContext),
+                signingContext.SignerAccount,
+                new List<Account> { signingContext.SignerAccount });
+
+            if (!string.IsNullOrWhiteSpace(signature))
+            {
+                if (onSuccess != null)
+                {
+                    await onSuccess(signature);
+                }
+                return signature;
+            }
+
+            if (!signingContext.UsesSessionSigner || walletSessionManager == null)
+            {
+                return null;
+            }
+
+            if (!walletSessionManager.IsSessionRecoverableProgramError(_lastProgramErrorCode))
+            {
+                return null;
+            }
+
+            Log($"{actionName} failed with recoverable session error. Attempting one session restart.");
+            var restarted = await walletSessionManager.EnsureGameplaySessionAsync();
+            if (!restarted)
+            {
+                return null;
+            }
+
+            var retryContext = BuildGameplaySigningContext(walletSessionManager);
+            if (!retryContext.UsesSessionSigner || retryContext.SignerAccount == null)
+            {
+                LogError($"{actionName} retry failed: session signer unavailable after restart.");
+                return null;
+            }
+
+            var retrySignature = await SendTransaction(
+                buildInstruction(retryContext),
+                retryContext.SignerAccount,
+                new List<Account> { retryContext.SignerAccount });
+            if (!string.IsNullOrWhiteSpace(retrySignature) && onSuccess != null)
+            {
+                await onSuccess(retrySignature);
+            }
+
+            return retrySignature;
+        }
+
         /// <summary>
         /// Send a transaction with a single instruction
         /// </summary>
@@ -1949,66 +2253,301 @@ namespace SeekerDungeon.Solana
                 LogError("Wallet not connected - cannot send transaction");
                 return null;
             }
-            
+
+            return await SendTransaction(
+                instruction,
+                Web3.Wallet.Account,
+                new List<Account> { Web3.Wallet.Account });
+        }
+
+        private async UniTask<string> SendTransaction(
+            TransactionInstruction instruction,
+            Account feePayer,
+            IList<Account> signers)
+        {
+            if (feePayer == null || signers == null || signers.Count == 0)
+            {
+                LogError("Missing signer(s) for transaction.");
+                return null;
+            }
+
             try
             {
-                var rpc = GetRpcClient();
-                if (rpc == null)
+                var rpcCandidates = GetRpcCandidates();
+                if (rpcCandidates.Count == 0)
                 {
                     LogError("RPC client not available");
                     return null;
                 }
-                
-                // Get recent blockhash
-                var blockHashResult = await rpc.GetLatestBlockHashAsync();
-                if (!blockHashResult.WasSuccessful)
+
+                for (var candidateIndex = 0; candidateIndex < rpcCandidates.Count; candidateIndex += 1)
                 {
-                    LogError($"Failed to get blockhash: {blockHashResult.Reason}");
-                    return null;
-                }
-
-                // Build and sign transaction
-                var txBytes = new TransactionBuilder()
-                    .SetRecentBlockHash(blockHashResult.Result.Value.Blockhash)
-                    .SetFeePayer(Web3.Wallet.Account)
-                    .AddInstruction(instruction)
-                    .Build(Web3.Wallet.Account);
-
-                Log($"Transaction built and signed, size={txBytes.Length} bytes");
-
-                // Convert to base64 for RPC
-                var txBase64 = Convert.ToBase64String(txBytes);
-
-                // Send the signed transaction
-                var result = await rpc.SendTransactionAsync(
-                    txBase64,
-                    skipPreflight: false,
-                    preFlightCommitment: Commitment.Confirmed);
-
-                if (result.WasSuccessful)
-                {
-                    _lastProgramErrorCode = null;
-                    Log($"Transaction sent: {result.Result}");
-                    OnTransactionSent?.Invoke(result.Result);
-                    return result.Result;
-                }
-                else
-                {
-                    _lastProgramErrorCode = ExtractCustomProgramErrorCode(result.Reason);
-                    LogError($"Transaction failed: {result.Reason}");
-                    LogFrameworkErrorDetails(result.Reason);
-                    if (result.ServerErrorCode != 0)
+                    var rpcCandidate = rpcCandidates[candidateIndex];
+                    var rpcLabel = candidateIndex == 0 ? "primary" : "fallback";
+                    var endpoint = DescribeRpcEndpoint(rpcCandidate);
+                    var rawProbeAttempted = false;
+                    for (var attempt = 1; attempt <= MaxTransientSendAttemptsPerRpc; attempt += 1)
                     {
-                        LogError($"Server error code: {result.ServerErrorCode}");
+                        var blockHashResult = await rpcCandidate.GetLatestBlockHashAsync();
+                        if (!blockHashResult.WasSuccessful || blockHashResult.Result?.Value == null)
+                        {
+                            LogError(
+                                $"[{rpcLabel}] Failed to get blockhash (attempt {attempt}/{MaxTransientSendAttemptsPerRpc}) endpoint={endpoint}: {blockHashResult.Reason}");
+                            break;
+                        }
+
+                        var txBytes = new TransactionBuilder()
+                            .SetRecentBlockHash(blockHashResult.Result.Value.Blockhash)
+                            .SetFeePayer(feePayer)
+                            .AddInstruction(instruction)
+                            .Build(new List<Account>(signers));
+
+                        Log(
+                            $"Transaction built and signed via {rpcLabel} RPC, size={txBytes.Length} bytes, attempt={attempt}");
+
+                        var txBase64 = Convert.ToBase64String(txBytes);
+                        var result = await rpcCandidate.SendTransactionAsync(
+                            txBase64,
+                            skipPreflight: false,
+                            preFlightCommitment: Commitment.Confirmed);
+
+                        if (result.WasSuccessful)
+                        {
+                            _lastProgramErrorCode = null;
+                            Log($"Transaction sent ({rpcLabel}): {result.Result}");
+                            OnTransactionSent?.Invoke(result.Result);
+                            return result.Result;
+                        }
+
+                        var failureReason = string.IsNullOrWhiteSpace(result.Reason)
+                            ? "<empty reason>"
+                            : result.Reason;
+                        _lastProgramErrorCode = ExtractCustomProgramErrorCode(failureReason);
+                        LogError(
+                            $"[{rpcLabel}] Transaction failed (attempt {attempt}/{MaxTransientSendAttemptsPerRpc}). " +
+                            $"Endpoint={endpoint}. Reason: {failureReason}");
+                        if (result.ServerErrorCode != 0)
+                        {
+                            LogError($"[{rpcLabel}] Server error code: {result.ServerErrorCode}");
+                        }
+
+                        if (!rawProbeAttempted && IsJsonParseFailure(failureReason))
+                        {
+                            rawProbeAttempted = true;
+                            var rawProbe = await TrySendTransactionViaRawHttpAsync(endpoint, txBase64);
+                            if (rawProbe.Attempted)
+                            {
+                                LogError(
+                                    $"[{rpcLabel}] Raw HTTP probe status={rawProbe.HttpStatusCode} " +
+                                    $"networkError={rawProbe.NetworkError ?? "<none>"} " +
+                                    $"rpcError={rawProbe.RpcError ?? "<none>"} " +
+                                    $"body={rawProbe.BodySnippet}");
+                            }
+
+                            if (rawProbe.WasSuccessful)
+                            {
+                                _lastProgramErrorCode = null;
+                                Log($"Transaction sent via raw HTTP ({rpcLabel}): {rawProbe.Signature}");
+                                OnTransactionSent?.Invoke(rawProbe.Signature);
+                                return rawProbe.Signature;
+                            }
+                        }
+
+                        LogFrameworkErrorDetails(failureReason);
+
+                        if (!IsTransientRpcFailure(failureReason))
+                        {
+                            break;
+                        }
+
+                        if (attempt < MaxTransientSendAttemptsPerRpc)
+                        {
+                            var retryDelayMs = BaseTransientRetryDelayMs * attempt;
+                            Log(
+                                $"[{rpcLabel}] Transient RPC failure detected. Retrying in {retryDelayMs}ms.");
+                            await UniTask.Delay(retryDelayMs);
+                        }
                     }
-                    return null;
                 }
+
+                return null;
             }
             catch (Exception ex)
             {
                 LogError($"Transaction exception: {ex.Message}");
                 return null;
             }
+        }
+
+        private List<IRpcClient> GetRpcCandidates()
+        {
+            var candidates = new List<IRpcClient>();
+            if (_rpcClient != null)
+            {
+                candidates.Add(_rpcClient);
+            }
+
+            if (_fallbackRpcClient != null && !candidates.Contains(_fallbackRpcClient))
+            {
+                candidates.Add(_fallbackRpcClient);
+            }
+
+            var walletRpc = Web3.Wallet?.ActiveRpcClient;
+            if (walletRpc != null && !candidates.Contains(walletRpc))
+            {
+                candidates.Add(walletRpc);
+            }
+
+            return candidates;
+        }
+
+        private static string NormalizeRpcUrl(string value, string fallback)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return fallback;
+            }
+
+            return value.Trim();
+        }
+
+        private static string DescribeRpcEndpoint(IRpcClient rpcClient)
+        {
+            if (rpcClient == null)
+            {
+                return "<null>";
+            }
+
+            try
+            {
+                var property = rpcClient.GetType().GetProperty("NodeAddress");
+                var value = property?.GetValue(rpcClient) as Uri;
+                if (value != null)
+                {
+                    return value.AbsoluteUri;
+                }
+            }
+            catch
+            {
+                // Best effort diagnostics only.
+            }
+
+            return rpcClient.GetType().Name;
+        }
+
+        private static bool IsTransientRpcFailure(string reason)
+        {
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                return true;
+            }
+
+            return
+                reason.IndexOf("Unable to parse json", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("header part of a frame could not be read", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("timed out", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("timeout", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("429", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("Too Many Requests", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("gateway", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("temporarily unavailable", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsJsonParseFailure(string reason)
+        {
+            return !string.IsNullOrWhiteSpace(reason) &&
+                   reason.IndexOf("Unable to parse json", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private struct RawHttpProbeResult
+        {
+            public bool Attempted;
+            public bool WasSuccessful;
+            public string Signature;
+            public long HttpStatusCode;
+            public string NetworkError;
+            public string RpcError;
+            public string BodySnippet;
+        }
+
+        private async UniTask<RawHttpProbeResult> TrySendTransactionViaRawHttpAsync(string endpoint, string txBase64)
+        {
+            if (string.IsNullOrWhiteSpace(endpoint) ||
+                !Uri.TryCreate(endpoint, UriKind.Absolute, out var endpointUri) ||
+                (endpointUri.Scheme != Uri.UriSchemeHttp && endpointUri.Scheme != Uri.UriSchemeHttps))
+            {
+                return default;
+            }
+
+            var payload =
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"sendTransaction\",\"params\":[\"" +
+                txBase64 +
+                "\",{\"encoding\":\"base64\",\"skipPreflight\":false,\"preflightCommitment\":\"confirmed\"}]}";
+
+            using var request = new UnityWebRequest(endpointUri.AbsoluteUri, UnityWebRequest.kHttpVerbPOST);
+            request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(payload));
+            request.downloadHandler = new DownloadHandlerBuffer();
+            request.timeout = RawHttpProbeTimeoutSeconds;
+            request.SetRequestHeader("Content-Type", "application/json");
+
+            try
+            {
+                await request.SendWebRequest().ToUniTask();
+            }
+            catch (Exception exception)
+            {
+                return new RawHttpProbeResult
+                {
+                    Attempted = true,
+                    WasSuccessful = false,
+                    HttpStatusCode = request.responseCode,
+                    NetworkError = exception.Message,
+                    RpcError = null,
+                    BodySnippet = "<request exception>"
+                };
+            }
+
+            var body = request.downloadHandler?.text ?? string.Empty;
+            var signature = ExtractJsonStringField(body, "result");
+            var rpcError = ExtractJsonStringField(body, "message");
+
+            return new RawHttpProbeResult
+            {
+                Attempted = true,
+                WasSuccessful = !string.IsNullOrWhiteSpace(signature),
+                Signature = signature,
+                HttpStatusCode = request.responseCode,
+                NetworkError = request.error,
+                RpcError = rpcError,
+                BodySnippet = TruncateForLog(body, RawHttpBodyLogLimit)
+            };
+        }
+
+        private static string ExtractJsonStringField(string json, string fieldName)
+        {
+            if (string.IsNullOrWhiteSpace(json) || string.IsNullOrWhiteSpace(fieldName))
+            {
+                return null;
+            }
+
+            var pattern = $"\"{Regex.Escape(fieldName)}\"\\s*:\\s*\"([^\"]+)\"";
+            var match = Regex.Match(json, pattern);
+            return match.Success ? match.Groups[1].Value : null;
+        }
+
+        private static string TruncateForLog(string text, int limit)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return "<empty>";
+            }
+
+            if (text.Length <= limit)
+            {
+                return text;
+            }
+
+            return text.Substring(0, limit) + "...";
         }
 
         private void LogFrameworkErrorDetails(string reason)

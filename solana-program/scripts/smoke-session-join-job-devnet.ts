@@ -14,17 +14,25 @@ const ASSOCIATED_TOKEN_PROGRAM_ID = new anchor.web3.PublicKey(
 const WALL_RUBBLE = 1;
 const ROOM_ACTIVITY_DOOR_JOB = 1;
 const STAKE_AMOUNT = 10_000_000;
+const SESSION_MOVE_PLAYER_BIT = 1 << 6;
 const SESSION_JOIN_JOB_BIT = 1 << 7;
-const SESSION_FUNDING_LAMPORTS = 20_000_000;
+const SESSION_FUNDING_LAMPORTS = 200_000_000;
 const SESSION_DURATION_SLOTS = 5_000;
 const SESSION_DURATION_SECONDS = 3_600;
 const START_ROOM_X = 5;
 const START_ROOM_Y = 5;
+const MAX_ROOM_SEARCH_STEPS = 24;
 
 type ActiveJob = {
   roomX: number;
   roomY: number;
   direction: number;
+};
+
+type PlayerRoomContext = {
+  playerAccount: Awaited<ReturnType<Program<Chaindepth>["account"]["playerAccount"]["fetch"]>>;
+  roomPda: anchor.web3.PublicKey;
+  roomAccount: Awaited<ReturnType<Program<Chaindepth>["account"]["roomAccount"]["fetch"]>>;
 };
 
 const ensureError = function (thrownObject: unknown): Error {
@@ -143,6 +151,71 @@ const deriveAta = function (
   )[0];
 };
 
+const getAdjacentCoordinates = function (
+  x: number,
+  y: number,
+  direction: number,
+): { x: number; y: number } {
+  if (direction === 0) {
+    return { x, y: y + 1 };
+  }
+  if (direction === 1) {
+    return { x, y: y - 1 };
+  }
+  if (direction === 2) {
+    return { x: x + 1, y };
+  }
+  return { x: x - 1, y };
+};
+
+const getJoinableDirection = function (
+  roomAccount: PlayerRoomContext["roomAccount"],
+  playerAccount: PlayerRoomContext["playerAccount"],
+): number | null {
+  const activeJobs = playerAccount.activeJobs as Array<ActiveJob>;
+  for (let direction = 0; direction < 4; direction += 1) {
+    if (roomAccount.walls[direction] !== WALL_RUBBLE) {
+      continue;
+    }
+    if (roomAccount.jobCompleted[direction]) {
+      continue;
+    }
+    const alreadyActive = activeJobs.some((job) => {
+      return (
+        job.roomX === playerAccount.currentRoomX &&
+        job.roomY === playerAccount.currentRoomY &&
+        job.direction === direction
+      );
+    });
+    if (alreadyActive) {
+      continue;
+    }
+    return direction;
+  }
+
+  return null;
+};
+
+const loadPlayerRoomContext = async function (
+  program: Program<Chaindepth>,
+  seasonSeed: anchor.BN,
+  playerPda: anchor.web3.PublicKey,
+): Promise<PlayerRoomContext> {
+  const playerAccount = await program.account.playerAccount.fetch(playerPda);
+  const roomPda = deriveRoomPda(
+    program.programId,
+    seasonSeed,
+    playerAccount.currentRoomX,
+    playerAccount.currentRoomY,
+  );
+  const roomAccount = await program.account.roomAccount.fetch(roomPda);
+  return {
+    playerAccount,
+    roomPda,
+    roomAccount,
+  };
+};
+
 async function main(): Promise<void> {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
@@ -190,68 +263,18 @@ async function main(): Promise<void> {
     }
   }
 
-  const playerAccount = await program.account.playerAccount.fetch(playerPda);
-  const roomPda = deriveRoomPda(
-    program.programId,
+  let context = await loadPlayerRoomContext(
+    program,
     globalAccount.seasonSeed,
-    playerAccount.currentRoomX,
-    playerAccount.currentRoomY,
+    playerPda,
   );
-  const roomAccount = await program.account.roomAccount.fetch(roomPda);
-
-  const activeJobs = playerAccount.activeJobs as Array<ActiveJob>;
-  let selectedDirection: number | null = null;
-
-  for (let direction = 0; direction < 4; direction += 1) {
-    if (roomAccount.walls[direction] !== WALL_RUBBLE) {
-      continue;
-    }
-    if (roomAccount.jobCompleted[direction]) {
-      continue;
-    }
-    const alreadyActive = activeJobs.some((job) => {
-      return (
-        job.roomX === playerAccount.currentRoomX &&
-        job.roomY === playerAccount.currentRoomY &&
-        job.direction === direction
-      );
-    });
-    if (alreadyActive) {
-      continue;
-    }
-    selectedDirection = direction;
-    break;
-  }
-
-  if (selectedDirection === null) {
-    throw new Error(
-      `No joinable rubble direction in current room (${playerAccount.currentRoomX}, ${playerAccount.currentRoomY}).`,
-    );
-  }
-
-  const direction = selectedDirection;
-  const roomPresencePda = deriveRoomPresencePda(
-    program.programId,
-    globalAccount.seasonSeed,
-    playerAccount.currentRoomX,
-    playerAccount.currentRoomY,
-    walletPubkey,
-  );
-  const escrowPda = deriveEscrowPda(program.programId, roomPda, direction);
-  const helperStakePda = deriveHelperStakePda(
-    program.programId,
-    roomPda,
-    direction,
-    walletPubkey,
-  );
-  const playerTokenAccount = deriveAta(globalAccount.skrMint, walletPubkey);
-
   const sessionKeypair = Keypair.generate();
   const sessionAuthorityPda = deriveSessionAuthorityPda(
     program.programId,
     walletPubkey,
     sessionKeypair.publicKey,
   );
+  const playerTokenAccount = deriveAta(globalAccount.skrMint, walletPubkey);
 
   const connection = provider.connection;
   const sessionBalance = await connection.getBalance(sessionKeypair.publicKey);
@@ -277,7 +300,7 @@ async function main(): Promise<void> {
     .beginSession(
       new BN(currentSlot + SESSION_DURATION_SLOTS),
       new BN(currentTimestamp + SESSION_DURATION_SECONDS),
-      new BN(SESSION_JOIN_JOB_BIT),
+      new BN(SESSION_MOVE_PLAYER_BIT | SESSION_JOIN_JOB_BIT),
       new BN(STAKE_AMOUNT),
     )
     .accountsPartial({
@@ -294,6 +317,140 @@ async function main(): Promise<void> {
     .rpc();
   console.log("begin_session: ok");
 
+  let selectedDirection = getJoinableDirection(
+    context.roomAccount,
+    context.playerAccount,
+  );
+
+  let previousCoordinates: { x: number; y: number } | null = null;
+  for (let stepIndex = 0; selectedDirection === null && stepIndex < MAX_ROOM_SEARCH_STEPS; stepIndex += 1) {
+    let moveDirection: number | null = null;
+    for (let directionCandidate = 0; directionCandidate < 4; directionCandidate += 1) {
+      const wallState = context.roomAccount.walls[directionCandidate];
+      if (wallState !== 2) {
+        continue;
+      }
+      const adjacentCoordinates = getAdjacentCoordinates(
+        context.playerAccount.currentRoomX,
+        context.playerAccount.currentRoomY,
+        directionCandidate,
+      );
+      if (
+        previousCoordinates !== null &&
+        adjacentCoordinates.x === previousCoordinates.x &&
+        adjacentCoordinates.y === previousCoordinates.y
+      ) {
+        continue;
+      }
+      moveDirection = directionCandidate;
+      break;
+    }
+
+    if (moveDirection === null) {
+      for (let directionCandidate = 0; directionCandidate < 4; directionCandidate += 1) {
+        if (context.roomAccount.walls[directionCandidate] === 2) {
+          moveDirection = directionCandidate;
+          break;
+        }
+      }
+    }
+
+    if (moveDirection === null) {
+      break;
+    }
+
+    const targetCoordinates = getAdjacentCoordinates(
+      context.playerAccount.currentRoomX,
+      context.playerAccount.currentRoomY,
+      moveDirection,
+    );
+    const currentPresencePda = deriveRoomPresencePda(
+      program.programId,
+      globalAccount.seasonSeed,
+      context.playerAccount.currentRoomX,
+      context.playerAccount.currentRoomY,
+      walletPubkey,
+    );
+    const targetPresencePda = deriveRoomPresencePda(
+      program.programId,
+      globalAccount.seasonSeed,
+      targetCoordinates.x,
+      targetCoordinates.y,
+      walletPubkey,
+    );
+    const currentRoomPda = deriveRoomPda(
+      program.programId,
+      globalAccount.seasonSeed,
+      context.playerAccount.currentRoomX,
+      context.playerAccount.currentRoomY,
+    );
+    const targetRoomPda = deriveRoomPda(
+      program.programId,
+      globalAccount.seasonSeed,
+      targetCoordinates.x,
+      targetCoordinates.y,
+    );
+
+    await program.methods
+      .movePlayer(targetCoordinates.x, targetCoordinates.y)
+      .accounts({
+        authority: sessionKeypair.publicKey,
+        player: walletPubkey,
+        global: globalPda,
+        playerAccount: playerPda,
+        profile: profilePda,
+        currentRoom: currentRoomPda,
+        targetRoom: targetRoomPda,
+        currentPresence: currentPresencePda,
+        targetPresence: targetPresencePda,
+        sessionAuthority: sessionAuthorityPda,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([sessionKeypair])
+      .rpc();
+    console.log(
+      "move_player_with_session: stepped to",
+      `(${targetCoordinates.x}, ${targetCoordinates.y})`,
+    );
+
+    previousCoordinates = {
+      x: context.playerAccount.currentRoomX,
+      y: context.playerAccount.currentRoomY,
+    };
+
+    context = await loadPlayerRoomContext(
+      program,
+      globalAccount.seasonSeed,
+      playerPda,
+    );
+    selectedDirection = getJoinableDirection(
+      context.roomAccount,
+      context.playerAccount,
+    );
+  }
+
+  if (selectedDirection === null) {
+    throw new Error(
+      `No joinable rubble direction found after ${MAX_ROOM_SEARCH_STEPS} room-search steps. Current room=(${context.playerAccount.currentRoomX}, ${context.playerAccount.currentRoomY}).`,
+    );
+  }
+
+  const direction = selectedDirection;
+  const roomPresencePda = deriveRoomPresencePda(
+    program.programId,
+    globalAccount.seasonSeed,
+    context.playerAccount.currentRoomX,
+    context.playerAccount.currentRoomY,
+    walletPubkey,
+  );
+  const escrowPda = deriveEscrowPda(program.programId, context.roomPda, direction);
+  const helperStakePda = deriveHelperStakePda(
+    program.programId,
+    context.roomPda,
+    direction,
+    walletPubkey,
+  );
+
   await program.methods
     .joinJobWithSession(direction)
     .accounts({
@@ -301,7 +458,7 @@ async function main(): Promise<void> {
       player: walletPubkey,
       global: globalPda,
       playerAccount: playerPda,
-      room: roomPda,
+      room: context.roomPda,
       roomPresence: roomPresencePda,
       escrow: escrowPda,
       helperStake: helperStakePda,

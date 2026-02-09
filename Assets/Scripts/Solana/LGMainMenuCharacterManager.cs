@@ -32,6 +32,7 @@ namespace SeekerDungeon.Solana
         [Header("References")]
         [SerializeField] private LGManager lgManager;
         [SerializeField] private LGPlayerController playerController;
+        [SerializeField] private LGWalletSessionManager walletSessionManager;
 
         [Header("Scene Flow")]
         [SerializeField] private string gameplaySceneName = "GameScene";
@@ -39,6 +40,9 @@ namespace SeekerDungeon.Solana
 
         [Header("Display Name")]
         [SerializeField] private int maxDisplayNameLength = DefaultMaxDisplayNameLength;
+
+        [Header("Session UX")]
+        [SerializeField] private bool prepareGameplaySessionInMenu = true;
 
         [Header("Debug")]
         [SerializeField] private bool logDebugMessages = true;
@@ -68,6 +72,16 @@ namespace SeekerDungeon.Solana
             if (playerController == null)
             {
                 playerController = FindObjectOfType<LGPlayerController>();
+            }
+
+            if (walletSessionManager == null)
+            {
+                walletSessionManager = LGWalletSessionManager.Instance;
+            }
+
+            if (walletSessionManager == null)
+            {
+                walletSessionManager = FindObjectOfType<LGWalletSessionManager>();
             }
 
             RebuildSelectableSkins();
@@ -280,6 +294,11 @@ namespace SeekerDungeon.Solana
                 await EnsurePlayerInitializedAsync();
                 await lgManager.FetchPlayerProfile();
 
+                if (prepareGameplaySessionInMenu)
+                {
+                    await PrepareGameplaySessionAsync();
+                }
+
                 var profile = lgManager.CurrentProfileState;
                 HasExistingProfile = profile != null;
 
@@ -303,7 +322,16 @@ namespace SeekerDungeon.Solana
                 }
 
                 IsReady = true;
-                EmitState(string.Empty);
+                if (prepareGameplaySessionInMenu &&
+                    walletSessionManager != null &&
+                    !walletSessionManager.CanUseLocalSessionSigning)
+                {
+                    EmitState("Session unavailable. Gameplay will require wallet approval.");
+                }
+                else
+                {
+                    EmitState(string.Empty);
+                }
             }
             catch (Exception exception)
             {
@@ -340,6 +368,30 @@ namespace SeekerDungeon.Solana
                 throw new InvalidOperationException(
                     $"Player account still missing after init. signature={initSignature}");
             }
+        }
+
+        private async UniTask PrepareGameplaySessionAsync()
+        {
+            if (walletSessionManager == null)
+            {
+                return;
+            }
+
+            if (walletSessionManager.CanUseLocalSessionSigning)
+            {
+                EmitState("Session ready");
+                return;
+            }
+
+            EmitState("Preparing gameplay session...");
+            var sessionReady = await walletSessionManager.EnsureGameplaySessionAsync(emitPromptStatus: true);
+            if (sessionReady && walletSessionManager.CanUseLocalSessionSigning)
+            {
+                EmitState("Session ready");
+                return;
+            }
+
+            EmitState("Session unavailable. Gameplay may prompt wallet approvals.");
         }
 
         private async UniTask<bool> WaitForPlayerAccountAfterInitAsync()

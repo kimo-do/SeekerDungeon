@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Text.RegularExpressions;
 using Cysharp.Threading.Tasks;
 using Solana.Unity.Programs;
 using Solana.Unity.Rpc;
@@ -11,7 +12,9 @@ using Solana.Unity.Rpc.Types;
 using Solana.Unity.SDK;
 using Solana.Unity.Wallet;
 using UnityEngine;
+using UnityEngine.Networking;
 using Chaindepth.Program;
+using Chaindepth.Errors;
 
 namespace SeekerDungeon.Solana
 {
@@ -56,6 +59,7 @@ namespace SeekerDungeon.Solana
 
         [Header("Network")]
         [SerializeField] private string rpcUrl = LGConfig.RPC_URL;
+        [SerializeField] private string fallbackRpcUrl = LGConfig.RPC_FALLBACK_URL;
         [SerializeField] private Commitment commitment = Commitment.Confirmed;
 
         [Header("Startup Login")]
@@ -73,6 +77,9 @@ namespace SeekerDungeon.Solana
         [SerializeField] private bool autoBeginSessionAfterConnect;
         [SerializeField] private int sessionDurationMinutes = 60;
         [SerializeField] private ulong defaultSessionMaxTokenSpend = 200_000_000UL;
+        [SerializeField] private bool autoFundSessionSigner = true;
+        [SerializeField] private ulong sessionSignerMinLamports = 5_000_000UL;
+        [SerializeField] private ulong sessionSignerTopUpLamports = 10_000_000UL;
         [SerializeField] private int defaultAllowlistMask =
             (int)(
                 SessionInstructionAllowlist.MovePlayer |
@@ -103,16 +110,29 @@ namespace SeekerDungeon.Solana
         public bool HasWalletConnectIntent => PlayerPrefs.GetInt(WalletConnectIntentPrefKey, 0) == 1;
 
         public bool HasActiveOnchainSession => _hasActiveOnchainSession && _sessionSignerAccount != null;
+        public bool CanUseLocalSessionSigning =>
+            _hasActiveOnchainSession &&
+            _sessionSignerAccount != null &&
+            _sessionAuthorityPda != null &&
+            _isSessionSignerFunded;
         public PublicKey ActiveSessionSignerPublicKey => _sessionSignerAccount?.PublicKey;
+        public Account ActiveSessionSignerAccount => _sessionSignerAccount;
         public PublicKey ActiveSessionAuthorityPda => _sessionAuthorityPda;
 
         private PublicKey _programId;
         private PublicKey _globalPda;
         private IRpcClient _fallbackRpcClient;
+        private IRpcClient _secondaryRpcClient;
 
         private Account _sessionSignerAccount;
         private PublicKey _sessionAuthorityPda;
         private bool _hasActiveOnchainSession;
+        private bool _isSessionSignerFunded;
+        private bool _isEnsuringGameplaySession;
+        private const int MaxTransientSendAttemptsPerRpc = 2;
+        private const int BaseTransientRetryDelayMs = 300;
+        private const int RawHttpProbeTimeoutSeconds = 20;
+        private const int RawHttpBodyLogLimit = 400;
 
         private void Awake()
         {
@@ -127,7 +147,15 @@ namespace SeekerDungeon.Solana
 
             _programId = new PublicKey(LGConfig.PROGRAM_ID);
             _globalPda = new PublicKey(LGConfig.GLOBAL_PDA);
+            rpcUrl = NormalizeRpcUrl(rpcUrl, LGConfig.RPC_URL);
+            fallbackRpcUrl = NormalizeRpcUrl(fallbackRpcUrl, LGConfig.RPC_FALLBACK_URL);
             _fallbackRpcClient = ClientFactory.GetClient(rpcUrl);
+            _secondaryRpcClient = string.Equals(rpcUrl, fallbackRpcUrl, StringComparison.OrdinalIgnoreCase)
+                ? null
+                : ClientFactory.GetClient(fallbackRpcUrl);
+
+            EnsureWeb3ExistsAndConfigured();
+            EmitStatus($"RPC primary={rpcUrl} fallback={fallbackRpcUrl}");
         }
 
         private void OnEnable()
@@ -194,6 +222,11 @@ namespace SeekerDungeon.Solana
                 }
                 EmitStatus($"Wallet connected ({resolvedMode}): {ConnectedWalletPublicKey}");
 
+                if (requestAirdropIfLowSolInEditor && Application.isEditor)
+                {
+                    await TryAirdropIfNeeded();
+                }
+
                 if (autoBeginSessionAfterConnect)
                 {
                     await BeginGameplaySessionAsync();
@@ -234,12 +267,6 @@ namespace SeekerDungeon.Solana
             if (!IsWalletConnected)
             {
                 EmitError("Cannot begin session: wallet not connected.");
-                return false;
-            }
-
-            if (ActiveWalletMode == WalletLoginMode.WalletAdapter)
-            {
-                EmitError("Session creation currently supports editor dev wallet flow only.");
                 return false;
             }
 
@@ -309,7 +336,100 @@ namespace SeekerDungeon.Solana
             _hasActiveOnchainSession = true;
             OnSessionStateChanged?.Invoke(true);
             EmitStatus($"Session started. Session key={_sessionSignerAccount.PublicKey} tx={signature}");
+
+            if (autoFundSessionSigner)
+            {
+                var funded = await EnsureSessionSignerFundedAsync(emitPromptStatus: true);
+                if (!funded)
+                {
+                    EmitError("Session signer funding failed. Gameplay may require wallet approval until funded.");
+                    return false;
+                }
+            }
+            else
+            {
+                _isSessionSignerFunded = true;
+            }
+
             return true;
+        }
+
+        public bool IsSessionRecoverableProgramError(uint? errorCode)
+        {
+            if (!errorCode.HasValue)
+            {
+                return false;
+            }
+
+            var value = errorCode.Value;
+            return
+                value == (uint)ChaindepthErrorKind.SessionExpired ||
+                value == (uint)ChaindepthErrorKind.SessionInactive ||
+                value == (uint)ChaindepthErrorKind.SessionInstructionNotAllowed ||
+                value == (uint)ChaindepthErrorKind.SessionSpendCapExceeded ||
+                value == (uint)ChaindepthErrorKind.Unauthorized;
+        }
+
+        public async UniTask<bool> EnsureGameplaySessionAsync(bool emitPromptStatus = true)
+        {
+            if (_hasActiveOnchainSession && _sessionSignerAccount != null && _sessionAuthorityPda != null)
+            {
+                var funded = await EnsureSessionSignerFundedAsync(emitPromptStatus: false);
+                if (funded)
+                {
+                    return true;
+                }
+            }
+
+            while (_isEnsuringGameplaySession)
+            {
+                await UniTask.Yield();
+                if (CanUseLocalSessionSigning)
+                {
+                    return true;
+                }
+            }
+
+            _isEnsuringGameplaySession = true;
+            try
+            {
+                if (_hasActiveOnchainSession &&
+                    _sessionSignerAccount != null &&
+                    _sessionAuthorityPda != null)
+                {
+                    var funded = await EnsureSessionSignerFundedAsync(emitPromptStatus);
+                    if (funded)
+                    {
+                        if (emitPromptStatus)
+                        {
+                            EmitStatus("Session restored. Retrying action...");
+                        }
+
+                        return true;
+                    }
+                }
+
+                if (emitPromptStatus)
+                {
+                    EmitStatus("Session expired. Re-starting session...");
+                }
+
+                var started = await BeginGameplaySessionAsync();
+                if (started && emitPromptStatus)
+                {
+                    EmitStatus("Session restored. Retrying action...");
+                }
+                else if (!started && emitPromptStatus)
+                {
+                    EmitError("Session restart failed.");
+                }
+
+                return started;
+            }
+            finally
+            {
+                _isEnsuringGameplaySession = false;
+            }
         }
 
         public async UniTask<bool> EndGameplaySessionAsync()
@@ -360,6 +480,77 @@ namespace SeekerDungeon.Solana
             return true;
         }
 
+        public async UniTask<bool> EnsureSessionSignerFundedAsync(bool emitPromptStatus = true)
+        {
+            if (_sessionSignerAccount == null)
+            {
+                EmitError("Session signer is unavailable for funding.");
+                _isSessionSignerFunded = false;
+                return false;
+            }
+
+            var rpc = GetRpcClient();
+            if (rpc == null)
+            {
+                EmitError("RPC unavailable for session signer funding.");
+                _isSessionSignerFunded = false;
+                return false;
+            }
+
+            var sessionBalanceResult = await rpc.GetBalanceAsync(_sessionSignerAccount.PublicKey, commitment);
+            if (!sessionBalanceResult.WasSuccessful || sessionBalanceResult.Result == null)
+            {
+                EmitError($"Failed to fetch session signer balance: {sessionBalanceResult.Reason}");
+                _isSessionSignerFunded = false;
+                return false;
+            }
+
+            var currentLamports = sessionBalanceResult.Result.Value;
+            if (currentLamports >= sessionSignerMinLamports)
+            {
+                _isSessionSignerFunded = true;
+                return true;
+            }
+
+            var wallet = Web3.Wallet;
+            if (wallet?.Account == null)
+            {
+                EmitError("Wallet disconnected while funding session signer.");
+                _isSessionSignerFunded = false;
+                return false;
+            }
+
+            if (emitPromptStatus)
+            {
+                var needed = Math.Max(sessionSignerTopUpLamports, sessionSignerMinLamports - currentLamports);
+                EmitStatus(
+                    $"Funding session wallet ({needed / 1_000_000_000d:F6} SOL). Approve in wallet...");
+            }
+
+            var topUpAmount = Math.Max(sessionSignerTopUpLamports, sessionSignerMinLamports - currentLamports);
+            var transferResult = await wallet.Transfer(
+                _sessionSignerAccount.PublicKey,
+                topUpAmount,
+                commitment);
+            if (!transferResult.WasSuccessful || string.IsNullOrWhiteSpace(transferResult.Result))
+            {
+                var reason = string.IsNullOrWhiteSpace(transferResult.Reason)
+                    ? "<unknown transfer failure>"
+                    : transferResult.Reason;
+                EmitError($"Session signer top-up failed: {reason}");
+                _isSessionSignerFunded = false;
+                return false;
+            }
+
+            _isSessionSignerFunded = true;
+            if (emitPromptStatus)
+            {
+                EmitStatus($"Session wallet funded. tx={transferResult.Result}");
+            }
+
+            return true;
+        }
+
         private async UniTask ConnectEditorDevWalletAsync()
         {
             var account = await Web3.Instance.LoginInGameWallet(editorDevWalletPassword);
@@ -376,10 +567,6 @@ namespace SeekerDungeon.Solana
                     "If this is first run, enable createEditorDevWalletIfMissing.");
             }
 
-            if (requestAirdropIfLowSolInEditor && Application.isEditor)
-            {
-                await TryAirdropIfNeeded();
-            }
         }
 
         private async UniTask ConnectWalletAdapterAsync()
@@ -437,7 +624,7 @@ namespace SeekerDungeon.Solana
         {
             if (Web3.Wallet?.ActiveRpcClient != null)
             {
-                return Web3.Wallet.ActiveRpcClient;
+                return _fallbackRpcClient ?? Web3.Wallet.ActiveRpcClient;
             }
 
             return _fallbackRpcClient;
@@ -453,33 +640,228 @@ namespace SeekerDungeon.Solana
                 return null;
             }
 
-            var rpc = GetRpcClient();
-            var latestBlockHash = await rpc.GetLatestBlockHashAsync(commitment);
-            if (!latestBlockHash.WasSuccessful || latestBlockHash.Result?.Value == null)
+            var rpcCandidates = GetRpcCandidates();
+            if (rpcCandidates.Count == 0)
             {
-                EmitError($"Failed to get latest blockhash: {latestBlockHash.Reason}");
+                EmitError("RPC client not available.");
                 return null;
             }
 
-            var transactionBytes = new TransactionBuilder()
-                .SetRecentBlockHash(latestBlockHash.Result.Value.Blockhash)
-                .SetFeePayer(signers[0])
-                .AddInstruction(instruction)
-                .Build(new List<Account>(signers));
-
-            var transactionBase64 = Convert.ToBase64String(transactionBytes);
-            var sendResult = await rpc.SendTransactionAsync(
-                transactionBase64,
-                skipPreflight: false,
-                preFlightCommitment: commitment);
-
-            if (!sendResult.WasSuccessful)
+            for (var candidateIndex = 0; candidateIndex < rpcCandidates.Count; candidateIndex += 1)
             {
-                EmitError($"Transaction failed: {sendResult.Reason}");
+                var rpcCandidate = rpcCandidates[candidateIndex];
+                var rpcLabel = candidateIndex == 0 ? "primary" : "fallback";
+                var endpoint = DescribeRpcEndpoint(rpcCandidate);
+                var rawProbeAttempted = false;
+                for (var attempt = 1; attempt <= MaxTransientSendAttemptsPerRpc; attempt += 1)
+                {
+                    var latestBlockHash = await rpcCandidate.GetLatestBlockHashAsync(commitment);
+                    if (!latestBlockHash.WasSuccessful || latestBlockHash.Result?.Value == null)
+                    {
+                        EmitError(
+                            $"[{rpcLabel}] Failed to get latest blockhash (attempt {attempt}/{MaxTransientSendAttemptsPerRpc}) endpoint={endpoint}: {latestBlockHash.Reason}");
+                        break;
+                    }
+
+                    var transactionBytes = new TransactionBuilder()
+                        .SetRecentBlockHash(latestBlockHash.Result.Value.Blockhash)
+                        .SetFeePayer(signers[0])
+                        .AddInstruction(instruction)
+                        .Build(new List<Account>(signers));
+
+                    var transactionBase64 = Convert.ToBase64String(transactionBytes);
+                    var sendResult = await rpcCandidate.SendTransactionAsync(
+                        transactionBase64,
+                        skipPreflight: false,
+                        preFlightCommitment: commitment);
+
+                    if (sendResult.WasSuccessful)
+                    {
+                        return sendResult.Result;
+                    }
+
+                    var reason = string.IsNullOrWhiteSpace(sendResult.Reason)
+                        ? "<empty reason>"
+                        : sendResult.Reason;
+                    EmitError(
+                        $"[{rpcLabel}] Transaction failed (attempt {attempt}/{MaxTransientSendAttemptsPerRpc}) endpoint={endpoint}: {reason}");
+                    if (sendResult.ServerErrorCode != 0)
+                    {
+                        EmitError($"[{rpcLabel}] Server error code: {sendResult.ServerErrorCode}");
+                    }
+
+                    if (!rawProbeAttempted && IsJsonParseFailure(reason))
+                    {
+                        rawProbeAttempted = true;
+                        var rawProbe = await TrySendTransactionViaRawHttpAsync(endpoint, transactionBase64);
+                        if (rawProbe.Attempted)
+                        {
+                            EmitError(
+                                $"[{rpcLabel}] Raw HTTP probe status={rawProbe.HttpStatusCode} " +
+                                $"networkError={rawProbe.NetworkError ?? "<none>"} " +
+                                $"rpcError={rawProbe.RpcError ?? "<none>"} " +
+                                $"body={rawProbe.BodySnippet}");
+                        }
+
+                        if (rawProbe.WasSuccessful)
+                        {
+                            return rawProbe.Signature;
+                        }
+                    }
+
+                    if (!IsTransientRpcFailure(reason))
+                    {
+                        break;
+                    }
+
+                    if (attempt < MaxTransientSendAttemptsPerRpc)
+                    {
+                        var retryDelayMs = BaseTransientRetryDelayMs * attempt;
+                        EmitStatus(
+                            $"[{rpcLabel}] Transient RPC failure detected. Retrying in {retryDelayMs}ms.");
+                        await UniTask.Delay(retryDelayMs);
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private List<IRpcClient> GetRpcCandidates()
+        {
+            var candidates = new List<IRpcClient>();
+            if (_fallbackRpcClient != null)
+            {
+                candidates.Add(_fallbackRpcClient);
+            }
+
+            if (_secondaryRpcClient != null && !candidates.Contains(_secondaryRpcClient))
+            {
+                candidates.Add(_secondaryRpcClient);
+            }
+
+            var walletRpc = Web3.Wallet?.ActiveRpcClient;
+            if (walletRpc != null && !candidates.Contains(walletRpc))
+            {
+                candidates.Add(walletRpc);
+            }
+
+            return candidates;
+        }
+
+        private static bool IsTransientRpcFailure(string reason)
+        {
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                return true;
+            }
+
+            return
+                reason.IndexOf("Unable to parse json", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("header part of a frame could not be read", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("timed out", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("timeout", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("429", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("Too Many Requests", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("gateway", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("temporarily unavailable", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsJsonParseFailure(string reason)
+        {
+            return !string.IsNullOrWhiteSpace(reason) &&
+                   reason.IndexOf("Unable to parse json", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private struct RawHttpProbeResult
+        {
+            public bool Attempted;
+            public bool WasSuccessful;
+            public string Signature;
+            public long HttpStatusCode;
+            public string NetworkError;
+            public string RpcError;
+            public string BodySnippet;
+        }
+
+        private async UniTask<RawHttpProbeResult> TrySendTransactionViaRawHttpAsync(string endpoint, string txBase64)
+        {
+            if (string.IsNullOrWhiteSpace(endpoint) ||
+                !Uri.TryCreate(endpoint, UriKind.Absolute, out var endpointUri) ||
+                (endpointUri.Scheme != Uri.UriSchemeHttp && endpointUri.Scheme != Uri.UriSchemeHttps))
+            {
+                return default;
+            }
+
+            var payload =
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"sendTransaction\",\"params\":[\"" +
+                txBase64 +
+                "\",{\"encoding\":\"base64\",\"skipPreflight\":false,\"preflightCommitment\":\"confirmed\"}]}";
+
+            using var request = new UnityWebRequest(endpointUri.AbsoluteUri, UnityWebRequest.kHttpVerbPOST);
+            request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(payload));
+            request.downloadHandler = new DownloadHandlerBuffer();
+            request.timeout = RawHttpProbeTimeoutSeconds;
+            request.SetRequestHeader("Content-Type", "application/json");
+
+            try
+            {
+                await request.SendWebRequest().ToUniTask();
+            }
+            catch (Exception exception)
+            {
+                return new RawHttpProbeResult
+                {
+                    Attempted = true,
+                    WasSuccessful = false,
+                    HttpStatusCode = request.responseCode,
+                    NetworkError = exception.Message,
+                    RpcError = null,
+                    BodySnippet = "<request exception>"
+                };
+            }
+
+            var body = request.downloadHandler?.text ?? string.Empty;
+            var signature = ExtractJsonStringField(body, "result");
+            var rpcError = ExtractJsonStringField(body, "message");
+
+            return new RawHttpProbeResult
+            {
+                Attempted = true,
+                WasSuccessful = !string.IsNullOrWhiteSpace(signature),
+                Signature = signature,
+                HttpStatusCode = request.responseCode,
+                NetworkError = request.error,
+                RpcError = rpcError,
+                BodySnippet = TruncateForLog(body, RawHttpBodyLogLimit)
+            };
+        }
+
+        private static string ExtractJsonStringField(string json, string fieldName)
+        {
+            if (string.IsNullOrWhiteSpace(json) || string.IsNullOrWhiteSpace(fieldName))
+            {
                 return null;
             }
 
-            return sendResult.Result;
+            var pattern = $"\"{Regex.Escape(fieldName)}\"\\s*:\\s*\"([^\"]+)\"";
+            var match = Regex.Match(json, pattern);
+            return match.Success ? match.Groups[1].Value : null;
+        }
+
+        private static string TruncateForLog(string text, int limit)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return "<empty>";
+            }
+
+            if (text.Length <= limit)
+            {
+                return text;
+            }
+
+            return text.Substring(0, limit) + "...";
         }
 
         private void EnsureWeb3ExistsAndConfigured()
@@ -500,8 +882,57 @@ namespace SeekerDungeon.Solana
         {
             web3.rpcCluster = RpcCluster.DevNet;
             web3.customRpc = rpcUrl;
-            web3.webSocketsRpc = rpcUrl.Replace("https://", "wss://");
+            web3.webSocketsRpc = ToWebSocketUrl(rpcUrl);
             web3.autoConnectOnStartup = false;
+        }
+
+        private static string NormalizeRpcUrl(string value, string fallback)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return fallback;
+            }
+
+            return value.Trim();
+        }
+
+        private static string ToWebSocketUrl(string httpUrl)
+        {
+            if (httpUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                return "wss://" + httpUrl.Substring("https://".Length);
+            }
+
+            if (httpUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+            {
+                return "ws://" + httpUrl.Substring("http://".Length);
+            }
+
+            return httpUrl;
+        }
+
+        private static string DescribeRpcEndpoint(IRpcClient rpcClient)
+        {
+            if (rpcClient == null)
+            {
+                return "<null>";
+            }
+
+            try
+            {
+                var property = rpcClient.GetType().GetProperty("NodeAddress");
+                var value = property?.GetValue(rpcClient) as Uri;
+                if (value != null)
+                {
+                    return value.AbsoluteUri;
+                }
+            }
+            catch
+            {
+                // Best effort diagnostics only.
+            }
+
+            return rpcClient.GetType().Name;
         }
 
         private PublicKey DerivePlayerPda(PublicKey player)
@@ -543,6 +974,7 @@ namespace SeekerDungeon.Solana
             _sessionSignerAccount = null;
             _sessionAuthorityPda = null;
             _hasActiveOnchainSession = false;
+            _isSessionSignerFunded = false;
         }
 
         private void EmitStatus(string message)

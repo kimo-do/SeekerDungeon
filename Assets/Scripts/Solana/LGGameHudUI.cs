@@ -38,7 +38,7 @@ namespace SeekerDungeon.Solana
 
         private void Awake()
         {
-            LGUiInputSystemGuard.EnsureEventSystemForRuntimeUi();
+            LGUiInputSystemGuard.EnsureEventSystemForRuntimeUi(createIfMissing: true);
             _document = GetComponent<UIDocument>();
 
             if (manager == null)
@@ -93,6 +93,12 @@ namespace SeekerDungeon.Solana
                 manager.OnRoomStateUpdated += HandleRoomStateUpdated;
             }
 
+            if (walletSessionManager != null)
+            {
+                walletSessionManager.OnStatus += HandleWalletSessionStatus;
+                walletSessionManager.OnError += HandleWalletSessionError;
+            }
+
             RefreshHudAsync().Forget();
             RefreshLoopAsync(this.GetCancellationTokenOnDestroy()).Forget();
         }
@@ -113,6 +119,12 @@ namespace SeekerDungeon.Solana
             {
                 manager.OnPlayerStateUpdated -= HandlePlayerStateUpdated;
                 manager.OnRoomStateUpdated -= HandleRoomStateUpdated;
+            }
+
+            if (walletSessionManager != null)
+            {
+                walletSessionManager.OnStatus -= HandleWalletSessionStatus;
+                walletSessionManager.OnError -= HandleWalletSessionError;
             }
         }
 
@@ -289,6 +301,22 @@ namespace SeekerDungeon.Solana
             }
 
             SetLabel(_statusLabel, message);
+        }
+
+        private void HandleWalletSessionStatus(string message)
+        {
+            if (!string.IsNullOrWhiteSpace(message))
+            {
+                SetStatus(message);
+            }
+        }
+
+        private void HandleWalletSessionError(string message)
+        {
+            if (!string.IsNullOrWhiteSpace(message))
+            {
+                SetStatus(message);
+            }
         }
 
         private static void SetLabel(Label label, string value)

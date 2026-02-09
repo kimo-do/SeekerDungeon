@@ -210,6 +210,21 @@ pub fn handler(ctx: Context<CompleteJob>, direction: u8) -> Result<()> {
         }
 
         adjacent.walls[opposite_dir as usize] = WALL_OPEN;
+        let return_wall_state = adjacent.walls[opposite_dir as usize];
+        msg!(
+            "complete_job_topology from=({}, {}) to=({}, {}) dir={} return_dir={} return_wall_state={}",
+            room_x,
+            room_y,
+            adjacent.x,
+            adjacent.y,
+            direction,
+            opposite_dir,
+            return_wall_state
+        );
+        require!(
+            return_wall_state == WALL_OPEN,
+            ChainDepthError::WallNotOpen
+        );
     }
 
     let new_depth = calculate_depth(ctx.accounts.adjacent_room.x, ctx.accounts.adjacent_room.y);

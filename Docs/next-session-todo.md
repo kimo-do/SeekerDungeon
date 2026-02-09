@@ -10,9 +10,9 @@ Goal:
 - On Seeker, avoid wallet approval prompts for each action after initial session start.
 
 Implement:
-- [ ] Audit all gameplay calls in Unity and ensure they route through session-enabled instruction paths.
-- [ ] Confirm session policy/allowlist includes every action used in dungeon flow.
-- [ ] Add fallback behavior: if session is missing/expired, prompt to re-start session once, then continue action.
+- [x] Audit all gameplay calls in Unity and ensure they route through session-enabled instruction paths.
+- [x] Confirm session policy/allowlist includes every action used in dungeon flow.
+- [x] Add fallback behavior: if session is missing/expired, prompt to re-start session once, then continue action.
 - [ ] Verify end-to-end on device: move, join job, tick, complete, claim, loot chest/boss, equip.
 
 ## 2) Validate Room Routing Logic (High Priority)
@@ -21,9 +21,9 @@ Goal:
 - Ensure door topology is consistent and directional travel is correct.
 
 Implement:
-- [ ] Test edge case: room with a single open door must return player to the room they came from.
-- [ ] Add debug validation/logging for door state + target coordinates before move.
-- [ ] Add a lightweight regression script/test path for repeated move chains (forward/backward loops).
+- [x] Test edge case: room with a single open door must return player to the room they came from.
+- [x] Add debug validation/logging for door state + target coordinates before move.
+- [x] Add a lightweight regression script/test path for repeated move chains (forward/backward loops).
 
 ## 3) Chest Loot + Inventory UX (High Priority)
 

@@ -193,8 +193,18 @@ pub fn handler(ctx: Context<MovePlayer>, new_x: i8, new_y: i8) -> Result<()> {
     };
 
     // Check if wall in that direction is open
+    let current_wall_state = current_room.walls[direction as usize];
+    msg!(
+        "move_validation from=({}, {}) to=({}, {}) dir={} wall_state={}",
+        from_x,
+        from_y,
+        new_x,
+        new_y,
+        direction,
+        current_wall_state
+    );
     require!(
-        current_room.walls[direction as usize] == WALL_OPEN,
+        current_wall_state == WALL_OPEN,
         ChainDepthError::WallNotOpen
     );
 
@@ -238,6 +248,18 @@ pub fn handler(ctx: Context<MovePlayer>, new_x: i8, new_y: i8) -> Result<()> {
         target_room.bump = ctx.bumps.target_room;
     }
     target_room.walls[opposite_direction as usize] = WALL_OPEN;
+    let return_wall_state = target_room.walls[opposite_direction as usize];
+    msg!(
+        "move_topology target=({}, {}) return_dir={} return_wall_state={}",
+        target_room.x,
+        target_room.y,
+        opposite_direction,
+        return_wall_state
+    );
+    require!(
+        return_wall_state == WALL_OPEN,
+        ChainDepthError::WallNotOpen
+    );
 
     let room_depth = calculate_depth(new_x, new_y);
     if room_depth > ctx.accounts.global.depth {

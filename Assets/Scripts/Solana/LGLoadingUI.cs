@@ -12,6 +12,8 @@ namespace SeekerDungeon.Solana
         private UIDocument _document;
         private Button _connectButton;
         private Label _statusLabel;
+        private VisualElement _boundRoot;
+        private bool _isHandlersBound;
 
         private void Awake()
         {
@@ -36,20 +38,7 @@ namespace SeekerDungeon.Solana
 
         private void OnEnable()
         {
-            var root = _document?.rootVisualElement;
-            if (root == null)
-            {
-                return;
-            }
-
-            _connectButton = root.Q<Button>("btn-connect-wallet");
-            _statusLabel = root.Q<Label>("connect-status");
-
-            if (_connectButton != null)
-            {
-                _connectButton.clicked += HandleConnectClicked;
-            }
-
+            TryRebindUi(force: true);
             if (walletSessionManager != null)
             {
                 walletSessionManager.OnWalletConnectionChanged += HandleWalletConnectionChanged;
@@ -65,16 +54,59 @@ namespace SeekerDungeon.Solana
 
         private void OnDisable()
         {
-            if (_connectButton != null)
-            {
-                _connectButton.clicked -= HandleConnectClicked;
-            }
+            UnbindUiHandlers();
 
             if (walletSessionManager != null)
             {
                 walletSessionManager.OnWalletConnectionChanged -= HandleWalletConnectionChanged;
                 walletSessionManager.OnError -= HandleWalletError;
             }
+        }
+
+        private void Update()
+        {
+            if (_boundRoot != _document?.rootVisualElement || !_isHandlersBound)
+            {
+                TryRebindUi();
+            }
+        }
+
+        private void TryRebindUi(bool force = false)
+        {
+            var root = _document?.rootVisualElement;
+            if (root == null)
+            {
+                return;
+            }
+
+            if (!force && ReferenceEquals(root, _boundRoot) && _isHandlersBound)
+            {
+                return;
+            }
+
+            UnbindUiHandlers();
+
+            _connectButton = root.Q<Button>("btn-connect-wallet");
+            _statusLabel = root.Q<Label>("connect-status");
+
+            if (_connectButton != null)
+            {
+                _connectButton.clicked += HandleConnectClicked;
+            }
+
+            _boundRoot = root;
+            _isHandlersBound = true;
+        }
+
+        private void UnbindUiHandlers()
+        {
+            if (_connectButton != null)
+            {
+                _connectButton.clicked -= HandleConnectClicked;
+            }
+
+            _boundRoot = null;
+            _isHandlersBound = false;
         }
 
         private void HandleConnectClicked()

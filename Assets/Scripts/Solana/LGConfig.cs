@@ -15,6 +15,7 @@ namespace SeekerDungeon.Solana
         
         // Network
         public const string RPC_URL = "https://api.devnet.solana.com";
+        public const string RPC_FALLBACK_URL = "https://rpc.magicblock.app/devnet/";
         
         // PDA seeds
         public const string GLOBAL_SEED = "global";

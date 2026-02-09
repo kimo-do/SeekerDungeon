@@ -27,6 +27,8 @@ namespace SeekerDungeon.Solana
         private Button _disconnectButton;
         private TouchScreenKeyboard _mobileKeyboard;
         private bool _isApplyingKeyboardText;
+        private VisualElement _boundRoot;
+        private bool _isHandlersBound;
 
         private void Awake()
         {
@@ -41,11 +43,40 @@ namespace SeekerDungeon.Solana
 
         private void OnEnable()
         {
+            TryRebindUi(force: true);
+            if (characterManager != null)
+            {
+                characterManager.OnStateChanged += HandleStateChanged;
+                characterManager.OnError += HandleError;
+                HandleStateChanged(characterManager.GetCurrentState());
+            }
+        }
+
+        private void OnDisable()
+        {
+            UnbindUiHandlers();
+
+            if (characterManager != null)
+            {
+                characterManager.OnStateChanged -= HandleStateChanged;
+                characterManager.OnError -= HandleError;
+            }
+        }
+
+        private void TryRebindUi(bool force = false)
+        {
             var root = _document?.rootVisualElement;
             if (root == null)
             {
                 return;
             }
+
+            if (!force && ReferenceEquals(root, _boundRoot) && _isHandlersBound)
+            {
+                return;
+            }
+
+            UnbindUiHandlers();
 
             _createIdentityPanel = root.Q<VisualElement>("create-identity-panel");
             _existingIdentityPanel = root.Q<VisualElement>("existing-identity-panel");
@@ -93,15 +124,11 @@ namespace SeekerDungeon.Solana
                 _displayNameInput.RegisterCallback<PointerDownEvent>(HandleDisplayNamePointerDown);
             }
 
-            if (characterManager != null)
-            {
-                characterManager.OnStateChanged += HandleStateChanged;
-                characterManager.OnError += HandleError;
-                HandleStateChanged(characterManager.GetCurrentState());
-            }
+            _boundRoot = root;
+            _isHandlersBound = true;
         }
 
-        private void OnDisable()
+        private void UnbindUiHandlers()
         {
             if (_previousSkinButton != null)
             {
@@ -134,11 +161,8 @@ namespace SeekerDungeon.Solana
                 _displayNameInput.UnregisterCallback<PointerDownEvent>(HandleDisplayNamePointerDown);
             }
 
-            if (characterManager != null)
-            {
-                characterManager.OnStateChanged -= HandleStateChanged;
-                characterManager.OnError -= HandleError;
-            }
+            _boundRoot = null;
+            _isHandlersBound = false;
         }
 
         private void HandlePreviousSkinClicked()
@@ -206,6 +230,11 @@ namespace SeekerDungeon.Solana
 
         private void Update()
         {
+            if (_boundRoot != _document?.rootVisualElement || !_isHandlersBound)
+            {
+                TryRebindUi();
+            }
+
             if (!Application.isMobilePlatform || _mobileKeyboard == null)
             {
                 return;
