@@ -175,7 +175,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Solana.LGWalletSessionManager
   rpcUrl: https://api.devnet.solana.com
-  fallbackRpcUrl: https://rpc.magicblock.app/devnet/
+  fallbackRpcUrl: https://api.devnet.solana.com
   commitment: 1
   connectOnStart: 1
   allowAutoConnectOnDeviceBuilds: 0
@@ -195,10 +195,13 @@ MonoBehaviour:
   sessionDurationMinutes: 60
   defaultSessionMaxTokenSpend: 200000000
   autoFundSessionSigner: 1
+  bundleSessionTopUpWithBeginSession: 0
+  allowWalletAdapterSessionOnAndroid: 1
   sessionSignerMinLamports: 5000000
   sessionSignerTopUpLamports: 10000000
   defaultAllowlistMask: 8159
   logDebugMessages: 1
+  stopRpcFallbackAfterWalletAdapterFailure: 1
 --- !u!114 &7790732936833290763
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -213,4 +216,4 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Solana.LGManager
   logDebugMessages: 1
   rpcUrl: https://api.devnet.solana.com
-  fallbackRpcUrl: https://rpc.magicblock.app/mainnet-beta/
+  fallbackRpcUrl: https://api.devnet.solana.com

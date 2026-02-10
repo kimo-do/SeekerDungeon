@@ -149,8 +149,8 @@ const tryResolveFromRpcScan = async (
   const recentCount = Math.min(Math.ceil(maxToProbe / 2), orderedSignatures.length);
   const oldestCount = Math.min(maxToProbe - recentCount, orderedSignatures.length - recentCount);
   const probeOrder = [
-    ...orderedSignatures.slice(0, recentCount),
-    ...orderedSignatures.slice(orderedSignatures.length - oldestCount)
+    ...orderedSignatures.slice(orderedSignatures.length - oldestCount),
+    ...orderedSignatures.slice(0, recentCount)
   ];
   const seen = new Set<string>();
   const candidateSignatures = probeOrder.filter((signature) => {
@@ -163,14 +163,23 @@ const tryResolveFromRpcScan = async (
 
   let processed = 0;
   for (const signature of candidateSignatures) {
-    let tx;
-    try {
-      tx = await connection.getTransaction(signature, {
-        maxSupportedTransactionVersion: 0,
-        commitment: "confirmed"
-      });
-    } catch {
-      continue;
+    let tx = null;
+    const maxAttempts = 2;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        tx = await connection.getTransaction(signature, {
+          maxSupportedTransactionVersion: 0,
+          commitment: "confirmed"
+        });
+        break;
+      } catch (error) {
+        if (attempt >= maxAttempts) {
+          if (config.logDebug) {
+            const message = error instanceof Error ? error.message : String(error);
+            log(`rpc_get_transaction_failed signature=${signature} message=${message}`);
+          }
+        }
+      }
     }
     if (!tx) {
       continue;

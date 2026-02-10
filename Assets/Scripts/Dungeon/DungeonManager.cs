@@ -492,6 +492,8 @@ namespace SeekerDungeon.Dungeon
                 localPlayerController.ApplySkin((PlayerSkinId)skinId.Value);
             }
 
+            localPlayerController.SetDisplayName(ResolveLocalDisplayName());
+            localPlayerController.SetDisplayNameVisible(true);
             localPlayerController.transform.rotation = Quaternion.identity;
         }
 
@@ -629,6 +631,17 @@ namespace SeekerDungeon.Dungeon
             }
 
             return _lgManager?.CurrentPlayerState?.Owner?.Key ?? string.Empty;
+        }
+
+        private string ResolveLocalDisplayName()
+        {
+            var profileName = _lgManager?.CurrentProfileState?.DisplayName;
+            if (!string.IsNullOrWhiteSpace(profileName))
+            {
+                return profileName.Trim();
+            }
+
+            return ShortWallet(ResolveLocalWalletKey());
         }
 
         private void Log(string message)

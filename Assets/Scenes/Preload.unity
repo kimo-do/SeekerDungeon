@@ -454,7 +454,19 @@ PrefabInstance:
     m_TransformParent: {fileID: 0}
     m_Modifications:
     - target: {fileID: 3095660089801292672, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
+      propertyPath: fallbackRpcUrl
+      value: https://rpc.magicblock.app/devnet/
+      objectReference: {fileID: 0}
+    - target: {fileID: 3095660089801292672, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
+      propertyPath: autoFundSessionSigner
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3095660089801292672, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
       propertyPath: simulateMobileFlowInEditor
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3095660089801292672, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
+      propertyPath: allowWalletAdapterSessionOnAndroid
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 3493712294466225802, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
@@ -500,6 +512,10 @@ PrefabInstance:
     - target: {fileID: 7741793193702230010, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
       propertyPath: m_Name
       value: AppBoostrap
+      objectReference: {fileID: 0}
+    - target: {fileID: 7790732936833290763, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
+      propertyPath: fallbackRpcUrl
+      value: https://rpc.magicblock.app/devnet/
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

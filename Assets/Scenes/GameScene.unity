@@ -247,12 +247,12 @@ PolygonCollider2D:
   m_AutoTiling: 0
   m_Points:
     m_Paths:
-    - - {x: -0.023634613, y: 4.710634}
-      - {x: -5.6307096, y: 4.445074}
-      - {x: -4.629304, y: -4.56692}
-      - {x: -0.07398391, y: -5.2286887}
-      - {x: 7.4282603, y: -4.8703327}
-      - {x: 7.6396527, y: 4.37417}
+    - - {x: -0.3622351, y: 6.042463}
+      - {x: -8.836127, y: 6.0703564}
+      - {x: -8.940817, y: -5.7858815}
+      - {x: 0.2871899, y: -6.8991184}
+      - {x: 10.272504, y: -6.653628}
+      - {x: 10.70963, y: 5.954305}
   m_UseDelaunayMesh: 1
 --- !u!4 &248438589
 Transform:
@@ -1158,6 +1158,7 @@ MonoBehaviour:
   roomControllerPrefab: {fileID: 4049596226447470478, guid: eea82da557d8e194587a7cf37021661d, type: 3}
   localPlayerController: {fileID: 0}
   localPlayerPrefab: {fileID: 1843884093472186079, guid: 801d1000ca6b4874a85a4ca31780a2ec, type: 3}
+  playerNamePrefab: {fileID: 2216771843196064832, guid: 1614aba7c126b8b43ab8f929fa17910a, type: 3}
   localPlayerSpawnPoint: {fileID: 0}
   cameraZoomController: {fileID: 0}
 --- !u!4 &1746675756

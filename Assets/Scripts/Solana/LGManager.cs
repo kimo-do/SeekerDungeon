@@ -54,6 +54,7 @@ namespace SeekerDungeon.Solana
         [Header("RPC Settings")]
         [SerializeField] private string rpcUrl = LGConfig.RPC_URL;
         [SerializeField] private string fallbackRpcUrl = LGConfig.RPC_FALLBACK_URL;
+        private bool enableStreamingRpc = false;
 
         // Cached state (using generated account types)
         public GlobalAccount CurrentGlobalState { get; private set; }
@@ -138,18 +139,27 @@ namespace SeekerDungeon.Solana
                 : ClientFactory.GetClient(fallbackRpcUrl);
 
             // Initialize streaming RPC client for account subscriptions.
-            // If this fails, we still run with polling-only behavior.
-            try
+            // Disabled by default to avoid WebSocket reconnect flood on Android.
+            if (enableStreamingRpc)
             {
-                var websocketUrl = rpcUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
-                    ? rpcUrl.Replace("https://", "wss://")
-                    : rpcUrl.Replace("http://", "ws://");
-                _streamingRpcClient = ClientFactory.GetStreamingClient(websocketUrl);
+                try
+                {
+                    var websocketUrl = rpcUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                        ? rpcUrl.Replace("https://", "wss://")
+                        : rpcUrl.Replace("http://", "ws://");
+                    _streamingRpcClient = ClientFactory.GetStreamingClient(websocketUrl);
+                    Log("Streaming RPC client initialized.");
+                }
+                catch (Exception streamingInitError)
+                {
+                    _streamingRpcClient = null;
+                    Log($"Streaming RPC unavailable. Falling back to polling-only mode. Reason: {streamingInitError.Message}");
+                }
             }
-            catch (Exception streamingInitError)
+            else
             {
                 _streamingRpcClient = null;
-                Log($"Streaming RPC unavailable. Falling back to polling-only mode. Reason: {streamingInitError.Message}");
+                Log("Streaming RPC disabled (enableStreamingRpc=false). Using polling-only mode.");
             }
 
             _client = new ChaindepthClient(_rpcClient, _streamingRpcClient, _programId);
@@ -2232,6 +2242,7 @@ namespace SeekerDungeon.Solana
             }
 
             var signingContext = BuildGameplaySigningContext(walletSessionManager);
+            Log($"{actionName}: signingContext usesSession={signingContext.UsesSessionSigner} authority={signingContext.Authority?.Key?.Substring(0, 8) ?? "<null>"} player={signingContext.Player?.Key?.Substring(0, 8) ?? "<null>"}");
             if (signingContext.SignerAccount == null || signingContext.Authority == null || signingContext.Player == null)
             {
                 LogError($"{actionName} failed: signer context is missing.");
@@ -2318,7 +2329,9 @@ namespace SeekerDungeon.Solana
 
             try
             {
-                if (ShouldUseWalletAdapterSigning(feePayer, signers))
+                var useWalletAdapter = ShouldUseWalletAdapterSigning(feePayer, signers);
+                Log($"SendTransaction: feePayer={feePayer.PublicKey?.Key?.Substring(0, 8) ?? "<null>"} signerCount={signers.Count} useWalletAdapter={useWalletAdapter}");
+                if (useWalletAdapter)
                 {
                     var walletSignedSignature = await SendTransactionViaWalletAdapterAsync(
                         instruction,
@@ -2447,9 +2460,11 @@ namespace SeekerDungeon.Solana
             var walletAccount = wallet?.Account;
             if (wallet == null || walletAccount == null || instruction == null)
             {
+                LogError($"LGManager WalletAdapter path aborted: wallet={wallet != null} account={walletAccount != null} ixNull={instruction == null}");
                 return null;
             }
 
+            Log("LGManager WalletAdapter: requesting blockhash...");
             var blockhash = await wallet.GetBlockHash(Commitment.Confirmed, useCache: false);
             if (string.IsNullOrWhiteSpace(blockhash))
             {
@@ -2465,6 +2480,7 @@ namespace SeekerDungeon.Solana
                 Signatures = new List<SignaturePubKeyPair>()
             };
 
+            var partialSignCount = 0;
             for (var signerIndex = 0; signerIndex < signers.Count; signerIndex += 1)
             {
                 var signer = signers[signerIndex];
@@ -2482,12 +2498,16 @@ namespace SeekerDungeon.Solana
                 }
 
                 transaction.PartialSign(signer);
+                partialSignCount++;
             }
 
+            Log($"LGManager WalletAdapter: calling SignAndSendTransaction (partialSigned={partialSignCount}, feePayer={feePayer.PublicKey})...");
             var sendResult = await wallet.SignAndSendTransaction(
                 transaction,
                 skipPreflight: false,
                 commitment: Commitment.Confirmed);
+            Log($"LGManager WalletAdapter: result success={sendResult.WasSuccessful} sig={sendResult.Result ?? "<null>"} reason={sendResult.Reason ?? "<null>"}");
+
             if (sendResult.WasSuccessful && !string.IsNullOrWhiteSpace(sendResult.Result))
             {
                 Log($"Transaction sent via wallet adapter: {sendResult.Result}");
@@ -2497,8 +2517,19 @@ namespace SeekerDungeon.Solana
             var reason = string.IsNullOrWhiteSpace(sendResult.Reason)
                 ? "<empty reason>"
                 : sendResult.Reason;
-            LogError($"Wallet adapter send failed: {reason}");
+            LogError($"Wallet adapter send failed: {reason} class={ClassifyFailureReason(reason)}");
             return null;
+        }
+
+        private static string ClassifyFailureReason(string reason)
+        {
+            if (string.IsNullOrWhiteSpace(reason)) return "unknown";
+            if (reason.IndexOf("could not predict balance changes", StringComparison.OrdinalIgnoreCase) >= 0) return "wallet_simulation_unpredictable_balance";
+            if (reason.IndexOf("custom program error", StringComparison.OrdinalIgnoreCase) >= 0) return "program_error";
+            if (reason.IndexOf("Connection refused", StringComparison.OrdinalIgnoreCase) >= 0) return "rpc_connection_refused";
+            if (reason.IndexOf("Unable to parse json", StringComparison.OrdinalIgnoreCase) >= 0) return "rpc_json_parse";
+            if (reason.IndexOf("timed out", StringComparison.OrdinalIgnoreCase) >= 0 || reason.IndexOf("timeout", StringComparison.OrdinalIgnoreCase) >= 0) return "rpc_timeout";
+            return "other";
         }
 
         private static bool ShouldUseWalletAdapterSigning(Account feePayer, IList<Account> signers)

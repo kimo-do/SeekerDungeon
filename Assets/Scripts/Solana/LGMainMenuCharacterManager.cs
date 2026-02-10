@@ -100,6 +100,7 @@ namespace SeekerDungeon.Solana
         public bool IsBusy { get; private set; }
         public Transform CharacterNameAnchorTransform =>
             playerController != null ? playerController.CharacterNameAnchorTransform : null;
+        public LGPlayerController PreviewPlayerController => playerController;
         public PlayerSkinId SelectedSkin { get; private set; } = PlayerSkinId.Goblin;
         public string PendingDisplayName { get; private set; } = string.Empty;
         public bool HasUnsavedProfileChanges { get; private set; }

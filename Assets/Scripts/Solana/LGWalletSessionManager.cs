@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using Cysharp.Threading.Tasks;
@@ -129,6 +131,8 @@ namespace SeekerDungeon.Solana
         [SerializeField] private int sessionDurationMinutes = 60;
         [SerializeField] private ulong defaultSessionMaxTokenSpend = 200_000_000UL;
         [SerializeField] private bool autoFundSessionSigner = true;
+        [SerializeField] private bool bundleSessionTopUpWithBeginSession = false;
+        [SerializeField] private bool allowWalletAdapterSessionOnAndroid = true;
         [SerializeField] private ulong sessionSignerMinLamports = 5_000_000UL;
         [SerializeField] private ulong sessionSignerTopUpLamports = 10_000_000UL;
         [SerializeField] private int defaultAllowlistMask =
@@ -149,6 +153,7 @@ namespace SeekerDungeon.Solana
 
         [Header("Debug")]
         [SerializeField] private bool logDebugMessages = true;
+        [SerializeField] private bool stopRpcFallbackAfterWalletAdapterFailure = true;
 
         public event Action<bool> OnWalletConnectionChanged;
         public event Action<bool> OnSessionStateChanged;
@@ -192,6 +197,8 @@ namespace SeekerDungeon.Solana
         private bool _hasActiveOnchainSession;
         private bool _isSessionSignerFunded;
         private bool _isEnsuringGameplaySession;
+        private bool _hasLoggedUnsupportedSessionMode;
+        private int _sessionAttemptSequence;
         private const int MaxTransientSendAttemptsPerRpc = 2;
         private const int BaseTransientRetryDelayMs = 300;
         private const int RawHttpProbeTimeoutSeconds = 20;
@@ -221,6 +228,7 @@ namespace SeekerDungeon.Solana
             EnsureWeb3ExistsAndConfigured();
             EmitStatus($"RPC primary={rpcUrl} fallback={fallbackRpcUrl}");
             EmitStatus($"Runtime network={LGConfig.ActiveRuntimeNetwork}");
+            EmitStatus($"Session-on-Android-wallet-adapter enabled={allowWalletAdapterSessionOnAndroid}");
         }
 
         private void OnEnable()
@@ -279,6 +287,7 @@ namespace SeekerDungeon.Solana
             }
 
             var resolvedMode = ResolveLoginMode(mode);
+            EmitStatus($"ConnectAsync: requested={mode} resolved={resolvedMode} isEditor={Application.isEditor} isMobile={Application.isMobilePlatform}");
             try
             {
                 switch (resolvedMode)
@@ -353,6 +362,7 @@ namespace SeekerDungeon.Solana
 
             ClearWalletConnectIntent();
             ClearSessionState();
+            _hasLoggedUnsupportedSessionMode = false;
             ActiveWalletMode = WalletLoginMode.Auto;
             EmitStatus("Wallet disconnected.");
         }
@@ -421,9 +431,18 @@ namespace SeekerDungeon.Solana
             ulong? maxTokenSpendOverride = null,
             int? durationMinutesOverride = null)
         {
+            var attemptId = ++_sessionAttemptSequence;
+            var attemptTag = $"session-attempt:{attemptId}";
+            EmitStatus($"[{attemptTag}] BeginGameplaySessionAsync called. walletMode={ActiveWalletMode} isEditor={Application.isEditor} isMobile={Application.isMobilePlatform}");
+            if (!IsOnchainSessionSupportedForCurrentWallet())
+            {
+                EmitStatus($"[{attemptTag}] Skipping begin_session: wallet-adapter session auth is disabled on Android. allowWalletAdapterSessionOnAndroid={allowWalletAdapterSessionOnAndroid}");
+                return false;
+            }
+
             if (!IsWalletConnected)
             {
-                EmitError("Cannot begin session: wallet not connected.");
+                EmitError($"[{attemptTag}] Cannot begin session: wallet not connected.");
                 return false;
             }
 
@@ -434,7 +453,8 @@ namespace SeekerDungeon.Solana
                 new PublicKey(LGConfig.ActiveSkrMint)
             );
 
-            var playerTokenAccountReady = await EnsurePlayerTokenAccountExistsAsync(player, playerTokenAccount);
+            EmitStatus($"[{attemptTag}] Begin session requested for wallet={player} playerPda={playerPda} skrMint={LGConfig.ActiveSkrMint}");
+            var playerTokenAccountReady = await EnsurePlayerTokenAccountExistsAsync(player, playerTokenAccount, attemptTag);
             if (!playerTokenAccountReady)
             {
                 ClearSessionState();
@@ -445,10 +465,12 @@ namespace SeekerDungeon.Solana
             var resolvedAllowlist = allowlistOverride ?? (SessionInstructionAllowlist)defaultAllowlistMask;
             var allowlist = (ulong)resolvedAllowlist;
             var maxTokenSpend = maxTokenSpendOverride ?? defaultSessionMaxTokenSpend;
+            EmitStatus(
+                $"[{attemptTag}] Params durationMinutes={durationMinutes} allowlist=0x{allowlist:X} maxTokenSpend={maxTokenSpend}");
 
             if (allowlist == 0)
             {
-                EmitError("Cannot begin session: instruction allowlist is empty.");
+                EmitError($"[{attemptTag}] Cannot begin session: instruction allowlist is empty.");
                 return false;
             }
 
@@ -459,7 +481,7 @@ namespace SeekerDungeon.Solana
             var slotResult = await rpc.GetSlotAsync(commitment);
             if (!slotResult.WasSuccessful || slotResult.Result == null)
             {
-                EmitError($"Failed to fetch slot: {slotResult.Reason}");
+                EmitError($"[{attemptTag}] Failed to fetch slot: {slotResult.Reason}");
                 ClearSessionState();
                 return false;
             }
@@ -488,7 +510,14 @@ namespace SeekerDungeon.Solana
             );
 
             var instructions = new List<TransactionInstruction>();
-            if (autoFundSessionSigner)
+            // On wallet adapter (MWA), always bundle the SOL top-up into the
+            // begin_session transaction regardless of inspector flags. The session
+            // signer NEEDS SOL to pay gameplay tx fees, and a separate
+            // wallet.Transfer() would trigger a second wallet popup or fail.
+            var isWalletAdapterMode = ActiveWalletMode == WalletLoginMode.WalletAdapter;
+            var shouldBundleTopUp = isWalletAdapterMode ||
+                (autoFundSessionSigner && bundleSessionTopUpWithBeginSession);
+            if (shouldBundleTopUp)
             {
                 var sessionTopUpAmount = Math.Max(sessionSignerTopUpLamports, sessionSignerMinLamports);
                 if (sessionTopUpAmount > 0)
@@ -498,60 +527,82 @@ namespace SeekerDungeon.Solana
                         _sessionSignerAccount.PublicKey,
                         sessionTopUpAmount));
                     EmitStatus(
-                        $"Preparing gameplay session ({sessionTopUpAmount / 1_000_000_000d:F6} SOL top-up). Approve in wallet...");
+                        $"[{attemptTag}] Bundling session signer top-up ({sessionTopUpAmount / 1_000_000_000d:F6} SOL). Approve in wallet...");
                 }
             }
 
             instructions.Add(instruction);
+            var walletAccountKey = Web3.Wallet?.Account?.PublicKey?.Key ?? "<null>";
+            var sessionSignerKey = _sessionSignerAccount?.PublicKey?.Key ?? "<null>";
+            EmitStatus($"[{attemptTag}] Submitting begin_session with {instructions.Count} ix(s). feePayer={walletAccountKey} sessionSigner={sessionSignerKey} stopFallback={stopRpcFallbackAfterWalletAdapterFailure}");
 
             var signature = await SendInstructionsSignedByLocalAccounts(
                 instructions,
-                new List<Account> { Web3.Wallet.Account, _sessionSignerAccount }
+                new List<Account> { Web3.Wallet.Account, _sessionSignerAccount },
+                attemptTag,
+                stopRpcFallbackAfterWalletAdapterFailure
             );
             if (string.IsNullOrEmpty(signature))
             {
+                EmitError($"[{attemptTag}] begin_session transaction failed (signature was null/empty).");
                 ClearSessionState();
                 return false;
             }
 
             _hasActiveOnchainSession = true;
-            _isSessionSignerFunded = true;
+            _isSessionSignerFunded = shouldBundleTopUp;
             OnSessionStateChanged?.Invoke(true);
-            EmitStatus($"Session started. Session key={_sessionSignerAccount.PublicKey} tx={signature}");
+            EmitStatus($"[{attemptTag}] Session started. Session key={_sessionSignerAccount.PublicKey} tx={signature} funded={_isSessionSignerFunded}");
+
+            if (autoFundSessionSigner && !shouldBundleTopUp)
+            {
+                EmitStatus($"[{attemptTag}] begin_session confirmed. Funding session signer in separate transaction...");
+                var funded = await EnsureSessionSignerFundedAsync(emitPromptStatus: true);
+                if (!funded)
+                {
+                    EmitError($"[{attemptTag}] Session started but signer funding failed.");
+                }
+            }
 
             return true;
         }
 
-        private async UniTask<bool> EnsurePlayerTokenAccountExistsAsync(PublicKey player, PublicKey playerTokenAccount)
+        private async UniTask<bool> EnsurePlayerTokenAccountExistsAsync(
+            PublicKey player,
+            PublicKey playerTokenAccount,
+            string attemptTag = null)
         {
             var rpc = GetRpcClient();
             if (rpc == null)
             {
-                EmitError("RPC unavailable while validating player token account.");
+                EmitError($"{BuildTracePrefix(attemptTag)}RPC unavailable while validating player token account.");
                 return false;
             }
 
             var accountInfo = await rpc.GetAccountInfoAsync(playerTokenAccount, commitment);
             if (accountInfo.WasSuccessful && accountInfo.Result?.Value != null)
             {
+                EmitStatus($"{BuildTracePrefix(attemptTag)}Player SKR token account already exists.");
                 return true;
             }
 
-            EmitStatus("Creating player SKR token account...");
+            EmitStatus($"{BuildTracePrefix(attemptTag)}Creating player SKR token account...");
             var createAtaInstruction = AssociatedTokenAccountProgram.CreateAssociatedTokenAccount(
                 player,
                 player,
                 new PublicKey(LGConfig.ActiveSkrMint));
             var createAtaSignature = await SendInstructionSignedByLocalAccounts(
                 createAtaInstruction,
-                new List<Account> { Web3.Wallet.Account });
+                new List<Account> { Web3.Wallet.Account },
+                attemptTag,
+                stopRpcFallbackAfterWalletAdapterFailure);
             if (string.IsNullOrWhiteSpace(createAtaSignature))
             {
-                EmitError("Failed to create player SKR token account.");
+                EmitError($"{BuildTracePrefix(attemptTag)}Failed to create player SKR token account.");
                 return false;
             }
 
-            EmitStatus($"Player SKR token account ready. tx={createAtaSignature}");
+            EmitStatus($"{BuildTracePrefix(attemptTag)}Player SKR token account ready. tx={createAtaSignature}");
             return true;
         }
 
@@ -573,6 +624,19 @@ namespace SeekerDungeon.Solana
 
         public async UniTask<bool> EnsureGameplaySessionAsync(bool emitPromptStatus = true)
         {
+            EmitStatus($"EnsureGameplaySessionAsync: hasActive={_hasActiveOnchainSession} signerExists={_sessionSignerAccount != null} authorityExists={_sessionAuthorityPda != null} funded={_isSessionSignerFunded} canLocal={CanUseLocalSessionSigning} walletMode={ActiveWalletMode}");
+            if (!IsOnchainSessionSupportedForCurrentWallet())
+            {
+                if (!_hasLoggedUnsupportedSessionMode)
+                {
+                    EmitStatus(
+                        $"Session auth disabled for this wallet mode. walletMode={ActiveWalletMode} allowWalletAdapterOnAndroid={allowWalletAdapterSessionOnAndroid}. Falling back to wallet approvals.");
+                    _hasLoggedUnsupportedSessionMode = true;
+                }
+
+                return false;
+            }
+
             if (_hasActiveOnchainSession && _sessionSignerAccount != null && _sessionAuthorityPda != null)
             {
                 var funded = await EnsureSessionSignerFundedAsync(emitPromptStatus: false);
@@ -954,49 +1018,65 @@ namespace SeekerDungeon.Solana
 
         private async UniTask<string> SendInstructionSignedByLocalAccounts(
             TransactionInstruction instruction,
-            IList<Account> signers)
+            IList<Account> signers,
+            string traceTag = null,
+            bool stopAfterWalletAdapterFailure = false)
         {
             if (instruction == null)
             {
-                EmitError("Cannot send null instruction.");
+                EmitError($"{BuildTracePrefix(traceTag)}Cannot send null instruction.");
                 return null;
             }
 
             return await SendInstructionsSignedByLocalAccounts(
                 new List<TransactionInstruction> { instruction },
-                signers);
+                signers,
+                traceTag,
+                stopAfterWalletAdapterFailure);
         }
 
         private async UniTask<string> SendInstructionsSignedByLocalAccounts(
             IList<TransactionInstruction> instructions,
-            IList<Account> signers)
+            IList<Account> signers,
+            string traceTag = null,
+            bool stopAfterWalletAdapterFailure = false)
         {
+            var tracePrefix = BuildTracePrefix(traceTag);
             if (signers == null || signers.Count == 0)
             {
-                EmitError("Cannot send transaction without signers.");
+                EmitError($"{tracePrefix}Cannot send transaction without signers.");
                 return null;
             }
 
             if (instructions == null || instructions.Count == 0)
             {
-                EmitError("Cannot send transaction without instructions.");
+                EmitError($"{tracePrefix}Cannot send transaction without instructions.");
                 return null;
             }
 
             var rpcCandidates = GetRpcCandidates();
             if (rpcCandidates.Count == 0)
             {
-                EmitError("RPC client not available.");
+                EmitError($"{tracePrefix}RPC client not available.");
                 return null;
             }
 
-            if (ShouldUseWalletAdapterSigning(signers))
+            var useWalletAdapter = ShouldUseWalletAdapterSigning(signers);
+            EmitStatus($"{tracePrefix}SendInstructions: signerCount={signers.Count} useWalletAdapter={useWalletAdapter} rpcCandidates={rpcCandidates.Count} stopAfterAdapterFail={stopAfterWalletAdapterFailure}");
+            if (useWalletAdapter)
             {
-                var walletSignature = await SendTransactionViaWalletAdapterAsync(instructions, signers);
+                var walletSignature = await SendTransactionViaWalletAdapterAsync(instructions, signers, traceTag);
                 if (!string.IsNullOrWhiteSpace(walletSignature))
                 {
                     return walletSignature;
                 }
+
+                if (stopAfterWalletAdapterFailure)
+                {
+                    EmitError($"{tracePrefix}Wallet adapter failed. Skipping local RPC fallback (stopAfterWalletAdapterFailure=true).");
+                    return null;
+                }
+                EmitStatus($"{tracePrefix}Wallet adapter failed but stopAfterWalletAdapterFailure=false, trying local RPC fallback...");
             }
 
             string lastFailure = null;
@@ -1012,7 +1092,7 @@ namespace SeekerDungeon.Solana
                     if (!latestBlockHash.WasSuccessful || latestBlockHash.Result?.Value == null)
                     {
                         EmitError(
-                            $"[{rpcLabel}] Failed to get latest blockhash (attempt {attempt}/{MaxTransientSendAttemptsPerRpc}) endpoint={endpoint}: {latestBlockHash.Reason}");
+                            $"{tracePrefix}[{rpcLabel}] Failed to get latest blockhash (attempt {attempt}/{MaxTransientSendAttemptsPerRpc}) endpoint={endpoint}: {latestBlockHash.Reason}");
                         break;
                     }
 
@@ -1044,16 +1124,16 @@ namespace SeekerDungeon.Solana
                     if (IsTransientRpcFailure(reason))
                     {
                         EmitStatus(
-                            $"[{rpcLabel}] Transaction failed (attempt {attempt}/{MaxTransientSendAttemptsPerRpc}) endpoint={endpoint}: {reason}");
+                            $"{tracePrefix}[{rpcLabel}] Transaction failed (attempt {attempt}/{MaxTransientSendAttemptsPerRpc}) endpoint={endpoint}: {reason} class={ClassifyFailureReason(reason)}");
                     }
                     else
                     {
                         EmitError(
-                            $"[{rpcLabel}] Transaction failed (attempt {attempt}/{MaxTransientSendAttemptsPerRpc}) endpoint={endpoint}: {reason}");
+                            $"{tracePrefix}[{rpcLabel}] Transaction failed (attempt {attempt}/{MaxTransientSendAttemptsPerRpc}) endpoint={endpoint}: {reason} class={ClassifyFailureReason(reason)}");
                     }
                     if (sendResult.ServerErrorCode != 0)
                     {
-                        EmitStatus($"[{rpcLabel}] Server error code: {sendResult.ServerErrorCode}");
+                        EmitStatus($"{tracePrefix}[{rpcLabel}] Server error code: {sendResult.ServerErrorCode}");
                     }
 
                     if (!rawProbeAttempted && IsJsonParseFailure(reason))
@@ -1069,11 +1149,11 @@ namespace SeekerDungeon.Solana
                                 $"body={rawProbe.BodySnippet}";
                             if (IsNonFatalProbeError(rawProbe.RpcError))
                             {
-                                EmitStatus(rawProbeMessage);
+                                EmitStatus($"{tracePrefix}{rawProbeMessage}");
                             }
                             else
                             {
-                                EmitError(rawProbeMessage);
+                                EmitError($"{tracePrefix}{rawProbeMessage}");
                             }
                         }
 
@@ -1092,7 +1172,7 @@ namespace SeekerDungeon.Solana
                     {
                         var retryDelayMs = BaseTransientRetryDelayMs * attempt;
                         EmitStatus(
-                            $"[{rpcLabel}] Transient RPC failure detected. Retrying in {retryDelayMs}ms.");
+                            $"{tracePrefix}[{rpcLabel}] Transient RPC failure detected. Retrying in {retryDelayMs}ms.");
                         await UniTask.Delay(retryDelayMs);
                     }
                 }
@@ -1100,7 +1180,7 @@ namespace SeekerDungeon.Solana
 
             if (!string.IsNullOrWhiteSpace(lastFailure))
             {
-                EmitError($"Transaction failed after retry attempts: {lastFailure}");
+                EmitError($"{tracePrefix}Transaction failed after retry attempts: {lastFailure} class={ClassifyFailureReason(lastFailure)}");
             }
 
             return null;
@@ -1108,19 +1188,58 @@ namespace SeekerDungeon.Solana
 
         private async UniTask<string> SendTransactionViaWalletAdapterAsync(
             IList<TransactionInstruction> instructions,
-            IList<Account> signers)
+            IList<Account> signers,
+            string traceTag = null)
         {
+            var tracePrefix = BuildTracePrefix(traceTag);
             var wallet = Web3.Wallet;
             var walletAccount = wallet?.Account;
             if (wallet == null || walletAccount == null || instructions == null || instructions.Count == 0)
             {
+                EmitError($"{tracePrefix}WalletAdapter path aborted: wallet={wallet != null} account={walletAccount != null} ixCount={instructions?.Count ?? 0}");
                 return null;
             }
 
+            var hasExtraLocalSigners = false;
+            for (var signerIndex = 0; signerIndex < signers.Count; signerIndex += 1)
+            {
+                var signer = signers[signerIndex];
+                if (signer?.PublicKey == null)
+                {
+                    continue;
+                }
+
+                if (!string.Equals(
+                        signer.PublicKey.Key,
+                        walletAccount.PublicKey.Key,
+                        StringComparison.Ordinal))
+                {
+                    hasExtraLocalSigners = true;
+                    break;
+                }
+            }
+
+            EmitStatus($"{tracePrefix}WalletAdapter: hasExtraLocalSigners={hasExtraLocalSigners} ixCount={instructions.Count}");
+
+            // For multi-signer transactions (e.g. begin_session with a session keypair),
+            // we must NOT use wallet.SignAndSendTransaction. The SDK internally calls
+            // transaction.Sign(Account) which recompiles the message from scratch and
+            // destroys the session signer's existing partial signature, producing the
+            // "sanitize accounts offsets" error on MWA.
+            //
+            // Instead we use wallet.SignAllTransactions (which uses PartialSign -- additive,
+            // preserves an already-compiled message) and then send via RPC ourselves.
+            if (hasExtraLocalSigners)
+            {
+                return await SendMultiSignerTransactionViaWalletAdapterAsync(
+                    instructions, signers, walletAccount, wallet, traceTag);
+            }
+
+            EmitStatus($"{tracePrefix}WalletAdapter: single-signer path, requesting blockhash...");
             var blockhash = await wallet.GetBlockHash(commitment, useCache: false);
             if (string.IsNullOrWhiteSpace(blockhash))
             {
-                EmitError("Wallet adapter signing failed: missing recent blockhash.");
+                EmitError($"{tracePrefix}Wallet adapter signing failed: missing recent blockhash.");
                 return null;
             }
 
@@ -1132,29 +1251,13 @@ namespace SeekerDungeon.Solana
                 Signatures = new List<SignaturePubKeyPair>()
             };
 
-            for (var signerIndex = 0; signerIndex < signers.Count; signerIndex += 1)
-            {
-                var signer = signers[signerIndex];
-                if (signer == null || signer.PublicKey == null)
-                {
-                    continue;
-                }
-
-                if (string.Equals(
-                        signer.PublicKey.Key,
-                        walletAccount.PublicKey.Key,
-                        StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                transaction.PartialSign(signer);
-            }
-
+            EmitStatus($"{tracePrefix}WalletAdapter: calling SignAndSendTransaction (single-signer, feePayer={walletAccount.PublicKey})...");
             var sendResult = await wallet.SignAndSendTransaction(
                 transaction,
                 skipPreflight: false,
                 commitment: commitment);
+            EmitStatus($"{tracePrefix}WalletAdapter: SignAndSendTransaction returned. success={sendResult.WasSuccessful} result={sendResult.Result ?? "<null>"} reason={sendResult.Reason ?? "<null>"}");
+
             if (sendResult.WasSuccessful && !string.IsNullOrWhiteSpace(sendResult.Result))
             {
                 return sendResult.Result;
@@ -1165,13 +1268,310 @@ namespace SeekerDungeon.Solana
                 : sendResult.Reason;
             if (IsNonFatalWalletAdapterSendReason(reason))
             {
-                EmitStatus($"Wallet adapter send fallback: {reason}");
+                EmitStatus($"{tracePrefix}Wallet adapter send fallback: {reason} class={ClassifyFailureReason(reason)}");
             }
             else
             {
-                EmitError($"Wallet adapter send failed: {reason}");
+                EmitError($"{tracePrefix}Wallet adapter send failed: {reason} class={ClassifyFailureReason(reason)}");
             }
             return null;
+        }
+
+        /// <summary>
+        /// Handles wallet adapter transactions that require both the wallet signature and one or
+        /// more local keypair signatures (e.g. begin_session with a session signer).
+        ///
+        /// Root cause of the original bug:
+        /// The SDK's Transaction class recompiles the message from scratch on every call to
+        /// CompileMessage() / Serialize() / PartialSign(). This produces incorrect account
+        /// offsets for multi-signer transactions, causing "sanitize accounts offsets" failures.
+        /// Additionally, Transaction.Serialize() writes signatures in list-insertion order rather
+        /// than message-account order, so Phantom overwrites the wrong signature slot.
+        ///
+        /// Fix: We use TransactionBuilder.Build() to produce the correct wire-format bytes
+        /// (it handles account sorting and index assignment correctly), then wrap them in a
+        /// PrecompiledTransaction subclass that locks in those bytes. After Phantom signs,
+        /// we manually assemble the final transaction from the correct message bytes + the
+        /// signatures returned by Phantom, completely bypassing Transaction.Serialize().
+        /// </summary>
+        private async UniTask<string> SendMultiSignerTransactionViaWalletAdapterAsync(
+            IList<TransactionInstruction> instructions,
+            IList<Account> signers,
+            Account walletAccount,
+            WalletBase wallet,
+            string traceTag = null)
+        {
+            var tracePrefix = BuildTracePrefix(traceTag);
+
+            try
+            {
+                // --- Step 1: Get a fresh blockhash ----------------------------------------
+                EmitStatus($"{tracePrefix}WalletAdapter multi-signer: requesting blockhash...");
+                var blockhash = await wallet.GetBlockHash(commitment, useCache: false);
+                if (string.IsNullOrWhiteSpace(blockhash))
+                {
+                    EmitError($"{tracePrefix}Wallet adapter multi-signer: missing recent blockhash.");
+                    return null;
+                }
+                EmitStatus($"{tracePrefix}WalletAdapter multi-signer: got blockhash={blockhash.Substring(0, Math.Min(12, blockhash.Length))}...");
+
+                // --- Step 2: Build ALL signers list (wallet + local signers) ---------------
+                // TransactionBuilder.Build() needs every signer as an Account so it can sign
+                // the message. The wallet Account from MWA has a dummy private key, so its
+                // signature will be wrong -- Phantom will replace it later.
+                var allSigners = new List<Account> { walletAccount };
+                foreach (var signer in signers)
+                {
+                    if (signer?.PublicKey == null) continue;
+                    if (string.Equals(signer.PublicKey.Key, walletAccount.PublicKey.Key,
+                            StringComparison.Ordinal)) continue;
+                    allSigners.Add(signer);
+                }
+                EmitStatus($"{tracePrefix}WalletAdapter multi-signer: allSigners={allSigners.Count} (wallet + {allSigners.Count - 1} local)");
+
+                // --- Step 3: Build correct bytes via TransactionBuilder --------------------
+                // TransactionBuilder is battle-tested (used by CandyMachine, etc.) and
+                // handles account sorting + instruction index mapping correctly.
+                var builder = new TransactionBuilder()
+                    .SetRecentBlockHash(blockhash)
+                    .SetFeePayer(walletAccount);
+                for (var i = 0; i < instructions.Count; i++)
+                    builder.AddInstruction(instructions[i]);
+                var fullBytes = builder.Build(allSigners);
+
+                // --- Step 4: Extract the message portion from the built bytes ---------------
+                // Wire format: [compact-u16: sigCount] [sig0: 64] ... [sigN: 64] [message...]
+                var (numSigs, sigCountLen) = DecodeCompactU16(fullBytes, 0);
+                var messageOffset = sigCountLen + numSigs * 64;
+                var messageBytes = new byte[fullBytes.Length - messageOffset];
+                Array.Copy(fullBytes, messageOffset, messageBytes, 0, messageBytes.Length);
+
+                // Parse the message to learn the signer ordering
+                var message = Message.Deserialize(messageBytes);
+                var signerOrder = new List<PublicKey>();
+                for (var i = 0; i < message.Header.RequiredSignatures; i++)
+                    signerOrder.Add(message.AccountKeys[i]);
+
+                EmitStatus($"{tracePrefix}WalletAdapter multi-signer: built message ok. numAccounts={message.AccountKeys.Count} numSigs={numSigs} msgSize={messageBytes.Length}");
+
+                // --- Step 5: Create a PrecompiledTransaction that locks in these bytes -----
+                var precompiled = new PrecompiledTransaction(messageBytes, signerOrder)
+                {
+                    RecentBlockHash = blockhash,
+                    FeePayer = walletAccount.PublicKey,
+                    Instructions = new List<TransactionInstruction>(instructions),
+                    Signatures = new List<SignaturePubKeyPair>()
+                };
+
+                // PartialSign with local signers. CompileMessage() is overridden to return
+                // our correct message bytes, so the signatures are against the right message.
+                foreach (var signer in allSigners)
+                {
+                    if (string.Equals(signer.PublicKey.Key, walletAccount.PublicKey.Key,
+                            StringComparison.Ordinal)) continue;
+                    precompiled.PartialSign(signer);
+                }
+
+                EmitStatus($"{tracePrefix}WalletAdapter multi-signer: sending to wallet for signing...");
+
+                // --- Step 6: Send through wallet.SignAllTransactions -----------------------
+                // The SDK internally calls PartialSign(walletAccount) then Serialize().
+                // Our overridden Serialize() ensures correct signature ordering.
+                // Phantom receives correct bytes, replaces the wallet's signature slot.
+                var signedTransactions = await wallet.SignAllTransactions(
+                    new Transaction[] { precompiled });
+                if (signedTransactions == null || signedTransactions.Length == 0)
+                {
+                    EmitError($"{tracePrefix}WalletAdapter multi-signer: SignAllTransactions returned null/empty.");
+                    return null;
+                }
+
+                // --- Step 7: Manually assemble final bytes --------------------------------
+                // The returned Transaction was created via Transaction.Deserialize() which is
+                // a standard Transaction -- calling Serialize() on it would recompile the
+                // message and break things. Instead, we take the correct signatures from
+                // Phantom's response and combine them with our known-good message bytes.
+                var phantomTx = signedTransactions[0];
+                var finalBytes = AssembleTransactionBytes(
+                    phantomTx.Signatures, signerOrder, messageBytes);
+
+                EmitStatus($"{tracePrefix}WalletAdapter multi-signer: assembled final tx size={finalBytes.Length} bytes. Sending via RPC...");
+
+                // --- Step 8: Send to RPC --------------------------------------------------
+                var rpc = GetRpcClient();
+                if (rpc == null)
+                {
+                    EmitError($"{tracePrefix}WalletAdapter multi-signer: RPC client unavailable for send.");
+                    return null;
+                }
+
+                var sendResult = await rpc.SendTransactionAsync(
+                    Convert.ToBase64String(finalBytes),
+                    skipPreflight: false,
+                    preFlightCommitment: commitment);
+                EmitStatus($"{tracePrefix}WalletAdapter multi-signer: RPC send result success={sendResult.WasSuccessful} sig={sendResult.Result ?? "<null>"} reason={sendResult.Reason ?? "<null>"}");
+
+                if (sendResult.WasSuccessful && !string.IsNullOrWhiteSpace(sendResult.Result))
+                {
+                    return sendResult.Result;
+                }
+
+                var reason = string.IsNullOrWhiteSpace(sendResult.Reason)
+                    ? "<empty reason>"
+                    : sendResult.Reason;
+                EmitError($"{tracePrefix}WalletAdapter multi-signer send failed: {reason} class={ClassifyFailureReason(reason)}");
+                return null;
+            }
+            catch (Exception exception)
+            {
+                EmitError($"{tracePrefix}WalletAdapter multi-signer exception: {exception.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Assembles raw transaction wire-format bytes from ordered signatures + message bytes.
+        /// Avoids calling Transaction.Serialize() which recompiles the message incorrectly.
+        /// </summary>
+        private static byte[] AssembleTransactionBytes(
+            List<SignaturePubKeyPair> phantomSignatures,
+            IList<PublicKey> signerOrder,
+            byte[] messageBytes)
+        {
+            // Map signatures by public key for O(1) lookup
+            var sigsByKey = new Dictionary<string, byte[]>();
+            if (phantomSignatures != null)
+            {
+                foreach (var pair in phantomSignatures)
+                {
+                    if (pair?.PublicKey != null && pair.Signature != null)
+                        sigsByKey[pair.PublicKey.Key] = pair.Signature;
+                }
+            }
+
+            // Write signatures in the same order as the message's account list
+            var numSigs = signerOrder.Count;
+            // Compact-u16 encoding for values < 128 is a single byte
+            var sigCountByte = (byte)numSigs;
+            var buffer = new MemoryStream(1 + numSigs * 64 + messageBytes.Length);
+            buffer.WriteByte(sigCountByte);
+
+            foreach (var signerKey in signerOrder)
+            {
+                if (sigsByKey.TryGetValue(signerKey.Key, out var sig) && sig.Length == 64)
+                {
+                    buffer.Write(sig, 0, 64);
+                }
+                else
+                {
+                    // Missing signature -- write zeros (should not happen after Phantom signs)
+                    buffer.Write(new byte[64], 0, 64);
+                }
+            }
+
+            buffer.Write(messageBytes, 0, messageBytes.Length);
+            return buffer.ToArray();
+        }
+
+        /// <summary>
+        /// Decodes a Solana compact-u16 value from a byte array.
+        /// Returns (value, bytesConsumed).
+        /// </summary>
+        private static (int value, int bytesConsumed) DecodeCompactU16(byte[] data, int offset)
+        {
+            int val = data[offset];
+            if (val < 0x80) return (val, 1);
+            val &= 0x7F;
+            val |= (data[offset + 1] & 0x7F) << 7;
+            if (data[offset + 1] < 0x80) return (val, 2);
+            val |= (data[offset + 2] & 0x03) << 14;
+            return (val, 3);
+        }
+
+        /// <summary>
+        /// A Transaction subclass that locks in pre-built message bytes from TransactionBuilder.
+        /// Overrides CompileMessage() to return the correct bytes instead of recompiling, and
+        /// overrides Serialize() to write signatures in message-account order.
+        /// </summary>
+        private class PrecompiledTransaction : Transaction
+        {
+            private readonly byte[] _messageBytes;
+            private readonly IList<PublicKey> _signerOrder;
+
+            public PrecompiledTransaction(byte[] messageBytes, IList<PublicKey> signerOrder)
+            {
+                _messageBytes = messageBytes;
+                _signerOrder = signerOrder;
+            }
+
+            public override byte[] CompileMessage() => _messageBytes;
+
+            public override byte[] Serialize()
+            {
+                // Write signatures in message-account order so Phantom associates
+                // each signature with the correct account slot.
+                var numSigs = _signerOrder.Count;
+                var sigCountByte = (byte)numSigs;
+                var buffer = new MemoryStream(1 + numSigs * 64 + _messageBytes.Length);
+                buffer.WriteByte(sigCountByte);
+
+                foreach (var signerKey in _signerOrder)
+                {
+                    var match = Signatures?.FirstOrDefault(
+                        s => s.PublicKey.Key == signerKey.Key);
+                    var sig = match?.Signature ?? new byte[64];
+                    buffer.Write(sig, 0, sig.Length);
+                }
+
+                buffer.Write(_messageBytes, 0, _messageBytes.Length);
+                return buffer.ToArray();
+            }
+        }
+
+        private static string BuildTracePrefix(string traceTag)
+        {
+            if (string.IsNullOrWhiteSpace(traceTag))
+            {
+                return string.Empty;
+            }
+
+            return $"[{traceTag}] ";
+        }
+
+        private static string ClassifyFailureReason(string reason)
+        {
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                return "unknown";
+            }
+
+            if (reason.IndexOf("could not predict balance changes", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "wallet_simulation_unpredictable_balance";
+            }
+
+            if (reason.IndexOf("custom program error", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "program_error";
+            }
+
+            if (reason.IndexOf("Connection refused", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "rpc_connection_refused";
+            }
+
+            if (reason.IndexOf("Unable to parse json", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "rpc_json_parse";
+            }
+
+            if (reason.IndexOf("timed out", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("timeout", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "rpc_timeout";
+            }
+
+            return "other";
         }
 
         private static bool IsNonFatalWalletAdapterSendReason(string reason)
@@ -1388,7 +1788,17 @@ namespace SeekerDungeon.Solana
 
             web3.rpcCluster = cluster;
             web3.customRpc = rpcUrl;
-            web3.webSocketsRpc = ToWebSocketUrl(rpcUrl);
+            // Disable WebSocket RPC on mobile to prevent persistent reconnect flood
+            // that drowns out all useful logs and may starve network resources.
+            if (Application.isEditor)
+            {
+                web3.webSocketsRpc = ToWebSocketUrl(rpcUrl);
+            }
+            else
+            {
+                web3.webSocketsRpc = string.Empty;
+                EmitStatus("WebSocket RPC disabled for device build to prevent reconnect flood.");
+            }
             web3.autoConnectOnStartup = false;
         }
 
@@ -1496,6 +1906,17 @@ namespace SeekerDungeon.Solana
             _sessionAuthorityPda = null;
             _hasActiveOnchainSession = false;
             _isSessionSignerFunded = false;
+        }
+
+        private bool IsOnchainSessionSupportedForCurrentWallet()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            if (ActiveWalletMode == WalletLoginMode.WalletAdapter && !allowWalletAdapterSessionOnAndroid)
+            {
+                return false;
+            }
+#endif
+            return true;
         }
 
         private void EmitStatus(string message)

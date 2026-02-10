@@ -31,10 +31,11 @@ Response shape:
 - `HELIUS_API_KEY`
 - `PORT` (default `3000`)
 - `MAINNET_RPC_URL` (optional override; defaults to Helius mainnet RPC built from `HELIUS_API_KEY`)
+  - For this resolver, prefer Helius RPC here; public `api.mainnet-beta.solana.com` may 429 heavily on transaction lookups.
 - `CACHE_TTL_SECONDS` (default `86400`)
 - `NEGATIVE_CACHE_TTL_SECONDS` (default `21600`)
-- `MAX_SIGNATURE_SCAN` (default `40`, bounded fallback scan)
-- `MAX_TRANSACTIONS_PER_LOOKUP` (default `40`, hard cap per request)
+- `MAX_SIGNATURE_SCAN` (default `120`, bounded fallback scan)
+- `MAX_TRANSACTIONS_PER_LOOKUP` (default `120`, hard cap per request)
 - `REQUEST_TIMEOUT_MS` (default `5000`)
 - `LOG_DEBUG` (`true` or `false`)
 

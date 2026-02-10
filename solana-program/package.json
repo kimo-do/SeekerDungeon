@@ -11,6 +11,8 @@
     "force-reset-season": "npx tsx scripts/force-reset-season.ts",
     "check-state": "npx tsx scripts/check-state.ts",
     "mint-tokens": "npx tsx scripts/mint-test-tokens.ts",
+    "reset-player-only": "npx tsx scripts/reset-player-only-devnet.ts",
+    "reset-player-and-fund": "npx tsx scripts/reset-player-and-fund-devnet.ts",
     "smoke-door": "npx tsx scripts/smoke-door-devnet.ts",
     "smoke-room-routing": "npx tsx scripts/smoke-room-routing-devnet.ts",
     "smoke-session-join-job": "npx tsx scripts/smoke-session-join-job-devnet.ts",

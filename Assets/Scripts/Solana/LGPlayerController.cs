@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using DG.Tweening;
+using TMPro;
 using UnityEngine;
 
 namespace SeekerDungeon.Solana
@@ -21,6 +22,7 @@ namespace SeekerDungeon.Solana
         [SerializeField] private List<PlayerSkinSpriteEntry> skinSprites = new();
         [Header("Identity Anchor")]
         [SerializeField] private Transform characterNameAnchor;
+        [SerializeField] private GameObject playerNamePrefab;
         [Header("Skin Switch Animation")]
         [SerializeField] private bool animateSkinSwitch = true;
         [SerializeField] private float skinPopScaleMultiplier = 1.12f;
@@ -31,6 +33,8 @@ namespace SeekerDungeon.Solana
         public Transform CharacterNameAnchorTransform => characterNameAnchor != null ? characterNameAnchor : transform;
         private Vector3 _skinBaseScale = Vector3.one;
         private Sequence _skinSwitchSequence;
+        private GameObject _playerNameInstance;
+        private TMP_Text _playerNameText;
 
         private void Awake()
         {
@@ -60,6 +64,13 @@ namespace SeekerDungeon.Solana
             {
                 _skinSwitchSequence.Kill();
                 _skinSwitchSequence = null;
+            }
+
+            if (_playerNameInstance != null)
+            {
+                Destroy(_playerNameInstance);
+                _playerNameInstance = null;
+                _playerNameText = null;
             }
         }
 
@@ -109,6 +120,40 @@ namespace SeekerDungeon.Solana
             return mappedSprite != null;
         }
 
+        public void SetPlayerNamePrefab(GameObject namePrefab)
+        {
+            if (namePrefab != null)
+            {
+                playerNamePrefab = namePrefab;
+            }
+
+            EnsurePlayerNameTag();
+        }
+
+        public void SetDisplayName(string displayName)
+        {
+            EnsurePlayerNameTag();
+            if (_playerNameText == null)
+            {
+                return;
+            }
+
+            _playerNameText.text = string.IsNullOrWhiteSpace(displayName)
+                ? string.Empty
+                : displayName;
+        }
+
+        public void SetDisplayNameVisible(bool isVisible)
+        {
+            EnsurePlayerNameTag();
+            if (_playerNameInstance == null)
+            {
+                return;
+            }
+
+            _playerNameInstance.SetActive(isVisible);
+        }
+
         private void PlaySkinSwitchAnimation()
         {
             if (!animateSkinSwitch || skinSpriteRenderer == null)
@@ -148,6 +193,34 @@ namespace SeekerDungeon.Solana
             }
 
             return null;
+        }
+
+        private void EnsurePlayerNameTag()
+        {
+            if (_playerNameInstance != null)
+            {
+                var anchor = CharacterNameAnchorTransform;
+                if (_playerNameInstance.transform.parent != anchor)
+                {
+                    _playerNameInstance.transform.SetParent(anchor, false);
+                    _playerNameInstance.transform.localPosition = Vector3.zero;
+                    _playerNameInstance.transform.localRotation = Quaternion.identity;
+                }
+
+                return;
+            }
+
+            if (playerNamePrefab == null)
+            {
+                return;
+            }
+
+            var nameAnchor = CharacterNameAnchorTransform;
+            _playerNameInstance = Instantiate(playerNamePrefab, nameAnchor, false);
+            _playerNameInstance.name = $"{playerNamePrefab.name}_{gameObject.name}";
+            _playerNameInstance.transform.localPosition = Vector3.zero;
+            _playerNameInstance.transform.localRotation = Quaternion.identity;
+            _playerNameText = _playerNameInstance.GetComponentInChildren<TMP_Text>(true);
         }
     }
 }

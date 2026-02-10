@@ -265,13 +265,18 @@ namespace SeekerDungeon.Dungeon
             KillSpawnTween();
         }
 
-        public void Bind(DungeonOccupantVisual occupant, int stackIndex, OccupantFacingDirection facingDirection)
+        public void Bind(
+            DungeonOccupantVisual occupant,
+            int stackIndex,
+            OccupantFacingDirection facingDirection)
         {
             transform.rotation = Quaternion.identity;
 
             if (_playerController != null)
             {
                 _playerController.ApplySkin(occupant.SkinId);
+                _playerController.SetDisplayName(occupant.DisplayName);
+                _playerController.SetDisplayNameVisible(true);
             }
 
             ApplyFacing(facingDirection);

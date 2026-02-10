@@ -86,6 +86,22 @@ Check token accounts/balances:
 wsl -d Ubuntu -- /bin/bash --noprofile --norc -c '"/mnt/c/Users/<WINDOWS_USER>/.local/share/solana/install/active_release/bin/spl-token.exe" accounts --owner <TARGET_WALLET> -u devnet'
 ```
 
+### 6) Full clean-slate helper (reset profile/player + fund SOL + mint SKR)
+
+This calls the admin-only onchain reset and then funds test assets in one command:
+
+```powershell
+solana-program/scripts/wsl/run.sh "export ANCHOR_PROVIDER_URL=https://api.devnet.solana.com && export ANCHOR_WALLET=devnet-wallet.json && npm run reset-player-and-fund <TARGET_WALLET> 0.5 25"
+```
+
+### 7) Reset only (no SOL, no SKR funding)
+
+Use this to test low/no-balance flows:
+
+```powershell
+solana-program/scripts/wsl/run.sh "export ANCHOR_PROVIDER_URL=https://api.devnet.solana.com && export ANCHOR_WALLET=devnet-wallet.json && npm run reset-player-only <TARGET_WALLET>"
+```
+
 ## Quick troubleshooting checks
 
 Check WSL npm:

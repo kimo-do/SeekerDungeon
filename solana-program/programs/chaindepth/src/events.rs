@@ -91,6 +91,13 @@ pub struct GlobalInitialized {
     pub end_slot: u64,
 }
 
+/// Emitted when admin resets a specific player's state for testing.
+#[event]
+pub struct PlayerResetForTesting {
+    pub admin: Pubkey,
+    pub player: Pubkey,
+}
+
 /// Emitted when an item stack is added to inventory
 #[event]
 pub struct InventoryItemAdded {

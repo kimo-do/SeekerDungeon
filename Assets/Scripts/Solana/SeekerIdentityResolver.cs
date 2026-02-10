@@ -31,6 +31,7 @@ namespace SeekerDungeon.Solana
         private const int MemoryCacheTtlMinutes = 20;
         private const int PersistentCacheTtlHours = 24;
         private const string PersistentCachePrefix = "LG_SEEKER_ID_CACHE_V1_";
+        private const string PersistentBackendHitCachePrefix = "LG_SEEKER_ID_BACKEND_HIT_V1_";
 
         private static readonly Regex AnySkrDomainRegex = new(
             @"([a-z0-9][a-z0-9\-]*\.skr)\b",
@@ -46,6 +47,13 @@ namespace SeekerDungeon.Solana
             public string seekerId;
             public string source;
             public long updatedAtUnix;
+        }
+
+        private sealed class BackendLookupResult
+        {
+            public bool HasResponse { get; init; }
+            public bool IsFound { get; init; }
+            public string SeekerId { get; init; }
         }
 
         private sealed class CacheEntry
@@ -65,7 +73,8 @@ namespace SeekerDungeon.Solana
             string enhancedHistoryUrlTemplate = null,
             IReadOnlyList<string> fallbackEnhancedHistoryUrlTemplates = null,
             string backendResolveUrlTemplate = null,
-            IReadOnlyList<string> fallbackBackendResolveUrlTemplates = null)
+            IReadOnlyList<string> fallbackBackendResolveUrlTemplates = null,
+            bool allowLegacyFallbackLookups = true)
         {
             if (walletPublicKey == null)
             {
@@ -83,17 +92,21 @@ namespace SeekerDungeon.Solana
                 return null;
             }
 
-            var rpcCandidates = BuildRpcCandidateList(mainnetRpcUrl, fallbackRpcUrls);
-            if (rpcCandidates.Count == 0)
-            {
-                rpcCandidates.Add(DefaultMainnetRpcUrl);
-            }
-            var enhancedCandidates = BuildEnhancedTemplateCandidateList(
-                enhancedHistoryUrlTemplate,
-                fallbackEnhancedHistoryUrlTemplates);
             var backendCandidates = BuildBackendTemplateCandidateList(
                 backendResolveUrlTemplate,
                 fallbackBackendResolveUrlTemplates);
+            var rpcCandidates = allowLegacyFallbackLookups
+                ? BuildRpcCandidateList(mainnetRpcUrl, fallbackRpcUrls)
+                : new List<string>();
+            if (allowLegacyFallbackLookups && rpcCandidates.Count == 0)
+            {
+                rpcCandidates.Add(DefaultMainnetRpcUrl);
+            }
+            var enhancedCandidates = allowLegacyFallbackLookups
+                ? BuildEnhancedTemplateCandidateList(
+                    enhancedHistoryUrlTemplate,
+                    fallbackEnhancedHistoryUrlTemplates)
+                : new List<string>();
 
             var cached = TryGetCached(walletKey);
             if (!string.IsNullOrWhiteSpace(cached))
@@ -104,13 +117,31 @@ namespace SeekerDungeon.Solana
 
             if (backendCandidates.Count > 0)
             {
-                var backendSeekerId = await TryResolveWithBackendAsync(walletKey, backendCandidates);
-                if (!string.IsNullOrWhiteSpace(backendSeekerId))
+                var backendResult = await TryResolveWithBackendAsync(walletKey, backendCandidates);
+                if (backendResult != null && backendResult.HasResponse)
                 {
-                    StoreCached(walletKey, backendSeekerId);
-                    Log($"Resolved seekerId={backendSeekerId} for wallet={walletKey} via backend");
-                    return backendSeekerId;
+                    if (!backendResult.IsFound || string.IsNullOrWhiteSpace(backendResult.SeekerId))
+                    {
+                        Log($"Backend returned no .skr for wallet={walletKey}; skipping legacy fallback lookups");
+                        return null;
+                    }
+
+                    StoreBackendStickyCached(walletKey, backendResult.SeekerId);
+                    StoreCached(walletKey, backendResult.SeekerId);
+                    Log($"Resolved seekerId={backendResult.SeekerId} for wallet={walletKey} via backend");
+                    return backendResult.SeekerId;
                 }
+            }
+            else if (!allowLegacyFallbackLookups)
+            {
+                Log($"No backend template configured for wallet={walletKey}; skipping legacy fallback lookups");
+                return null;
+            }
+
+            if (!allowLegacyFallbackLookups)
+            {
+                Log($"Backend lookup unavailable for wallet={walletKey}; skipping legacy fallback lookups");
+                return null;
             }
 
             if (preferEnhancedHistory && enhancedCandidates.Count > 0)
@@ -139,7 +170,7 @@ namespace SeekerDungeon.Solana
             return null;
         }
 
-        private static async UniTask<string> TryResolveWithBackendAsync(
+        private static async UniTask<BackendLookupResult> TryResolveWithBackendAsync(
             string walletKey,
             IReadOnlyList<string> backendUrlTemplates)
         {
@@ -172,14 +203,28 @@ namespace SeekerDungeon.Solana
                     continue;
                 }
 
-                var seekerId = TryExtractSkrDomainFromBackendResponse(body);
-                if (string.IsNullOrWhiteSpace(seekerId))
+                var seekerId = TryExtractSkrDomainFromBackendResponse(body, out var backendFoundFlag);
+                if (!string.IsNullOrWhiteSpace(seekerId))
                 {
-                    Log($"No .skr match in backend response wallet={walletKey} templateIndex={index}");
-                    continue;
+                    return new BackendLookupResult
+                    {
+                        HasResponse = true,
+                        IsFound = true,
+                        SeekerId = seekerId
+                    };
                 }
 
-                return seekerId;
+                if (!backendFoundFlag)
+                {
+                    Log($"No .skr match in backend response wallet={walletKey} templateIndex={index}");
+                }
+
+                return new BackendLookupResult
+                {
+                    HasResponse = true,
+                    IsFound = false,
+                    SeekerId = null
+                };
             }
 
             return null;
@@ -526,8 +571,9 @@ namespace SeekerDungeon.Solana
             return null;
         }
 
-        private static string TryExtractSkrDomainFromBackendResponse(string responseBody)
+        private static string TryExtractSkrDomainFromBackendResponse(string responseBody, out bool backendFoundFlag)
         {
+            backendFoundFlag = false;
             if (string.IsNullOrWhiteSpace(responseBody))
             {
                 return null;
@@ -541,6 +587,7 @@ namespace SeekerDungeon.Solana
                     return TryExtractSkrDomainFromText(responseBody);
                 }
 
+                backendFoundFlag = parsed.found;
                 if (!parsed.found || string.IsNullOrWhiteSpace(parsed.seekerId))
                 {
                     return null;
@@ -581,6 +628,17 @@ namespace SeekerDungeon.Solana
                 MemoryCache.Remove(walletKey);
             }
 
+            var stickyBackendValue = TryGetBackendStickyCached(walletKey);
+            if (!string.IsNullOrWhiteSpace(stickyBackendValue))
+            {
+                MemoryCache[walletKey] = new CacheEntry
+                {
+                    SeekerId = stickyBackendValue,
+                    ExpiresAtUtc = now.AddMinutes(MemoryCacheTtlMinutes)
+                };
+                return stickyBackendValue;
+            }
+
             var persistentKey = GetPersistentCacheKey(walletKey);
             var rawValue = PlayerPrefs.GetString(persistentKey, string.Empty);
             if (string.IsNullOrWhiteSpace(rawValue))
@@ -619,6 +677,23 @@ namespace SeekerDungeon.Solana
             return seekerId;
         }
 
+        private static string TryGetBackendStickyCached(string walletKey)
+        {
+            if (string.IsNullOrWhiteSpace(walletKey))
+            {
+                return null;
+            }
+
+            var stickyKey = GetPersistentBackendStickyCacheKey(walletKey);
+            var seekerId = PlayerPrefs.GetString(stickyKey, string.Empty)?.Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(seekerId))
+            {
+                return null;
+            }
+
+            return seekerId;
+        }
+
         private static void StoreCached(string walletKey, string seekerId)
         {
             if (string.IsNullOrWhiteSpace(walletKey) || string.IsNullOrWhiteSpace(seekerId))
@@ -639,9 +714,31 @@ namespace SeekerDungeon.Solana
             PlayerPrefs.Save();
         }
 
+        private static void StoreBackendStickyCached(string walletKey, string seekerId)
+        {
+            if (string.IsNullOrWhiteSpace(walletKey) || string.IsNullOrWhiteSpace(seekerId))
+            {
+                return;
+            }
+
+            var normalized = seekerId.Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return;
+            }
+
+            PlayerPrefs.SetString(GetPersistentBackendStickyCacheKey(walletKey), normalized);
+            PlayerPrefs.Save();
+        }
+
         private static string GetPersistentCacheKey(string walletKey)
         {
             return $"{PersistentCachePrefix}{walletKey}";
+        }
+
+        private static string GetPersistentBackendStickyCacheKey(string walletKey)
+        {
+            return $"{PersistentBackendHitCachePrefix}{walletKey}";
         }
 
         private static bool IsRateLimitReason(string reason)

@@ -11,9 +11,6 @@ namespace SeekerDungeon.Solana
         private const int SkinLabelMinFontSize = 24;
 
         [SerializeField] private LGMainMenuCharacterManager characterManager;
-        [SerializeField] private Camera worldToUiCamera;
-        [SerializeField] private float worldNameScreenOffsetY = 24f;
-        [SerializeField] private float worldNameLabelWidth = 420f;
 
         private UIDocument _document;
 
@@ -25,7 +22,6 @@ namespace SeekerDungeon.Solana
         private VisualElement _topCenterLayer;
         private VisualElement _skinNavPanel;
         private Label _skinNameLabel;
-        private Label _lockedNameLabel;
         private TextField _displayNameInput;
         private Label _statusLabel;
         private Label _existingNameLabel;
@@ -52,7 +48,6 @@ namespace SeekerDungeon.Solana
         private bool _isApplyingKeyboardText;
         private VisualElement _boundRoot;
         private bool _isHandlersBound;
-        private bool _shouldShowLockedName;
 
         private void Awake()
         {
@@ -110,7 +105,6 @@ namespace SeekerDungeon.Solana
             _topCenterLayer = root.Q<VisualElement>("top-center-layer");
             _skinNavPanel = root.Q<VisualElement>("skin-nav-row");
             _skinNameLabel = root.Q<Label>("selected-skin-label");
-            _lockedNameLabel = root.Q<Label>("locked-display-name-label");
             _displayNameInput = root.Q<TextField>("display-name-input");
             _statusLabel = root.Q<Label>("menu-status-label");
             _existingNameLabel = root.Q<Label>("existing-display-name-label");
@@ -351,8 +345,6 @@ namespace SeekerDungeon.Solana
             {
                 _mobileKeyboard = null;
             }
-
-            UpdateLockedNameWorldAnchor();
         }
 
         private void HandleStateChanged(MainMenuCharacterState state)
@@ -384,13 +376,9 @@ namespace SeekerDungeon.Solana
             }
 
             var isLockedProfile = state.HasProfile && !state.HasUnsavedProfileChanges;
-
-            if (_lockedNameLabel != null)
-            {
-                _lockedNameLabel.text = state.PlayerDisplayName;
-                _shouldShowLockedName = state.IsReady;
-                _lockedNameLabel.style.display = _shouldShowLockedName ? DisplayStyle.Flex : DisplayStyle.None;
-            }
+            var previewController = characterManager?.PreviewPlayerController;
+            previewController?.SetDisplayName(state.PlayerDisplayName);
+            previewController?.SetDisplayNameVisible(state.IsReady);
 
             if (_pickCharacterTitleLabel != null)
             {
@@ -548,8 +536,6 @@ namespace SeekerDungeon.Solana
                 state.HasProfile);
             _lowBalanceModalDismissButton?.SetEnabled(!state.IsRequestingDevnetTopUp);
             _lowBalanceTopUpButton?.SetEnabled(!state.IsRequestingDevnetTopUp && !state.IsBusy);
-
-            UpdateLockedNameWorldAnchor();
         }
 
         private void ApplySkinLabelSizing(string labelText)
@@ -575,44 +561,6 @@ namespace SeekerDungeon.Solana
             {
                 _statusLabel.text = message;
             }
-        }
-
-        private void UpdateLockedNameWorldAnchor()
-        {
-            if (_lockedNameLabel == null || _menuRoot == null || characterManager == null)
-            {
-                return;
-            }
-
-            if (!_shouldShowLockedName)
-            {
-                _lockedNameLabel.style.display = DisplayStyle.None;
-                return;
-            }
-
-            var anchorTransform = characterManager.CharacterNameAnchorTransform;
-            var camera = worldToUiCamera != null ? worldToUiCamera : Camera.main;
-            var rootPanel = _menuRoot.panel;
-            if (anchorTransform == null || camera == null || rootPanel == null)
-            {
-                return;
-            }
-
-            var worldPoint = anchorTransform.position;
-            var screenPoint = camera.WorldToScreenPoint(worldPoint);
-            if (screenPoint.z <= 0f)
-            {
-                _lockedNameLabel.style.display = DisplayStyle.None;
-                return;
-            }
-
-            var panelPoint = RuntimePanelUtils.ScreenToPanel(
-                rootPanel,
-                new Vector2(screenPoint.x, Screen.height - screenPoint.y));
-            _lockedNameLabel.style.display = DisplayStyle.Flex;
-            _lockedNameLabel.style.width = worldNameLabelWidth;
-            _lockedNameLabel.style.left = panelPoint.x - (worldNameLabelWidth * 0.5f);
-            _lockedNameLabel.style.top = panelPoint.y - worldNameScreenOffsetY;
         }
     }
 }

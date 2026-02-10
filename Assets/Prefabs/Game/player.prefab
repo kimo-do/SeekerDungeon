@@ -175,6 +175,7 @@ MonoBehaviour:
   - skin: 16
     sprite: {fileID: 7227000743248742133, guid: 531d2876fc0f880489cd0b3208ca602a, type: 3}
   characterNameAnchor: {fileID: 5852513891496822425}
+  playerNamePrefab: {fileID: 2216771843196064832, guid: 1614aba7c126b8b43ab8f929fa17910a, type: 3}
   animateSkinSwitch: 1
   skinPopScaleMultiplier: 1.12
   skinPopOutDuration: 0.08
@@ -219,7 +220,7 @@ Transform:
   m_GameObject: {fileID: 6176827594981606930}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 1.091, z: 0}
+  m_LocalPosition: {x: 0, y: 0.892, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []

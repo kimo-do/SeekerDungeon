@@ -20,7 +20,7 @@ namespace SeekerDungeon.Solana
         
         // Network
         public const string RPC_URL = "https://api.devnet.solana.com";
-        public const string RPC_FALLBACK_URL = "https://rpc.magicblock.app/devnet/";
+        public const string RPC_FALLBACK_URL = "https://api.devnet.solana.com";
         public const string MAINNET_RPC_URL = "https://api.mainnet-beta.solana.com";
         public const string MAINNET_RPC_FALLBACK_URL = "https://api.mainnet-beta.solana.com";
         
@@ -92,7 +92,12 @@ namespace SeekerDungeon.Solana
             var deploymentConfig = GetDeploymentConfig();
             if (deploymentConfig == null)
             {
-                return NormalizeUrl(inspectorValue, RPC_URL);
+                // Safety guard: if no deployment config is present, default to devnet and
+                // never allow accidental mainnet transaction signing from stale inspector values.
+                var resolved = NormalizeUrl(inspectorValue, RPC_URL);
+                return resolved.IndexOf("mainnet", System.StringComparison.OrdinalIgnoreCase) >= 0
+                    ? RPC_URL
+                    : resolved;
             }
 
             return deploymentConfig.SolanaNetwork == SolanaRuntimeNetwork.Mainnet

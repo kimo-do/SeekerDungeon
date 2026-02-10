@@ -19,6 +19,9 @@ description: Common pitfalls in unity c# development for unity 6000+
 
 - Prefer assigning prefab and scene references in the Inspector when that is the cleanest setup.
 - Also prefer auto-wiring references at runtime when reliable (for example, resolving by instance in scene), so unnecessary fields are not exposed in the Inspector.
+- when you change private fields e.g.
+  [SerializeField] private bool allowWalletAdapterSessionOnAndroid = true;
+  it won't actually update the value, as that is stored in the scene on the gameobject. You have to remove [SerializeField] to make it force use your value.
 
 ## Editor Log
 The editor log is located in:

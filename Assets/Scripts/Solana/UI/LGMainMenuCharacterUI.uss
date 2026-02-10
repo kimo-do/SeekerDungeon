@@ -124,20 +124,6 @@
     -unity-text-align: middle-center;
 }
 
-.locked-name-label {
-    position: absolute;
-    min-width: 360px;
-    max-width: 480px;
-    font-size: 44px;
-    -unity-font-style: bold;
-    color: rgb(236, 243, 255);
-    -unity-text-align: middle-center;
-    -unity-text-outline-width: 2px;
-    -unity-text-outline-color: rgba(11, 18, 30, 0.95);
-    text-shadow: 0 3px 5px rgba(0, 0, 0, 0.58);
-    pointer-events: none;
-}
-
 .pick-character-title-label {
     position: absolute;
     top: 26%;
@@ -207,6 +193,14 @@
 .action-button:active {
     margin-top: 3px;
     margin-bottom: -3px;
+}
+
+.cta-button {
+    min-width: 680px;
+    min-height: 232px;
+    height: 232px;
+    font-size: 30px;
+    padding-bottom: 16px;
 }
 
 .cta-wrap {
@@ -360,12 +354,10 @@
 }
 
 .session-status-pill {
-    position: absolute;
-    top: 28px;
-    left: 50%;
-    width: 520px;
-    margin-left: -260px;
-    height: 84px;
+    position: relative;
+    align-self: flex-end;
+    height: 56px;
+    margin-top: 4px;
     align-items: center;
     justify-content: center;
     flex-direction: row;
@@ -382,16 +374,16 @@
 }
 
 .session-status-gem {
-    width: 62px;
-    height: 62px;
-    min-width: 62px;
-    min-height: 62px;
-    margin-right: 10px;
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    margin-right: 6px;
     margin-left: 0;
 }
 
 .session-status-label {
-    font-size: 30px;
+    font-size: 22px;
     -unity-font-style: bold;
     color: rgb(232, 240, 255);
     -unity-text-align: middle-center;

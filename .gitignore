@@ -186,6 +186,9 @@ slither-output/
 *.bak
 *.swp
 
+# Temp diagnostic logs (adb captures etc.)
+.tmp_*
+
 # Test results
 TestResults/
 test-results/

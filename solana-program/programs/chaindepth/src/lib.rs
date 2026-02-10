@@ -33,6 +33,11 @@ pub mod chaindepth {
         instructions::force_reset_season::handler(ctx)
     }
 
+    /// Admin-only test helper to reset a specific player's core PDAs.
+    pub fn reset_player_for_testing(ctx: Context<ResetPlayerForTesting>) -> Result<()> {
+        instructions::reset_player_for_testing::handler(ctx)
+    }
+
     /// Ensure the start room exists for the current season seed.
     pub fn ensure_start_room(ctx: Context<EnsureStartRoom>) -> Result<()> {
         instructions::ensure_start_room::handler(ctx)

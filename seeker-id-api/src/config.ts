@@ -33,8 +33,8 @@ export const loadConfig = (): AppConfig => {
   const mainnetRpcUrl = (process.env.MAINNET_RPC_URL ?? defaultHeliusMainnetRpcUrl).trim();
   const cacheTtlSeconds = parseIntOrDefault(process.env.CACHE_TTL_SECONDS, 86400);
   const negativeCacheTtlSeconds = parseIntOrDefault(process.env.NEGATIVE_CACHE_TTL_SECONDS, 21600);
-  const maxSignatureScan = parseIntOrDefault(process.env.MAX_SIGNATURE_SCAN, 40);
-  const maxTransactionsPerLookup = parseIntOrDefault(process.env.MAX_TRANSACTIONS_PER_LOOKUP, 40);
+  const maxSignatureScan = parseIntOrDefault(process.env.MAX_SIGNATURE_SCAN, 120);
+  const maxTransactionsPerLookup = parseIntOrDefault(process.env.MAX_TRANSACTIONS_PER_LOOKUP, 120);
   const requestTimeoutMs = parseIntOrDefault(process.env.REQUEST_TIMEOUT_MS, 5000);
   const port = parseIntOrDefault(process.env.PORT, 3000);
   const logDebug = (process.env.LOG_DEBUG ?? "false").trim().toLowerCase() === "true";

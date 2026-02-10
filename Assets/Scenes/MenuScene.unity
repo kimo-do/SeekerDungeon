@@ -562,9 +562,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Solana.LGMainMenuCharacterUI
   characterManager: {fileID: 1459274709}
-  worldToUiCamera: {fileID: 0}
-  worldNameScreenOffsetY: 24
-  worldNameLabelWidth: 420
+  playerNamePrefab: {fileID: 2216771843196064832, guid: 1614aba7c126b8b43ab8f929fa17910a, type: 3}
 --- !u!1 &1156078724
 GameObject:
   m_ObjectHideFlags: 0
@@ -693,7 +691,10 @@ MonoBehaviour:
   maxDisplayNameLength: 24
   prepareGameplaySessionInMenu: 1
   autoResolveSeekerIdAsDefaultName: 1
+  allowSeekerIdentityLookupInEditor: 0
   preferEnhancedSeekerIdentityLookup: 1
+  seekerIdentityBackendResolveUrlTemplate: 
+  seekerIdentityBackendFallbackUrlTemplates: []
   seekerIdentityEnhancedHistoryUrlTemplate: 
   seekerIdentityEnhancedFallbackUrlTemplates: []
   seekerIdentityRpcUrl: https://api.mainnet-beta.solana.com

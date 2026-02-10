@@ -14,12 +14,12 @@
                 </ui:VisualElement>
             </ui:VisualElement>
             <ui:Label name="wallet-network-label" text="DEVNET" class="wallet-network-label"/>
+            <ui:Button name="btn-session-pill" text="" class="session-status-pill" style="display: none;">
+                <ui:VisualElement name="wallet-session-icon-inactive" class="wallet-session-gem wallet-session-gem-inactive session-status-gem"/>
+                <ui:VisualElement name="wallet-session-icon-active" class="wallet-session-gem wallet-session-gem-active session-status-gem" style="display: none;"/>
+                <ui:Label name="wallet-session-action-label" text="Session Inactive" class="session-status-label"/>
+            </ui:Button>
         </ui:VisualElement>
-        <ui:Button name="btn-session-pill" text="" class="session-status-pill" style="display: none;">
-            <ui:VisualElement name="wallet-session-icon-inactive" class="wallet-session-gem wallet-session-gem-inactive session-status-gem"/>
-            <ui:VisualElement name="wallet-session-icon-active" class="wallet-session-gem wallet-session-gem-active session-status-gem" style="display: none;"/>
-            <ui:Label name="wallet-session-action-label" text="Session Inactive" class="session-status-label"/>
-        </ui:Button>
         <ui:VisualElement name="top-center-layer" class="top-center-layer" style="top: 44%;">
             <ui:VisualElement name="skin-nav-row" class="skin-nav-row">
                 <ui:Button name="btn-prev-skin" text="&lt;" class="skin-nav-button" style="background-image: url(&quot;project://database/Assets/Sprites/selectors.png?fileID=-1870953563060713810&amp;guid=f17681645497b7445a814f9e40781059&amp;type=3#selectors_0&quot;); -unity-background-scale-mode: scale-to-fit; background-color: rgba(47, 85, 145, 0); border-top-width: 0; border-right-width: 0; border-bottom-width: 0; border-left-width: 0; text-overflow: clip; color: rgba(244, 248, 255, 0);"/>
@@ -28,7 +28,6 @@
             </ui:VisualElement>
         </ui:VisualElement>
         <ui:Label name="pick-character-title-label" text="PICK YOUR CHARACTER" class="pick-character-title-label" style="-unity-font-definition: url(&quot;project://database/Assets/Samples/Solana%20SDK/1.2.10/Sample%20Wallet/Solana%20Wallet/Textures/Fonts/MouseMemoirs-Regular.ttf?fileID=12800000&amp;guid=892eeaee9ddf4004890484bdd415a52c&amp;type=3#MouseMemoirs-Regular&quot;); font-size: 85px;"/>
-        <ui:Label name="locked-display-name-label" text="" class="locked-name-label" style="display: none;"/>
         <ui:VisualElement name="bottom-center-layer" class="bottom-center-layer">
             <ui:Label name="menu-status-label" text="Loading..." class="status-label" style="font-size: 35px;"/>
             <ui:VisualElement name="create-identity-panel" class="floating-panel identity-panel" style="margin-bottom: 66px;">
@@ -38,10 +37,10 @@
                 <ui:Label name="existing-display-name-label" text="Name: --" class="existing-name-label"/>
             </ui:VisualElement>
             <ui:VisualElement name="create-character-container" class="cta-wrap">
-                <ui:Button name="btn-create-character" text="CREATE CHARACTER" class="action-button cta-button" style="width: 500px; -unity-font-style: bold;"/>
+                <ui:Button name="btn-create-character" text="CREATE CHARACTER" class="action-button cta-button" style="width: 660px; -unity-font-style: bold;"/>
             </ui:VisualElement>
             <ui:VisualElement name="existing-character-container" class="cta-wrap" style="display: none;">
-                <ui:Button name="btn-enter-dungeon" text="ENTER THE DUNGEON" class="action-button"/>
+                <ui:Button name="btn-enter-dungeon" text="ENTER THE DUNGEON" class="action-button cta-button"/>
             </ui:VisualElement>
         </ui:VisualElement>
         <ui:VisualElement name="session-setup-overlay" class="session-setup-overlay" style="display: none; background-color: rgba(34, 17, 34, 0.83); opacity: 1;">
