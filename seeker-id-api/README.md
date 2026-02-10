@@ -43,8 +43,9 @@ Response shape:
 1. Create a new Railway service from this repo.
 2. Set service root directory to `seeker-id-api`.
 3. Add the environment variables listed above.
-4. Railway start command:
-   - `npm run start`
+4. No manual start command is needed:
+   - Railway Railpack detects Node from `package.json` and uses `npm run start`.
+   - `Procfile` is included as an explicit fallback (`web: npm run start`).
 5. Use the generated public URL in Unity config:
    - `https://<your-service>.up.railway.app/seeker-id/resolve?wallet={address}`
 
