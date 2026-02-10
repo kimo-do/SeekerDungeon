@@ -39,6 +39,15 @@ namespace SeekerDungeon.Solana
             @"Buying domain\s+([a-z0-9][a-z0-9\-]*\.skr)\b",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+        [Serializable]
+        private sealed class BackendResolveResponse
+        {
+            public bool found;
+            public string seekerId;
+            public string source;
+            public long updatedAtUnix;
+        }
+
         private sealed class CacheEntry
         {
             public string SeekerId { get; init; }
@@ -54,7 +63,9 @@ namespace SeekerDungeon.Solana
             IReadOnlyList<string> fallbackRpcUrls = null,
             bool preferEnhancedHistory = true,
             string enhancedHistoryUrlTemplate = null,
-            IReadOnlyList<string> fallbackEnhancedHistoryUrlTemplates = null)
+            IReadOnlyList<string> fallbackEnhancedHistoryUrlTemplates = null,
+            string backendResolveUrlTemplate = null,
+            IReadOnlyList<string> fallbackBackendResolveUrlTemplates = null)
         {
             if (walletPublicKey == null)
             {
@@ -80,12 +91,26 @@ namespace SeekerDungeon.Solana
             var enhancedCandidates = BuildEnhancedTemplateCandidateList(
                 enhancedHistoryUrlTemplate,
                 fallbackEnhancedHistoryUrlTemplates);
+            var backendCandidates = BuildBackendTemplateCandidateList(
+                backendResolveUrlTemplate,
+                fallbackBackendResolveUrlTemplates);
 
             var cached = TryGetCached(walletKey);
             if (!string.IsNullOrWhiteSpace(cached))
             {
                 Log($"Cache hit wallet={walletKey} seekerId={cached}");
                 return cached;
+            }
+
+            if (backendCandidates.Count > 0)
+            {
+                var backendSeekerId = await TryResolveWithBackendAsync(walletKey, backendCandidates);
+                if (!string.IsNullOrWhiteSpace(backendSeekerId))
+                {
+                    StoreCached(walletKey, backendSeekerId);
+                    Log($"Resolved seekerId={backendSeekerId} for wallet={walletKey} via backend");
+                    return backendSeekerId;
+                }
             }
 
             if (preferEnhancedHistory && enhancedCandidates.Count > 0)
@@ -111,6 +136,52 @@ namespace SeekerDungeon.Solana
             }
 
             Log($"No matching .skr lookup transaction found for wallet={walletKey} across {rpcCandidates.Count} rpc(s)");
+            return null;
+        }
+
+        private static async UniTask<string> TryResolveWithBackendAsync(
+            string walletKey,
+            IReadOnlyList<string> backendUrlTemplates)
+        {
+            if (string.IsNullOrWhiteSpace(walletKey) || backendUrlTemplates == null)
+            {
+                return null;
+            }
+
+            var encodedWallet = Uri.EscapeDataString(walletKey);
+            for (var index = 0; index < backendUrlTemplates.Count; index += 1)
+            {
+                var template = backendUrlTemplates[index];
+                if (string.IsNullOrWhiteSpace(template) || template.IndexOf("{address}", StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    Log($"Skipping invalid backend template at index={index} (missing {{address}} placeholder)");
+                    continue;
+                }
+
+                var requestUrl = ReplaceAddressPlaceholder(template.Trim(), encodedWallet);
+                if (string.IsNullOrWhiteSpace(requestUrl))
+                {
+                    Log($"Skipping invalid backend template at index={index} (could not build URL)");
+                    continue;
+                }
+
+                Log($"Resolving wallet={walletKey} backendUrl={requestUrl}");
+                var body = await TryGetTextAsync(requestUrl, EnhancedHistoryTimeoutSeconds);
+                if (string.IsNullOrWhiteSpace(body))
+                {
+                    continue;
+                }
+
+                var seekerId = TryExtractSkrDomainFromBackendResponse(body);
+                if (string.IsNullOrWhiteSpace(seekerId))
+                {
+                    Log($"No .skr match in backend response wallet={walletKey} templateIndex={index}");
+                    continue;
+                }
+
+                return seekerId;
+            }
+
             return null;
         }
 
@@ -333,6 +404,24 @@ namespace SeekerDungeon.Solana
             return templates.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         }
 
+        private static List<string> BuildBackendTemplateCandidateList(
+            string primaryTemplate,
+            IReadOnlyList<string> fallbackTemplates)
+        {
+            var templates = new List<string>();
+            AddTemplateIfValid(templates, primaryTemplate);
+
+            if (fallbackTemplates != null)
+            {
+                for (var index = 0; index < fallbackTemplates.Count; index += 1)
+                {
+                    AddTemplateIfValid(templates, fallbackTemplates[index]);
+                }
+            }
+
+            return templates.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
         private static void AddRpcUrlIfValid(ICollection<string> urls, string candidate)
         {
             if (urls == null || string.IsNullOrWhiteSpace(candidate))
@@ -435,6 +524,35 @@ namespace SeekerDungeon.Solana
             }
 
             return null;
+        }
+
+        private static string TryExtractSkrDomainFromBackendResponse(string responseBody)
+        {
+            if (string.IsNullOrWhiteSpace(responseBody))
+            {
+                return null;
+            }
+
+            try
+            {
+                var parsed = JsonUtility.FromJson<BackendResolveResponse>(responseBody);
+                if (parsed == null)
+                {
+                    return TryExtractSkrDomainFromText(responseBody);
+                }
+
+                if (!parsed.found || string.IsNullOrWhiteSpace(parsed.seekerId))
+                {
+                    return null;
+                }
+
+                return TryExtractSkrDomainFromText(parsed.seekerId);
+            }
+            catch (Exception exception)
+            {
+                Log($"Backend response parse failed message={exception.Message}");
+                return TryExtractSkrDomainFromText(responseBody);
+            }
         }
 
         private static bool ContainsAccount(IReadOnlyList<string> accountKeys, string expected)

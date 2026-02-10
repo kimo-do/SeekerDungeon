@@ -14,6 +14,7 @@ Project defaults for this repo.
 - The human developer is strong in Unity/C# and new to Solana/Anchor/Rust.
 - Treat blockchain architecture/constraints as the AI's responsibility.
 - Explain Solana constraints simply when they affect requested gameplay behavior.
+- This is a public git repo, do not dox the user by documenting their computer user name. Do not store API keys, private keys, or otherwise sensetive information in unignored files.
 
 ## Solana Workflow
 - For `solana-program`, run commands via:

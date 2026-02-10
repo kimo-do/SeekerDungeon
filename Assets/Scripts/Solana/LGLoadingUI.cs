@@ -1,5 +1,6 @@
 using Cysharp.Threading.Tasks;
 using System.Collections.Generic;
+using System.Threading;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -21,6 +22,7 @@ namespace SeekerDungeon.Solana
         private VisualElement _boundRoot;
         private bool _isHandlersBound;
         private bool _isSwitchingEditorWallet;
+        private CancellationTokenSource _connectButtonCooldownCts;
         private const int EditorWalletSlotDisplayCount = 10;
 
         private void Awake()
@@ -35,12 +37,7 @@ namespace SeekerDungeon.Solana
 
             if (walletSessionManager == null)
             {
-                walletSessionManager = LGWalletSessionManager.Instance;
-            }
-
-            if (walletSessionManager == null)
-            {
-                walletSessionManager = FindObjectOfType<LGWalletSessionManager>();
+                walletSessionManager = LGWalletSessionManager.EnsureInstance();
             }
         }
 
@@ -66,6 +63,7 @@ namespace SeekerDungeon.Solana
         private void OnDisable()
         {
             UnbindUiHandlers();
+            CancelConnectButtonCooldown();
 
             if (walletSessionManager != null)
             {
@@ -156,6 +154,7 @@ namespace SeekerDungeon.Solana
 
             SetStatus("Connecting wallet...");
             SetButtonEnabled(false);
+            StartConnectButtonCooldown();
             loadingController.OnConnectSeekerClicked();
         }
 
@@ -249,18 +248,59 @@ namespace SeekerDungeon.Solana
         {
             if (isConnected)
             {
+                CancelConnectButtonCooldown();
                 SetStatus("Connected");
                 return;
             }
 
+            CancelConnectButtonCooldown();
             SetStatus("Connect your wallet to continue");
             SetButtonEnabled(true);
         }
 
         private void HandleWalletError(string errorMessage)
         {
+            CancelConnectButtonCooldown();
             SetStatus(errorMessage);
             SetButtonEnabled(true);
+        }
+
+        private void StartConnectButtonCooldown()
+        {
+            CancelConnectButtonCooldown();
+            _connectButtonCooldownCts = new CancellationTokenSource();
+            RestoreConnectButtonAfterDelayAsync(_connectButtonCooldownCts.Token).Forget();
+        }
+
+        private async UniTaskVoid RestoreConnectButtonAfterDelayAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                await UniTask.Delay(8000, cancellationToken: cancellationToken);
+                if (walletSessionManager == null || walletSessionManager.IsWalletConnected)
+                {
+                    return;
+                }
+
+                SetStatus("Tap connect to try again");
+                SetButtonEnabled(true);
+            }
+            catch (System.OperationCanceledException)
+            {
+                // expected when connection succeeds/fails before timeout
+            }
+        }
+
+        private void CancelConnectButtonCooldown()
+        {
+            if (_connectButtonCooldownCts == null)
+            {
+                return;
+            }
+
+            _connectButtonCooldownCts.Cancel();
+            _connectButtonCooldownCts.Dispose();
+            _connectButtonCooldownCts = null;
         }
 
         private void SetStatus(string message)

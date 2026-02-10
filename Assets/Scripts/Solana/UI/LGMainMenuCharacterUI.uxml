@@ -5,23 +5,21 @@
             <ui:Button name="btn-disconnect-wallet" text="Disconnect" class="disconnect-button" style="font-size: 30px; margin-top: 13px; margin-bottom: 13px; padding-bottom: 35px; padding-top: 35px; padding-left: 28px; padding-right: 28px;"/>
         </ui:VisualElement>
         <ui:VisualElement name="top-right-actions" class="top-right-actions">
-            <ui:Label name="wallet-network-label" text="DEVNET" class="wallet-network-label"/>
             <ui:VisualElement name="wallet-pill-stack" class="wallet-pill-stack">
-                <ui:VisualElement name="wallet-sol-pill" class="wallet-pill">
-                    <ui:VisualElement name="wallet-sol-icon-image" class="wallet-pill-icon-image wallet-sol-icon-image"/>
-                    <ui:Label name="wallet-sol-balance-label" text="23" class="wallet-pill-value"/>
+                <ui:VisualElement name="wallet-sol-pill" class="wallet-pill" style="background-image: url(&quot;project://database/Assets/Sprites/pill_shaped_ui_elements.png?fileID=-5465383454656379642&amp;guid=bba72545d6bcacf4a9f10aaed00c848b&amp;type=3#pill_shaped_ui_elements (1) (1)_0&quot;); -unity-background-scale-mode: scale-to-fit;">
+                    <ui:Label name="wallet-sol-balance-label" text="22" class="wallet-pill-value" style="right: 0;"/>
                 </ui:VisualElement>
-                <ui:VisualElement name="wallet-skr-pill" class="wallet-pill">
-                    <ui:Label name="wallet-skr-icon-label" text="SKR" class="wallet-pill-icon-text"/>
-                    <ui:Label name="wallet-skr-balance-label" text="88" class="wallet-pill-value"/>
+                <ui:VisualElement name="wallet-skr-pill" class="wallet-pill" style="background-image: url(&quot;project://database/Assets/Sprites/pill_shaped_ui_elements.png?fileID=-1561673211399531395&amp;guid=bba72545d6bcacf4a9f10aaed00c848b&amp;type=3#pill_shaped_ui_elements (1) (1)_1&quot;);">
+                    <ui:Label name="wallet-skr-balance-label" text="88" class="wallet-pill-value" style="right: auto;"/>
                 </ui:VisualElement>
-                <ui:Button name="btn-session-pill" text="" class="wallet-pill wallet-session-pill">
-                    <ui:VisualElement name="wallet-session-icon-inactive" class="wallet-session-gem wallet-session-gem-inactive"/>
-                    <ui:VisualElement name="wallet-session-icon-active" class="wallet-session-gem wallet-session-gem-active" style="display: none;"/>
-                    <ui:Label name="wallet-session-action-label" text="ACTIVATE" class="wallet-pill-value"/>
-                </ui:Button>
             </ui:VisualElement>
+            <ui:Label name="wallet-network-label" text="DEVNET" class="wallet-network-label"/>
         </ui:VisualElement>
+        <ui:Button name="btn-session-pill" text="" class="session-status-pill" style="display: none;">
+            <ui:VisualElement name="wallet-session-icon-inactive" class="wallet-session-gem wallet-session-gem-inactive session-status-gem"/>
+            <ui:VisualElement name="wallet-session-icon-active" class="wallet-session-gem wallet-session-gem-active session-status-gem" style="display: none;"/>
+            <ui:Label name="wallet-session-action-label" text="Session Inactive" class="session-status-label"/>
+        </ui:Button>
         <ui:VisualElement name="top-center-layer" class="top-center-layer" style="top: 44%;">
             <ui:VisualElement name="skin-nav-row" class="skin-nav-row">
                 <ui:Button name="btn-prev-skin" text="&lt;" class="skin-nav-button" style="background-image: url(&quot;project://database/Assets/Sprites/selectors.png?fileID=-1870953563060713810&amp;guid=f17681645497b7445a814f9e40781059&amp;type=3#selectors_0&quot;); -unity-background-scale-mode: scale-to-fit; background-color: rgba(47, 85, 145, 0); border-top-width: 0; border-right-width: 0; border-bottom-width: 0; border-left-width: 0; text-overflow: clip; color: rgba(244, 248, 255, 0);"/>
@@ -29,28 +27,39 @@
                 <ui:Button name="btn-next-skin" text="&gt;" class="skin-nav-button" style="background-image: url(&quot;project://database/Assets/Sprites/selectors.png?fileID=2217153556447756492&amp;guid=f17681645497b7445a814f9e40781059&amp;type=3#selectors_1&quot;); -unity-background-scale-mode: scale-to-fit; background-color: rgba(47, 85, 145, 0); border-top-width: 0; border-right-width: 0; border-bottom-width: 0; border-left-width: 0; color: rgba(244, 248, 255, 0);"/>
             </ui:VisualElement>
         </ui:VisualElement>
-        <ui:Label name="pick-character-title-label" text="PICK YOUR CHARACTER" class="pick-character-title-label"/>
+        <ui:Label name="pick-character-title-label" text="PICK YOUR CHARACTER" class="pick-character-title-label" style="-unity-font-definition: url(&quot;project://database/Assets/Samples/Solana%20SDK/1.2.10/Sample%20Wallet/Solana%20Wallet/Textures/Fonts/MouseMemoirs-Regular.ttf?fileID=12800000&amp;guid=892eeaee9ddf4004890484bdd415a52c&amp;type=3#MouseMemoirs-Regular&quot;); font-size: 85px;"/>
         <ui:Label name="locked-display-name-label" text="" class="locked-name-label" style="display: none;"/>
         <ui:VisualElement name="bottom-center-layer" class="bottom-center-layer">
             <ui:Label name="menu-status-label" text="Loading..." class="status-label" style="font-size: 35px;"/>
             <ui:VisualElement name="create-identity-panel" class="floating-panel identity-panel" style="margin-bottom: 66px;">
-                <ui:TextField name="display-name-input" label="Name" value="" class="name-input" style="font-size: 34px; color: rgb(255, 255, 255);"/>
+                <ui:TextField name="display-name-input" label="" value="Name" class="name-input" style="font-size: 34px; color: rgb(255, 255, 255); background-image: url(&quot;project://database/Assets/Sprites/inputfield.png?fileID=2800000&amp;guid=b83acef540c7dbe49a2cb7fbbc4de7e7&amp;type=3#inputfield&quot;); -unity-background-image-tint-color: rgb(255, 255, 255); -unity-background-scale-mode: scale-to-fit; height: 85px; width: 561px;"/>
             </ui:VisualElement>
             <ui:VisualElement name="existing-identity-panel" class="floating-panel identity-panel" style="display: none;">
                 <ui:Label name="existing-display-name-label" text="Name: --" class="existing-name-label"/>
             </ui:VisualElement>
             <ui:VisualElement name="create-character-container" class="cta-wrap">
-                <ui:Button name="btn-create-character" text="CREATE CHARACTER" class="action-button cta-button" style="width: 500px;"/>
+                <ui:Button name="btn-create-character" text="CREATE CHARACTER" class="action-button cta-button" style="width: 500px; -unity-font-style: bold;"/>
             </ui:VisualElement>
             <ui:VisualElement name="existing-character-container" class="cta-wrap" style="display: none;">
                 <ui:Button name="btn-enter-dungeon" text="ENTER THE DUNGEON" class="action-button"/>
             </ui:VisualElement>
         </ui:VisualElement>
-        <ui:VisualElement name="low-balance-modal-overlay" class="modal-overlay" style="display: none;">
-            <ui:VisualElement name="low-balance-modal-card" class="modal-card">
+        <ui:VisualElement name="session-setup-overlay" class="session-setup-overlay" style="display: none; background-color: rgba(34, 17, 34, 0.83); opacity: 1;">
+            <ui:VisualElement name="session-setup-card" class="session-setup-card">
+                <ui:VisualElement name="session-setup-gem" class="wallet-session-gem wallet-session-gem-inactive session-setup-gem"/>
+                <ui:Label name="session-setup-title" text="SESSION INACTIVE" class="session-setup-title"/>
+                <ui:Label name="session-setup-message" text="Activate your gameplay session to enable smoother actions with fewer wallet prompts." class="session-setup-message"/>
+                <ui:Button name="btn-session-setup-activate" text="START SESSION" class="action-button modal-action-button modal-longbtn session-setup-button"/>
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement name="low-balance-modal-overlay" class="modal-overlay" style="display: none; -unity-material: url(&quot;project://database/Assets/Sprites/Materials/BgMat.mat?fileID=2100000&amp;guid=859fd8fa6f851ee4bbc894344994ba9a&amp;type=2#BgMat&quot;); background-color: rgba(8, 10, 16, 0.83);">
+            <ui:VisualElement name="low-balance-modal-card" class="modal-card" style="-unity-material: url(&quot;&quot;);">
                 <ui:Label name="low-balance-modal-title" text="LOW BALANCE" class="modal-title"/>
                 <ui:Label name="low-balance-modal-message" text="" class="modal-message"/>
-                <ui:Button name="btn-low-balance-dismiss" text="OK" class="modal-button"/>
+                <ui:VisualElement name="low-balance-modal-button-row" class="modal-action-row">
+                    <ui:Button name="btn-low-balance-dismiss" text="DISMISS" class="action-button modal-action-button modal-longbtn"/>
+                    <ui:Button name="btn-low-balance-topup" text="AIRDROP SOL" class="action-button modal-action-button modal-longbtn" style="display: none;"/>
+                </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
     </ui:VisualElement>

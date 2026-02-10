@@ -30,6 +30,24 @@ namespace SeekerDungeon.Solana
     {
         public static LGManager Instance { get; private set; }
 
+        public static LGManager EnsureInstance()
+        {
+            if (Instance != null)
+            {
+                return Instance;
+            }
+
+            var existing = FindExistingInstance();
+            if (existing != null)
+            {
+                Instance = existing;
+                return existing;
+            }
+
+            var bootstrapObject = new GameObject(nameof(LGManager));
+            return bootstrapObject.AddComponent<LGManager>();
+        }
+
         [Header("Debug")]
         [SerializeField] private bool logDebugMessages = true;
 
@@ -74,6 +92,28 @@ namespace SeekerDungeon.Solana
         private const int BaseTransientRetryDelayMs = 300;
         private const int RawHttpProbeTimeoutSeconds = 20;
         private const int RawHttpBodyLogLimit = 400;
+
+        private static LGManager FindExistingInstance()
+        {
+            var allInstances = Resources.FindObjectsOfTypeAll<LGManager>();
+            for (var index = 0; index < allInstances.Length; index += 1)
+            {
+                var candidate = allInstances[index];
+                if (candidate == null || candidate.gameObject == null)
+                {
+                    continue;
+                }
+
+                if (!candidate.gameObject.scene.IsValid())
+                {
+                    continue;
+                }
+
+                return candidate;
+            }
+
+            return null;
+        }
 
         private void Awake()
         {
@@ -1793,7 +1833,8 @@ namespace SeekerDungeon.Solana
                             _programId
                         );
                     },
-                    async (_) => { await RefreshAllState(); });
+                    async (_) => { await RefreshAllState(); },
+                    ensureSessionIfPossible: false);
 
                 return signature;
             }
@@ -2132,13 +2173,7 @@ namespace SeekerDungeon.Solana
 
         private LGWalletSessionManager GetWalletSessionManager()
         {
-            var walletSessionManager = LGWalletSessionManager.Instance;
-            if (walletSessionManager != null)
-            {
-                return walletSessionManager;
-            }
-
-            return UnityEngine.Object.FindFirstObjectByType<LGWalletSessionManager>();
+            return LGWalletSessionManager.EnsureInstance();
         }
 
         private GameplaySigningContext BuildGameplaySigningContext(LGWalletSessionManager walletSessionManager)
@@ -2175,7 +2210,8 @@ namespace SeekerDungeon.Solana
         private async UniTask<string> ExecuteGameplayActionAsync(
             string actionName,
             Func<GameplaySigningContext, TransactionInstruction> buildInstruction,
-            Func<string, UniTask> onSuccess = null)
+            Func<string, UniTask> onSuccess = null,
+            bool ensureSessionIfPossible = true)
         {
             if (Web3.Wallet?.Account == null)
             {
@@ -2184,7 +2220,9 @@ namespace SeekerDungeon.Solana
             }
 
             var walletSessionManager = GetWalletSessionManager();
-            if (walletSessionManager != null && !walletSessionManager.CanUseLocalSessionSigning)
+            if (ensureSessionIfPossible &&
+                walletSessionManager != null &&
+                !walletSessionManager.CanUseLocalSessionSigning)
             {
                 var ensured = await walletSessionManager.EnsureGameplaySessionAsync();
                 if (!ensured)
@@ -2280,6 +2318,20 @@ namespace SeekerDungeon.Solana
 
             try
             {
+                if (ShouldUseWalletAdapterSigning(feePayer, signers))
+                {
+                    var walletSignedSignature = await SendTransactionViaWalletAdapterAsync(
+                        instruction,
+                        feePayer,
+                        signers);
+                    if (!string.IsNullOrWhiteSpace(walletSignedSignature))
+                    {
+                        _lastProgramErrorCode = null;
+                        OnTransactionSent?.Invoke(walletSignedSignature);
+                        return walletSignedSignature;
+                    }
+                }
+
                 var rpcCandidates = GetRpcCandidates();
                 if (rpcCandidates.Count == 0)
                 {
@@ -2384,6 +2436,83 @@ namespace SeekerDungeon.Solana
                 LogError($"Transaction exception: {ex.Message}");
                 return null;
             }
+        }
+
+        private async UniTask<string> SendTransactionViaWalletAdapterAsync(
+            TransactionInstruction instruction,
+            Account feePayer,
+            IList<Account> signers)
+        {
+            var wallet = Web3.Wallet;
+            var walletAccount = wallet?.Account;
+            if (wallet == null || walletAccount == null || instruction == null)
+            {
+                return null;
+            }
+
+            var blockhash = await wallet.GetBlockHash(Commitment.Confirmed, useCache: false);
+            if (string.IsNullOrWhiteSpace(blockhash))
+            {
+                LogError("Wallet adapter signing failed: missing recent blockhash.");
+                return null;
+            }
+
+            var transaction = new Transaction
+            {
+                RecentBlockHash = blockhash,
+                FeePayer = feePayer.PublicKey,
+                Instructions = new List<TransactionInstruction> { instruction },
+                Signatures = new List<SignaturePubKeyPair>()
+            };
+
+            for (var signerIndex = 0; signerIndex < signers.Count; signerIndex += 1)
+            {
+                var signer = signers[signerIndex];
+                if (signer == null || signer.PublicKey == null)
+                {
+                    continue;
+                }
+
+                if (string.Equals(
+                        signer.PublicKey.Key,
+                        walletAccount.PublicKey.Key,
+                        StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                transaction.PartialSign(signer);
+            }
+
+            var sendResult = await wallet.SignAndSendTransaction(
+                transaction,
+                skipPreflight: false,
+                commitment: Commitment.Confirmed);
+            if (sendResult.WasSuccessful && !string.IsNullOrWhiteSpace(sendResult.Result))
+            {
+                Log($"Transaction sent via wallet adapter: {sendResult.Result}");
+                return sendResult.Result;
+            }
+
+            var reason = string.IsNullOrWhiteSpace(sendResult.Reason)
+                ? "<empty reason>"
+                : sendResult.Reason;
+            LogError($"Wallet adapter send failed: {reason}");
+            return null;
+        }
+
+        private static bool ShouldUseWalletAdapterSigning(Account feePayer, IList<Account> signers)
+        {
+            var walletAccount = Web3.Wallet?.Account;
+            if (walletAccount == null || feePayer == null || signers == null)
+            {
+                return false;
+            }
+
+            return string.Equals(
+                walletAccount.PublicKey.Key,
+                feePayer.PublicKey.Key,
+                StringComparison.Ordinal);
         }
 
         private List<IRpcClient> GetRpcCandidates()

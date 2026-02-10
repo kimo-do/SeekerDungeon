@@ -34,6 +34,8 @@ namespace SeekerDungeon.Solana
         private Label _walletSkrBalanceLabel;
         private Label _walletSessionActionLabel;
         private VisualElement _lowBalanceModalOverlay;
+        private VisualElement _sessionSetupOverlay;
+        private Label _sessionSetupMessageLabel;
         private Label _lowBalanceModalMessageLabel;
         private VisualElement _walletSessionIconInactive;
         private VisualElement _walletSessionIconActive;
@@ -43,7 +45,9 @@ namespace SeekerDungeon.Solana
         private Button _enterDungeonButton;
         private Button _disconnectButton;
         private Button _sessionPillButton;
+        private Button _sessionSetupActivateButton;
         private Button _lowBalanceModalDismissButton;
+        private Button _lowBalanceTopUpButton;
         private TouchScreenKeyboard _mobileKeyboard;
         private bool _isApplyingKeyboardText;
         private VisualElement _boundRoot;
@@ -115,6 +119,8 @@ namespace SeekerDungeon.Solana
             _walletSkrBalanceLabel = root.Q<Label>("wallet-skr-balance-label");
             _walletSessionActionLabel = root.Q<Label>("wallet-session-action-label");
             _lowBalanceModalOverlay = root.Q<VisualElement>("low-balance-modal-overlay");
+            _sessionSetupOverlay = root.Q<VisualElement>("session-setup-overlay");
+            _sessionSetupMessageLabel = root.Q<Label>("session-setup-message");
             _lowBalanceModalMessageLabel = root.Q<Label>("low-balance-modal-message");
             _walletSessionIconInactive = root.Q<VisualElement>("wallet-session-icon-inactive");
             _walletSessionIconActive = root.Q<VisualElement>("wallet-session-icon-active");
@@ -124,7 +130,9 @@ namespace SeekerDungeon.Solana
             _enterDungeonButton = root.Q<Button>("btn-enter-dungeon");
             _disconnectButton = root.Q<Button>("btn-disconnect-wallet");
             _sessionPillButton = root.Q<Button>("btn-session-pill");
+            _sessionSetupActivateButton = root.Q<Button>("btn-session-setup-activate");
             _lowBalanceModalDismissButton = root.Q<Button>("btn-low-balance-dismiss");
+            _lowBalanceTopUpButton = root.Q<Button>("btn-low-balance-topup");
 
             if (_previousSkinButton != null)
             {
@@ -156,9 +164,19 @@ namespace SeekerDungeon.Solana
                 _sessionPillButton.clicked += HandleEnableSessionClicked;
             }
 
+            if (_sessionSetupActivateButton != null)
+            {
+                _sessionSetupActivateButton.clicked += HandleEnableSessionClicked;
+            }
+
             if (_lowBalanceModalDismissButton != null)
             {
                 _lowBalanceModalDismissButton.clicked += HandleLowBalanceDismissClicked;
+            }
+
+            if (_lowBalanceTopUpButton != null)
+            {
+                _lowBalanceTopUpButton.clicked += HandleLowBalanceTopUpClicked;
             }
 
             if (_displayNameInput != null)
@@ -203,9 +221,19 @@ namespace SeekerDungeon.Solana
                 _sessionPillButton.clicked -= HandleEnableSessionClicked;
             }
 
+            if (_sessionSetupActivateButton != null)
+            {
+                _sessionSetupActivateButton.clicked -= HandleEnableSessionClicked;
+            }
+
             if (_lowBalanceModalDismissButton != null)
             {
                 _lowBalanceModalDismissButton.clicked -= HandleLowBalanceDismissClicked;
+            }
+
+            if (_lowBalanceTopUpButton != null)
+            {
+                _lowBalanceTopUpButton.clicked -= HandleLowBalanceTopUpClicked;
             }
 
             if (_displayNameInput != null)
@@ -251,6 +279,11 @@ namespace SeekerDungeon.Solana
         private void HandleLowBalanceDismissClicked()
         {
             characterManager?.DismissLowBalanceModal();
+        }
+
+        private void HandleLowBalanceTopUpClicked()
+        {
+            characterManager?.RequestDevnetTopUpFromMenu();
         }
 
         private void HandleDisplayNameChanged(ChangeEvent<string> changeEvent)
@@ -379,10 +412,8 @@ namespace SeekerDungeon.Solana
             if (_walletSessionActionLabel != null)
             {
                 _walletSessionActionLabel.text = state.IsSessionReady
-                    ? "ACTIVE"
-                    : state.HasProfile
-                        ? "ACTIVATE"
-                        : "LOCKED";
+                    ? "Session Active"
+                    : "Session Inactive";
             }
 
             if (_walletSessionIconInactive != null)
@@ -409,9 +440,35 @@ namespace SeekerDungeon.Solana
                     : DisplayStyle.None;
             }
 
+            var shouldShowSessionSetupOverlay =
+                state.HasProfile &&
+                !state.IsSessionReady &&
+                !state.IsLowBalanceBlocking;
+            if (_sessionSetupOverlay != null)
+            {
+                _sessionSetupOverlay.style.display = shouldShowSessionSetupOverlay
+                    ? DisplayStyle.Flex
+                    : DisplayStyle.None;
+            }
+
+            if (_sessionSetupMessageLabel != null)
+            {
+                _sessionSetupMessageLabel.text = state.IsBusy
+                    ? "Please confirm in your wallet to activate your gameplay session."
+                    : "Activate your gameplay session to enable smoother actions with fewer wallet prompts.";
+            }
+
             if (_lowBalanceModalMessageLabel != null)
             {
                 _lowBalanceModalMessageLabel.text = state.LowBalanceModalMessage ?? string.Empty;
+            }
+
+            if (_lowBalanceTopUpButton != null)
+            {
+                _lowBalanceTopUpButton.style.display =
+                    state.IsDevnetRuntime && state.IsLowBalanceBlocking
+                        ? DisplayStyle.Flex
+                        : DisplayStyle.None;
             }
 
             if (_createIdentityPanel != null)
@@ -481,13 +538,16 @@ namespace SeekerDungeon.Solana
             _disconnectButton?.SetEnabled(!state.IsBusy);
             if (_sessionPillButton != null)
             {
-                var canActivateSession =
-                    !state.IsSessionReady &&
-                    state.IsReady &&
-                    !state.IsBusy &&
-                    state.HasProfile;
-                _sessionPillButton.SetEnabled(canActivateSession);
+                _sessionPillButton.style.display = state.HasProfile ? DisplayStyle.Flex : DisplayStyle.None;
+                _sessionPillButton.SetEnabled(state.IsReady && !state.IsBusy && state.HasProfile);
             }
+            _sessionSetupActivateButton?.SetEnabled(
+                !state.IsSessionReady &&
+                state.IsReady &&
+                !state.IsBusy &&
+                state.HasProfile);
+            _lowBalanceModalDismissButton?.SetEnabled(!state.IsRequestingDevnetTopUp);
+            _lowBalanceTopUpButton?.SetEnabled(!state.IsRequestingDevnetTopUp && !state.IsBusy);
 
             UpdateLockedNameWorldAnchor();
         }

@@ -111,10 +111,21 @@ namespace SeekerDungeon.Solana
 
             if (!string.IsNullOrWhiteSpace(fallback))
             {
+                if (LooksLikeClusterMismatch(resolvedPrimary, fallback))
+                {
+                    return NormalizeFallbackForPrimaryCluster(resolvedPrimary);
+                }
+
                 return fallback;
             }
 
-            return NormalizeUrl(resolvedPrimary, RPC_URL);
+            var resolvedFallback = NormalizeUrl(resolvedPrimary, RPC_URL);
+            if (LooksLikeClusterMismatch(resolvedPrimary, resolvedFallback))
+            {
+                return NormalizeFallbackForPrimaryCluster(resolvedPrimary);
+            }
+
+            return resolvedFallback;
         }
 
         public static string GetActiveSkrMint()
@@ -162,6 +173,38 @@ namespace SeekerDungeon.Solana
             }
 
             return value.Trim();
+        }
+
+        private static bool LooksLikeClusterMismatch(string primary, string fallback)
+        {
+            if (string.IsNullOrWhiteSpace(primary) || string.IsNullOrWhiteSpace(fallback))
+            {
+                return false;
+            }
+
+            var primaryIsDevnet = primary.IndexOf("devnet", System.StringComparison.OrdinalIgnoreCase) >= 0;
+            var primaryIsMainnet = primary.IndexOf("mainnet", System.StringComparison.OrdinalIgnoreCase) >= 0;
+            var fallbackIsDevnet = fallback.IndexOf("devnet", System.StringComparison.OrdinalIgnoreCase) >= 0;
+            var fallbackIsMainnet = fallback.IndexOf("mainnet", System.StringComparison.OrdinalIgnoreCase) >= 0;
+
+            return
+                (primaryIsDevnet && fallbackIsMainnet) ||
+                (primaryIsMainnet && fallbackIsDevnet);
+        }
+
+        private static string NormalizeFallbackForPrimaryCluster(string primary)
+        {
+            if (string.IsNullOrWhiteSpace(primary))
+            {
+                return RPC_FALLBACK_URL;
+            }
+
+            if (primary.IndexOf("mainnet", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return MAINNET_RPC_FALLBACK_URL;
+            }
+
+            return RPC_FALLBACK_URL;
         }
         
         /// <summary>

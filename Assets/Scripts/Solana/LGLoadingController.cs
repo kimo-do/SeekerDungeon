@@ -1,3 +1,4 @@
+using System;
 using Cysharp.Threading.Tasks;
 using SeekerDungeon;
 using UnityEngine;
@@ -21,7 +22,9 @@ namespace SeekerDungeon.Solana
         [SerializeField] private string connectedSceneName = "MenuScene";
         [SerializeField] private bool autoConnectOnStart = true;
         [SerializeField] private bool allowAutoConnectOnDeviceBuilds = false;
+        [SerializeField] private bool requireManualConnectOnDevice = true;
         [SerializeField] private WalletLoginMode autoConnectMode = WalletLoginMode.Auto;
+        [SerializeField] private float walletAdapterConnectTimeoutSeconds = 20f;
 
         [Header("Debug")]
         [SerializeField] private bool logDebugMessages = true;
@@ -33,12 +36,7 @@ namespace SeekerDungeon.Solana
         {
             if (walletSessionManager == null)
             {
-                walletSessionManager = LGWalletSessionManager.Instance;
-            }
-
-            if (walletSessionManager == null)
-            {
-                walletSessionManager = FindObjectOfType<LGWalletSessionManager>();
+                walletSessionManager = LGWalletSessionManager.EnsureInstance();
             }
         }
 
@@ -69,7 +67,15 @@ namespace SeekerDungeon.Solana
         public void OnConnectSeekerClicked()
         {
             walletSessionManager?.MarkWalletConnectIntent();
-            ConnectSeekerAsync().Forget();
+            var connectMode = WalletLoginMode.WalletAdapter;
+#if UNITY_EDITOR
+            if (walletSessionManager != null && walletSessionManager.SimulateMobileFlowInEditor)
+            {
+                // Keep editor wallet auto-signing behavior while requiring a manual connect click.
+                connectMode = WalletLoginMode.Auto;
+            }
+#endif
+            ConnectAsync(connectMode).Forget();
         }
 
         /// <summary>
@@ -88,10 +94,29 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
+#if UNITY_EDITOR
+            if (walletSessionManager.SimulateMobileFlowInEditor)
+            {
+                Log("Simulated mobile flow enabled in editor. Waiting for manual connect.");
+                return;
+            }
+#endif
+
             if (walletSessionManager.IsWalletConnected)
             {
                 LoadConnectedScene();
                 return;
+            }
+
+            if (!Application.isEditor && Application.isMobilePlatform && requireManualConnectOnDevice)
+            {
+                if (!walletSessionManager.HasWalletConnectIntent)
+                {
+                    Log("Manual connect required on device. Waiting for button press.");
+                    return;
+                }
+
+                Log("Auto-connect allowed on device from remembered wallet intent.");
             }
 
             if (!autoConnectOnStart)
@@ -115,11 +140,6 @@ namespace SeekerDungeon.Solana
             await ConnectAsync(autoConnectMode);
         }
 
-        private async UniTask ConnectSeekerAsync()
-        {
-            await ConnectAsync(WalletLoginMode.WalletAdapter);
-        }
-
         private async UniTask ConnectAsync(WalletLoginMode mode)
         {
             if (_isConnecting || _isSceneLoading)
@@ -137,7 +157,7 @@ namespace SeekerDungeon.Solana
             try
             {
                 Log($"Connecting wallet ({mode})...");
-                var connected = await walletSessionManager.ConnectAsync(mode);
+                var connected = await ConnectWithTimeoutAsync(mode);
                 if (connected || walletSessionManager.IsWalletConnected)
                 {
                     LoadConnectedScene();
@@ -146,6 +166,33 @@ namespace SeekerDungeon.Solana
             finally
             {
                 _isConnecting = false;
+            }
+        }
+
+        private async UniTask<bool> ConnectWithTimeoutAsync(WalletLoginMode mode)
+        {
+            if (walletSessionManager == null)
+            {
+                return false;
+            }
+
+            if (mode != WalletLoginMode.WalletAdapter || walletAdapterConnectTimeoutSeconds <= 0f)
+            {
+                return await walletSessionManager.ConnectAsync(mode);
+            }
+
+            try
+            {
+                return await walletSessionManager
+                    .ConnectAsync(mode)
+                    .Timeout(TimeSpan.FromSeconds(walletAdapterConnectTimeoutSeconds));
+            }
+            catch (TimeoutException)
+            {
+                walletSessionManager.ClearWalletConnectIntent();
+                walletSessionManager.Disconnect();
+                LogError("Wallet adapter connect timed out. User can retry.");
+                return false;
             }
         }
 
