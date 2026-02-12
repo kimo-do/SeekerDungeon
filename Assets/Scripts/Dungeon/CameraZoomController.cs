@@ -34,12 +34,16 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private Vector2 panBoundsX = new Vector2(-3f, 3f);
         [SerializeField] private Vector2 panBoundsY = new Vector2(-3f, 3f);
         [Header("Startup Framing")]
-        [SerializeField] private bool snapToLocalPlayerOnStart = true;
+        [SerializeField] private bool snapToLocalPlayerOnStart = false;
         [SerializeField] private int localPlayerSnapFrameAttempts = 30;
+
+        private const float PanSnapThreshold = 0.001f;
+        private const float ZoomSnapThreshold = 0.001f;
 
         private float _targetZoom;
         private Vector3 _targetPanPosition;
         private bool _isPanning;
+        private bool _panNeedsSmoothing;
         private int _activePointerId = int.MinValue;
         private Vector2 _lastPointerScreenPosition;
         private bool _pointerStartedOverUi;
@@ -95,6 +99,17 @@ namespace SeekerDungeon.Dungeon
 
         private void Update()
         {
+            if (!IsMouseInsideGameView())
+            {
+                if (_isPanning)
+                {
+                    EndPan();
+                }
+
+                ApplyCameraSmoothing();
+                return;
+            }
+
             HandleMouseWheelZoom();
             var pinching = HandlePinchZoom();
             HandlePan(pinching);
@@ -230,6 +245,7 @@ namespace SeekerDungeon.Dungeon
                     var worldDelta = previousWorld - currentWorld;
                     _targetPanPosition += worldDelta * dragPanSensitivity;
                     _targetPanPosition = ClampPanPosition(_targetPanPosition);
+                    _panNeedsSmoothing = true;
                 }
 
                 _lastPointerScreenPosition = currentScreenPosition;
@@ -243,13 +259,32 @@ namespace SeekerDungeon.Dungeon
 
         private void ApplyCameraSmoothing()
         {
+            // Zoom smoothing always runs (lightweight, no conflict with Cinemachine)
             var currentZoom = GetCurrentZoom();
-            var nextZoom = Mathf.Lerp(currentZoom, _targetZoom, zoomLerpSpeed * Time.unscaledDeltaTime);
-            SetCurrentZoom(nextZoom);
-
-            if (panTarget != null)
+            if (Mathf.Abs(currentZoom - _targetZoom) < ZoomSnapThreshold)
             {
-                _targetPanPosition = ClampPanPosition(_targetPanPosition);
+                SetCurrentZoom(_targetZoom);
+            }
+            else
+            {
+                SetCurrentZoom(Mathf.Lerp(currentZoom, _targetZoom, zoomLerpSpeed * Time.unscaledDeltaTime));
+            }
+
+            // Pan smoothing only runs when something requested it (snap or drag).
+            // Otherwise leave panTarget alone so it doesn't fight Cinemachine.
+            if (panTarget == null || !_panNeedsSmoothing)
+            {
+                return;
+            }
+
+            _targetPanPosition = ClampPanPosition(_targetPanPosition);
+            if (Vector3.SqrMagnitude(panTarget.position - _targetPanPosition) < PanSnapThreshold * PanSnapThreshold)
+            {
+                panTarget.position = _targetPanPosition;
+                _panNeedsSmoothing = false;
+            }
+            else
+            {
                 panTarget.position = Vector3.Lerp(
                     panTarget.position,
                     _targetPanPosition,
@@ -294,6 +329,7 @@ namespace SeekerDungeon.Dungeon
             worldPosition.z = panTarget.position.z;
             _targetPanPosition = ClampPanPosition(worldPosition);
             panTarget.position = _targetPanPosition;
+            _panNeedsSmoothing = false; // already at target, no lerp needed
         }
 
         private static bool TryFindLocalPlayerTransform(out Transform localPlayerTransform)
@@ -436,6 +472,22 @@ namespace SeekerDungeon.Dungeon
             var raycastResults = new List<RaycastResult>();
             EventSystem.current.RaycastAll(pointerData, raycastResults);
             return raycastResults.Count > 0;
+        }
+
+        private static bool IsMouseInsideGameView()
+        {
+#if ENABLE_INPUT_SYSTEM
+            if (Mouse.current == null)
+            {
+                return false;
+            }
+
+            var mousePos = Mouse.current.position.ReadValue();
+#else
+            var mousePos = (Vector2)Input.mousePosition;
+#endif
+            return mousePos.x >= 0f && mousePos.x <= Screen.width &&
+                   mousePos.y >= 0f && mousePos.y <= Screen.height;
         }
 
         private void EndPan()

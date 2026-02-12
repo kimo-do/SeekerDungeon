@@ -1,5 +1,6 @@
 using Cysharp.Threading.Tasks;
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -18,6 +19,7 @@ namespace SeekerDungeon
         [SerializeField] private float maxBlackHoldSeconds = 20f;
 
         private CanvasGroup _fadeCanvasGroup;
+        private TextMeshProUGUI _transitionText;
         private bool _isTransitioning;
         private readonly Dictionary<string, int> _blackScreenHoldsByReason = new();
         private int _blackScreenHoldCount;
@@ -107,6 +109,25 @@ namespace SeekerDungeon
         {
             EnsureFadeOverlay();
             await FadeAsync(0f);
+        }
+
+        public void SetTransitionText(string text)
+        {
+            EnsureFadeOverlay();
+            if (_transitionText != null)
+            {
+                _transitionText.text = text ?? string.Empty;
+                _transitionText.gameObject.SetActive(!string.IsNullOrWhiteSpace(text));
+            }
+        }
+
+        public void ClearTransitionText()
+        {
+            if (_transitionText != null)
+            {
+                _transitionText.text = string.Empty;
+                _transitionText.gameObject.SetActive(false);
+            }
         }
 
         public void HoldBlackScreen(string reason = "unspecified")
@@ -201,6 +222,24 @@ namespace SeekerDungeon
 
             var image = imageObject.AddComponent<Image>();
             image.color = fadeColor;
+
+            // Transition text centered on screen
+            var textObject = new GameObject("TransitionText");
+            textObject.transform.SetParent(canvasObject.transform, false);
+
+            var textTransform = textObject.AddComponent<RectTransform>();
+            textTransform.anchorMin = new Vector2(0.1f, 0.35f);
+            textTransform.anchorMax = new Vector2(0.9f, 0.65f);
+            textTransform.offsetMin = Vector2.zero;
+            textTransform.offsetMax = Vector2.zero;
+
+            _transitionText = textObject.AddComponent<TextMeshProUGUI>();
+            _transitionText.text = string.Empty;
+            _transitionText.fontSize = 28f;
+            _transitionText.color = new Color(0.85f, 0.85f, 0.85f, 1f);
+            _transitionText.alignment = TextAlignmentOptions.Center;
+            _transitionText.fontStyle = FontStyles.Italic;
+            textObject.SetActive(false);
         }
 
         private async UniTask FadeAsync(float targetAlpha)

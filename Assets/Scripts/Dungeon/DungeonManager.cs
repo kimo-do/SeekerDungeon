@@ -31,6 +31,22 @@ namespace SeekerDungeon.Dungeon
         private bool _releasedGameplayDoorsReadyHold;
         private DungeonOccupantVisual _localRoomOccupant;
         private string _localPlacementSignature = string.Empty;
+        private bool _hasSnappedCameraForRoom;
+        private int _lastTransitionTextIndex = -1;
+
+        private static readonly string[] TransitionTexts = new[]
+        {
+            "You venture deeper into the caves...",
+            "The air grows cold as you press on...",
+            "Strange echoes bounce off the walls...",
+            "Your torch flickers in the darkness...",
+            "Dust falls from the ceiling above...",
+            "The ground trembles beneath your feet...",
+            "A distant rumble echoes through the tunnels...",
+            "The shadows seem to shift and whisper...",
+            "You tighten your grip and push forward...",
+            "Something stirs in the darkness ahead..."
+        };
 
         private void Awake()
         {
@@ -85,6 +101,7 @@ namespace SeekerDungeon.Dungeon
             }
 
             EnsureRoomController();
+            _hasSnappedCameraForRoom = false;
 
             await _lgManager.RefreshAllState();
             SyncLocalPlayerVisual();
@@ -123,9 +140,13 @@ namespace SeekerDungeon.Dungeon
             var sceneLoadController = SceneLoadController.GetOrCreate();
             await sceneLoadController.FadeToBlackAsync();
 
+            // Show random flavor text while the screen is black
+            sceneLoadController.SetTransitionText(PickTransitionText());
+
             try
             {
                 _localPlacementSignature = string.Empty;
+                _hasSnappedCameraForRoom = false;
                 _roomController?.PrepareForRoomTransition();
                 await ResolveCurrentRoomCoordinatesAsync();
                 await RefreshCurrentRoomSnapshotAsync();
@@ -137,8 +158,31 @@ namespace SeekerDungeon.Dungeon
             }
             finally
             {
+                sceneLoadController.ClearTransitionText();
                 await sceneLoadController.FadeFromBlackAsync();
             }
+        }
+
+        private string PickTransitionText()
+        {
+            if (TransitionTexts.Length == 0)
+            {
+                return string.Empty;
+            }
+
+            if (TransitionTexts.Length == 1)
+            {
+                return TransitionTexts[0];
+            }
+
+            int index;
+            do
+            {
+                index = UnityEngine.Random.Range(0, TransitionTexts.Length);
+            } while (index == _lastTransitionTextIndex);
+
+            _lastTransitionTextIndex = index;
+            return TransitionTexts[index];
         }
 
         private async UniTask ResolveCurrentRoomCoordinatesAsync()
@@ -337,13 +381,43 @@ namespace SeekerDungeon.Dungeon
                 [RoomDirection.West] = new List<DungeonOccupantVisual>(_doorOccupants[RoomDirection.West])
             };
 
+            var activeJobDirections = ResolveLocalPlayerActiveJobDirections(roomView.X, roomView.Y);
+            var fightingBoss = _localRoomOccupant?.IsFightingBoss ?? false;
+
             return new DungeonRoomSnapshot
             {
                 Room = roomView,
                 DoorOccupants = doorSnapshot,
                 BossOccupants = new List<DungeonOccupantVisual>(_bossOccupants),
-                IdleOccupants = new List<DungeonOccupantVisual>(_idleOccupants)
+                IdleOccupants = new List<DungeonOccupantVisual>(_idleOccupants),
+                LocalPlayerActiveJobDirections = activeJobDirections,
+                LocalPlayerFightingBoss = fightingBoss
             };
+        }
+
+        private HashSet<RoomDirection> ResolveLocalPlayerActiveJobDirections(int roomX, int roomY)
+        {
+            var result = new HashSet<RoomDirection>();
+            var playerState = _lgManager?.CurrentPlayerState;
+            if (playerState?.ActiveJobs == null)
+            {
+                return result;
+            }
+
+            foreach (var job in playerState.ActiveJobs)
+            {
+                if (job == null || job.RoomX != roomX || job.RoomY != roomY)
+                {
+                    continue;
+                }
+
+                if (LGDomainMapper.TryToDirection(job.Direction, out var direction))
+                {
+                    result.Add(direction);
+                }
+            }
+
+            return result;
         }
 
         private void PushSnapshot(DungeonRoomSnapshot snapshot)
@@ -560,9 +634,11 @@ namespace SeekerDungeon.Dungeon
                 localPlayerController.gameObject.SetActive(true);
             }
 
-            if (cameraZoomController != null)
+            // Only snap camera on the first placement after a room transition
+            if (!_hasSnappedCameraForRoom && cameraZoomController != null)
             {
                 cameraZoomController.SnapToWorldPositionInstant(localPlayerController.transform.position);
+                _hasSnappedCameraForRoom = true;
             }
 
             _localPlacementSignature = placementSignature;

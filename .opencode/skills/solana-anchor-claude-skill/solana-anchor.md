@@ -262,6 +262,92 @@ Clock::get()?;
 
 ---
 
+## Gotchas and Hard-Won Lessons
+
+### Lamport Transfers from Program-Owned PDAs
+
+Program-owned PDAs (like a global treasury PDA) **cannot** use `system_program::transfer` CPI
+because the System Program only debits accounts it owns. You **must** use manual lamport
+manipulation instead:
+
+```rust
+let from_info = ctx.accounts.my_pda.to_account_info();
+let to_info = ctx.accounts.destination.to_account_info();
+**from_info.try_borrow_mut_lamports()? = from_info
+    .lamports()
+    .checked_sub(amount)
+    .ok_or(MyError::InsufficientFunds)?;
+**to_info.try_borrow_mut_lamports()? = to_info
+    .lamports()
+    .checked_add(amount)
+    .ok_or(MyError::Overflow)?;
+```
+
+Using `system_program::transfer` on a program-owned PDA produces runtime error
+`"invalid program argument"`.
+
+### Manual Lamport Manipulation + CPI Ordering
+
+When an instruction does **both** a CPI (e.g. SPL token transfer) and manual lamport
+manipulation, do the manual lamport manipulation **after** all CPIs. Doing it before can
+cause `"sum of account balances before and after instruction do not match"` because the
+Solana runtime snapshots balances around CPIs and the manually modified values can confuse
+its tracking.
+
+Correct order:
+1. All CPIs (token transfers, etc.)
+2. Manual lamport manipulation (rent reimbursement, etc.)
+3. Emit events
+
+### `INIT_SPACE` vs `std::mem::size_of` for Rent Calculation
+
+When calculating rent for reimbursement of `init_if_needed` accounts, always use the same
+formula as the `space` attribute:
+
+```rust
+let space = 8 + MyAccount::INIT_SPACE;  // 8 = discriminator
+let rent = Rent::get()?.minimum_balance(space);
+```
+
+**Never** use `std::mem::size_of::<MyAccount>()` for this, as Rust struct layout can differ
+from the serialized Anchor account layout (`INIT_SPACE`). A mismatch means you reimburse a
+different amount than what `init_if_needed` actually charged, causing balance errors.
+
+### `Box<Account<'info, T>>` for Large Instructions
+
+Instructions with many accounts can overflow the BPF stack (4 KB limit). Wrap large account
+types in `Box<>` to move them to the heap:
+
+```rust
+#[account(mut, seeds = [...], bump = global.bump)]
+pub global: Box<Account<'info, GlobalAccount>>,
+```
+
+All `to_account_info()`, constraint checks, and `exit()` serialization work the same as
+with unboxed accounts. This does NOT affect lamport manipulation or CPI behavior.
+
+### WSL Build Scripts and Windows Line Endings
+
+Shell scripts edited on Windows get `\r\n` line endings which break in WSL/bash. Always
+run through sed when invoking from Windows:
+
+```bash
+wsl -d Ubuntu -- bash -c "sed 's/\r$//' /path/to/script.sh | bash"
+```
+
+### Treasury-Funded Room Creation Pattern
+
+When the game treasury (a program PDA) reimburses players for `init_if_needed` account
+creation rent:
+
+1. The `authority` (player/session wallet) is the `payer` in `init_if_needed`
+2. After the account is created, check if it was newly initialized (e.g. `season_seed == 0`)
+3. If new, manually transfer the rent cost from the treasury PDA back to the authority
+4. This requires the treasury PDA to be pre-funded with enough SOL
+5. Do this transfer **after** all CPIs in the instruction
+
+---
+
 ## Git Commits
 
 - Do not add AI attribution (e.g. Co-Authored-By)

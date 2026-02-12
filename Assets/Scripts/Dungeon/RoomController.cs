@@ -41,10 +41,14 @@ namespace SeekerDungeon.Dungeon
 
         private readonly Dictionary<RoomDirection, DoorOccupantLayer2D> _doorLayerByDirection = new();
         private readonly Dictionary<RoomDirection, DoorVisualController> _doorVisualByDirection = new();
+        private readonly Dictionary<RoomDirection, VisualInteractable> _doorInteractableByDirection = new();
         private readonly Dictionary<RoomDirection, DoorTimerView> _doorTimers = new();
+        private VisualInteractable _centerVisualInteractable;
+        private Transform _timerRoot;
         private bool _hasBackgroundRoomKey;
         private int _backgroundRoomX;
         private int _backgroundRoomY;
+        private bool _hasAppliedFirstSnapshot;
 
         private void Awake()
         {
@@ -86,6 +90,14 @@ namespace SeekerDungeon.Dungeon
 
             ApplyCenterState(snapshot.Room, snapshot.BossOccupants);
             SetBossOccupants(snapshot.BossOccupants);
+            UpdateInteractableStates(snapshot);
+
+            // After the first snapshot for a room, suppress pop-in on subsequent updates
+            if (!_hasAppliedFirstSnapshot)
+            {
+                _hasAppliedFirstSnapshot = true;
+                SetAllLayersSuppressSpawnPop(true);
+            }
         }
 
         public void ApplyDoorState(RoomDirection direction, DoorJobView door)
@@ -167,6 +179,27 @@ namespace SeekerDungeon.Dungeon
             SetIdleOccupants(Array.Empty<DungeonOccupantVisual>());
             SetBossOccupants(Array.Empty<DungeonOccupantVisual>());
             SetAllDoorTimersVisible(false);
+            SetAllInteractablesOff();
+
+            // Allow pop-in animation on the next room's first snapshot
+            _hasAppliedFirstSnapshot = false;
+            SetAllLayersSuppressSpawnPop(false);
+        }
+
+        private void SetAllInteractablesOff()
+        {
+            foreach (var vi in _doorInteractableByDirection.Values)
+            {
+                if (vi != null)
+                {
+                    vi.Interactable = false;
+                }
+            }
+
+            if (_centerVisualInteractable != null)
+            {
+                _centerVisualInteractable.Interactable = false;
+            }
         }
 
         public void SetIdleOccupants(IReadOnlyList<DungeonOccupantVisual> occupants)
@@ -245,6 +278,7 @@ namespace SeekerDungeon.Dungeon
         {
             _doorLayerByDirection.Clear();
             _doorVisualByDirection.Clear();
+            _doorInteractableByDirection.Clear();
 
             foreach (var binding in doorLayers)
             {
@@ -255,6 +289,21 @@ namespace SeekerDungeon.Dungeon
 
                 _doorLayerByDirection[binding.Direction] = binding.OccupantLayer;
                 _doorVisualByDirection[binding.Direction] = binding.VisualController;
+
+                // Find VisualInteractable on the same door hierarchy
+                if (binding.VisualController != null)
+                {
+                    var interactable = binding.VisualController.GetComponentInChildren<VisualInteractable>(true);
+                    if (interactable == null)
+                    {
+                        interactable = binding.VisualController.GetComponentInParent<VisualInteractable>();
+                    }
+
+                    if (interactable != null)
+                    {
+                        _doorInteractableByDirection[binding.Direction] = interactable;
+                    }
+                }
 
                 if (binding.OccupantLayer != null)
                 {
@@ -326,6 +375,32 @@ namespace SeekerDungeon.Dungeon
             occupantVisualSpawnRoot = rootObject.transform;
         }
 
+        private void Update()
+        {
+            var deltaTime = Time.unscaledDeltaTime;
+            foreach (var timerView in _doorTimers.Values)
+            {
+                if (timerView == null || timerView.Root == null || !timerView.Root.activeSelf)
+                {
+                    continue;
+                }
+
+                // Keep position synced with the door anchor (timer is not parented to it)
+                if (timerView.Anchor != null)
+                {
+                    timerView.Root.transform.position = timerView.Anchor.position + timerWorldOffset;
+                }
+
+                if (timerView.Label == null || timerView.SecondsRemaining <= 0f)
+                {
+                    continue;
+                }
+
+                timerView.SecondsRemaining = Mathf.Max(0f, timerView.SecondsRemaining - deltaTime);
+                timerView.Label.text = FormatRemainingTime(timerView.SecondsRemaining);
+            }
+        }
+
         private void UpdateDoorTimer(RoomDirection direction, DoorJobView door)
         {
             if (door == null || timerCanvasPrefab == null)
@@ -347,6 +422,7 @@ namespace SeekerDungeon.Dungeon
             timerView.Root.SetActive(isActiveJob);
             if (!isActiveJob || timerView.Label == null)
             {
+                timerView.SecondsRemaining = 0f;
                 return;
             }
 
@@ -355,6 +431,7 @@ namespace SeekerDungeon.Dungeon
                 ? 0f
                 : (remainingProgress / (float)door.HelperCount) * Mathf.Max(0.01f, slotSecondsEstimate);
 
+            timerView.SecondsRemaining = secondsRemaining;
             timerView.Label.text = FormatRemainingTime(secondsRemaining);
         }
 
@@ -362,6 +439,8 @@ namespace SeekerDungeon.Dungeon
         {
             if (_doorTimers.TryGetValue(direction, out var existing) && existing?.Root != null)
             {
+                // Re-resolve anchor in case the door layout changed
+                existing.Anchor = ResolveDoorTimerAnchor(direction);
                 return existing;
             }
 
@@ -376,15 +455,31 @@ namespace SeekerDungeon.Dungeon
                 return null;
             }
 
-            var root = Instantiate(timerCanvasPrefab, anchor.position + timerWorldOffset, Quaternion.identity, anchor);
+            EnsureTimerRoot();
+
+            var root = Instantiate(timerCanvasPrefab, anchor.position + timerWorldOffset, Quaternion.identity, _timerRoot);
             root.name = $"{timerCanvasPrefab.name}_{direction}";
-            root.transform.localRotation = Quaternion.identity;
 
             var label = root.GetComponentInChildren<TMP_Text>(true);
-            var timerView = new DoorTimerView(root, label);
+            var timerView = new DoorTimerView(root, label, anchor);
             _doorTimers[direction] = timerView;
             root.SetActive(false);
             return timerView;
+        }
+
+        private void EnsureTimerRoot()
+        {
+            if (_timerRoot != null)
+            {
+                return;
+            }
+
+            var rootObject = new GameObject("DoorTimerLabels");
+            rootObject.transform.SetParent(null, false);
+            rootObject.transform.position = Vector3.zero;
+            rootObject.transform.rotation = Quaternion.identity;
+            rootObject.transform.localScale = Vector3.one;
+            _timerRoot = rootObject.transform;
         }
 
         private Transform ResolveDoorTimerAnchor(RoomDirection direction)
@@ -400,6 +495,94 @@ namespace SeekerDungeon.Dungeon
             }
 
             return transform;
+        }
+
+        private void SetAllLayersSuppressSpawnPop(bool suppress)
+        {
+            foreach (var layer in _doorLayerByDirection.Values)
+            {
+                if (layer != null)
+                {
+                    layer.SetSuppressSpawnPop(suppress);
+                }
+            }
+
+            if (idleOccupantLayer != null)
+            {
+                idleOccupantLayer.SetSuppressSpawnPop(suppress);
+            }
+        }
+
+        private void UpdateInteractableStates(DungeonRoomSnapshot snapshot)
+        {
+            var room = snapshot.Room;
+            var activeJobDirs = snapshot.LocalPlayerActiveJobDirections;
+
+            // --- Doors / rubble ---
+            if (room.Doors != null)
+            {
+                foreach (var kvp in room.Doors)
+                {
+                    if (!_doorInteractableByDirection.TryGetValue(kvp.Key, out var vi) || vi == null)
+                    {
+                        continue;
+                    }
+
+                    var door = kvp.Value;
+                    var localPlayerWorking = activeJobDirs != null && activeJobDirs.Contains(kvp.Key);
+
+                    // Interactable when the player can perform an onchain action right now:
+                    //  - Open door: can walk through
+                    //  - Rubble, not yet working on it: can start clearing
+                    //  - Anything else (solid wall, already working, completed): not interactable
+                    var canInteract = door.IsOpen ||
+                                     (door.IsRubble && !door.IsCompleted && !localPlayerWorking);
+                    vi.Interactable = canInteract;
+                }
+            }
+
+            // --- Center (chest / boss) ---
+            ResolveCenterVisualInteractable();
+            if (_centerVisualInteractable != null)
+            {
+                var canInteractCenter = false;
+
+                if (room.HasChest() && !room.HasLocalPlayerLooted)
+                {
+                    canInteractCenter = true;
+                }
+
+                if (room.HasBoss() && room.TryGetMonster(out var monster) && !monster.IsDead && !snapshot.LocalPlayerFightingBoss)
+                {
+                    canInteractCenter = true;
+                }
+
+                _centerVisualInteractable.Interactable = canInteractCenter;
+            }
+        }
+
+        private void ResolveCenterVisualInteractable()
+        {
+            if (_centerVisualInteractable != null)
+            {
+                return;
+            }
+
+            // Check chest visual root first, then boss, then the center interactable itself
+            if (centerChestVisualRoot != null)
+            {
+                _centerVisualInteractable = centerChestVisualRoot.GetComponentInChildren<VisualInteractable>(true);
+            }
+
+            if (_centerVisualInteractable == null && centerBossVisualRoot != null)
+            {
+                _centerVisualInteractable = centerBossVisualRoot.GetComponentInChildren<VisualInteractable>(true);
+            }
+
+            if (_centerVisualInteractable == null && centerInteractable != null)
+            {
+                _centerVisualInteractable = centerInteractable.GetComponentInChildren<VisualInteractable>(true);
+            }
         }
 
         private void SetAllDoorTimersVisible(bool isVisible)
@@ -426,14 +609,17 @@ namespace SeekerDungeon.Dungeon
 
         private sealed class DoorTimerView
         {
-            public DoorTimerView(GameObject root, TMP_Text label)
+            public DoorTimerView(GameObject root, TMP_Text label, Transform anchor)
             {
                 Root = root;
                 Label = label;
+                Anchor = anchor;
             }
 
             public GameObject Root { get; }
             public TMP_Text Label { get; }
+            public Transform Anchor { get; set; }
+            public float SecondsRemaining { get; set; }
         }
     }
 }

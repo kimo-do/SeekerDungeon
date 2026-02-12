@@ -25,10 +25,14 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private ulong readyBufferSlots = 1UL;
         [SerializeField] private float txAttemptCooldownSeconds = 2f;
 
+        [SerializeField] private float completeJobFailCooldownSeconds = 30f;
+        [SerializeField] private int maxCompleteJobRetries = 3;
+
         [Header("Debug")]
         [SerializeField] private bool logDebugMessages = true;
 
         private readonly Dictionary<byte, float> _nextAttemptAtByDirection = new();
+        private readonly Dictionary<byte, int> _completeJobFailCount = new();
         private CancellationTokenSource _loopCancellationTokenSource;
         private float _nextPlayerRefreshAt;
 
@@ -136,7 +140,8 @@ namespace SeekerDungeon.Dungeon
                 return idlePollSeconds;
             }
 
-            var room = await lgManager.FetchRoomState(player.CurrentRoomX, player.CurrentRoomY);
+            // fireEvent: false avoids triggering snapshot rebuilds / pop-in / camera snaps
+            var room = await lgManager.FetchRoomState(player.CurrentRoomX, player.CurrentRoomY, fireEvent: false);
             if (room == null)
             {
                 return idlePollSeconds;
@@ -241,6 +246,14 @@ namespace SeekerDungeon.Dungeon
             var directionName = LGConfig.GetDirectionName(direction);
             Log($"Auto-complete candidate: {directionName}");
 
+            // Check if we've exceeded max retries for CompleteJob on this direction
+            var failCount = _completeJobFailCount.TryGetValue(direction, out var fc) ? fc : 0;
+            if (failCount >= maxCompleteJobRetries)
+            {
+                Log($"CompleteJob for {directionName} has failed {failCount} times, giving up until room changes");
+                return;
+            }
+
             await lgManager.TickJob(direction);
 
             var room = lgManager.CurrentRoomState;
@@ -261,6 +274,8 @@ namespace SeekerDungeon.Dungeon
             var required = directionIndex < room.BaseSlots.Length ? room.BaseSlots[directionIndex] : 0UL;
             if (wallState != LGConfig.WALL_RUBBLE)
             {
+                // Wall is no longer rubble, reset fail count
+                _completeJobFailCount.Remove(direction);
                 return;
             }
 
@@ -275,7 +290,19 @@ namespace SeekerDungeon.Dungeon
                 return;
             }
 
-            await lgManager.CompleteJob(direction);
+            try
+            {
+                await lgManager.CompleteJob(direction);
+                // Success: reset fail count
+                _completeJobFailCount.Remove(direction);
+            }
+            catch (Exception ex)
+            {
+                failCount = (_completeJobFailCount.TryGetValue(direction, out var c) ? c : 0) + 1;
+                _completeJobFailCount[direction] = failCount;
+                SetNextAttemptAt(direction, Time.unscaledTime + completeJobFailCooldownSeconds);
+                Log($"CompleteJob failed for {directionName} (attempt {failCount}/{maxCompleteJobRetries}): {ex.Message}");
+            }
         }
 
         private float GetNextAttemptAt(byte direction)

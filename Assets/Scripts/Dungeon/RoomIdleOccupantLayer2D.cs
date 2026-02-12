@@ -21,10 +21,16 @@ namespace SeekerDungeon.Dungeon
         private readonly List<string> _releaseBuffer = new();
         private readonly HashSet<string> _usedKeys = new(StringComparer.Ordinal);
         private readonly List<Vector2> _reservedPositions = new();
+        private bool _suppressSpawnPop;
 
         public void SetVisualSpawnRoot(Transform spawnRoot)
         {
             visualSpawnRoot = spawnRoot;
+        }
+
+        public void SetSuppressSpawnPop(bool suppress)
+        {
+            _suppressSpawnPop = suppress;
         }
 
         public bool TryGetLocalPlayerSpawnPosition(out Vector3 worldPosition)
@@ -114,8 +120,11 @@ namespace SeekerDungeon.Dungeon
                         Quaternion.identity);
                     _reservedPositions.Add(spawnPosition);
 
-                    var spawnDelay = newVisualIndex * spawnStaggerSeconds;
-                    visual.PlaySpawnPop(spawnPopDuration, spawnPopStartScaleMultiplier, spawnDelay);
+                    if (!_suppressSpawnPop)
+                    {
+                        var spawnDelay = newVisualIndex * spawnStaggerSeconds;
+                        visual.PlaySpawnPop(spawnPopDuration, spawnPopStartScaleMultiplier, spawnDelay);
+                    }
                     newVisualIndex += 1;
                 }
 

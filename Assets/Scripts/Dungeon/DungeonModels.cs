@@ -21,6 +21,15 @@ namespace SeekerDungeon.Dungeon
         public IReadOnlyDictionary<RoomDirection, IReadOnlyList<DungeonOccupantVisual>> DoorOccupants { get; init; }
         public IReadOnlyList<DungeonOccupantVisual> BossOccupants { get; init; }
         public IReadOnlyList<DungeonOccupantVisual> IdleOccupants { get; init; }
+
+        /// <summary>
+        /// Directions where the local player currently has an active job.
+        /// Used to toggle VisualInteractable highlight off on doors the player is already working.
+        /// </summary>
+        public HashSet<RoomDirection> LocalPlayerActiveJobDirections { get; init; }
+
+        /// <summary>Whether the local player is currently fighting the boss in this room.</summary>
+        public bool LocalPlayerFightingBoss { get; init; }
     }
 
     [Serializable]

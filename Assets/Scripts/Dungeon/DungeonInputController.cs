@@ -229,6 +229,12 @@ namespace SeekerDungeon.Dungeon
                                 localPlayerJobMover.MoveTo(door.InteractWorldPosition);
                             }
                         }
+
+                        // Immediately refresh room state so the timer appears without waiting for subscription
+                        if (dungeonManager != null)
+                        {
+                            await dungeonManager.RefreshCurrentRoomSnapshotAsync();
+                        }
                     }
                     else
                     {

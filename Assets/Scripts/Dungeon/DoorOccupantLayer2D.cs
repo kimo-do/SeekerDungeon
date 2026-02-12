@@ -36,10 +36,16 @@ namespace SeekerDungeon.Dungeon
         private readonly Dictionary<string, DoorOccupantVisual2D> _activeByOccupantKey = new();
         private readonly Queue<DoorOccupantVisual2D> _pooledVisuals = new();
         private readonly List<string> _releaseBuffer = new();
+        private bool _suppressSpawnPop;
 
         public void SetVisualSpawnRoot(Transform spawnRoot)
         {
             visualSpawnRoot = spawnRoot;
+        }
+
+        public void SetSuppressSpawnPop(bool suppress)
+        {
+            _suppressSpawnPop = suppress;
         }
 
         public bool TryGetLocalPlayerStandPosition(out Vector3 worldPosition)
@@ -120,7 +126,7 @@ namespace SeekerDungeon.Dungeon
                 visualTransform.SetPositionAndRotation(slot.Anchor.position, Quaternion.identity);
                 visual.Bind(occupant, index, slot.FacingDirection);
 
-                if (isNewVisual)
+                if (isNewVisual && !_suppressSpawnPop)
                 {
                     var spawnDelay = newVisualIndex * spawnStaggerSeconds;
                     visual.PlaySpawnPop(spawnPopDuration, spawnPopStartScaleMultiplier, spawnDelay);

@@ -60,6 +60,30 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 4907647853301058035, guid: b36a00540318b094bab796ed809c1b6f, type: 3}
+      propertyPath: m_Color.b
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4907647853301058035, guid: b36a00540318b094bab796ed809c1b6f, type: 3}
+      propertyPath: m_Color.g
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4907647853301058035, guid: b36a00540318b094bab796ed809c1b6f, type: 3}
+      propertyPath: m_Color.r
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7024149248588985783, guid: b36a00540318b094bab796ed809c1b6f, type: 3}
+      propertyPath: m_Color.b
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7024149248588985783, guid: b36a00540318b094bab796ed809c1b6f, type: 3}
+      propertyPath: m_Color.g
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7024149248588985783, guid: b36a00540318b094bab796ed809c1b6f, type: 3}
+      propertyPath: m_Color.r
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 8783138111418607750, guid: b36a00540318b094bab796ed809c1b6f, type: 3}
       propertyPath: m_Name
       value: door north Variant

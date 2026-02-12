@@ -23,13 +23,13 @@ pub struct CompleteJob<'info> {
         seeds = [GlobalAccount::SEED_PREFIX],
         bump = global.bump
     )]
-    pub global: Account<'info, GlobalAccount>,
+    pub global: Box<Account<'info, GlobalAccount>>,
 
     #[account(
         seeds = [PlayerAccount::SEED_PREFIX, player.key().as_ref()],
         bump = player_account.bump
     )]
-    pub player_account: Account<'info, PlayerAccount>,
+    pub player_account: Box<Account<'info, PlayerAccount>>,
 
     /// Room with the completed job
     #[account(
@@ -42,7 +42,7 @@ pub struct CompleteJob<'info> {
         ],
         bump
     )]
-    pub room: Account<'info, RoomAccount>,
+    pub room: Box<Account<'info, RoomAccount>>,
 
     /// Helper stake of the completer (authorization that caller is participating)
     #[account(
@@ -69,7 +69,7 @@ pub struct CompleteJob<'info> {
         ],
         bump
     )]
-    pub adjacent_room: Account<'info, RoomAccount>,
+    pub adjacent_room: Box<Account<'info, RoomAccount>>,
 
     /// Escrow holding staked SKR (and bonus after completion)
     #[account(
@@ -77,14 +77,14 @@ pub struct CompleteJob<'info> {
         seeds = [b"escrow", room.key().as_ref(), &[direction]],
         bump
     )]
-    pub escrow: Account<'info, TokenAccount>,
+    pub escrow: Box<Account<'info, TokenAccount>>,
 
     /// Prize pool for bonus rewards
     #[account(
         mut,
         constraint = prize_pool.key() == global.prize_pool
     )]
-    pub prize_pool: Account<'info, TokenAccount>,
+    pub prize_pool: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,
@@ -229,22 +229,7 @@ pub fn handler(ctx: Context<CompleteJob>, direction: u8) -> Result<()> {
         );
     }
 
-    // Reimburse authority for adjacent room creation rent from treasury
-    if is_new_adjacent_room {
-        let room_space = 8 + std::mem::size_of::<RoomAccount>();
-        let rent_cost = Rent::get()?.minimum_balance(room_space);
-        let global_info = ctx.accounts.global.to_account_info();
-        let authority_info = ctx.accounts.authority.to_account_info();
-        **global_info.try_borrow_mut_lamports()? = global_info
-            .lamports()
-            .checked_sub(rent_cost)
-            .ok_or(ChainDepthError::TreasuryInsufficientFunds)?;
-        **authority_info.try_borrow_mut_lamports()? = authority_info
-            .lamports()
-            .checked_add(rent_cost)
-            .ok_or(ChainDepthError::Overflow)?;
-    }
-
+    // --- Token bonus transfer (CPI) BEFORE lamport manipulation ---
     let new_depth = calculate_depth(ctx.accounts.adjacent_room.x, ctx.accounts.adjacent_room.y);
     {
         let global = &mut ctx.accounts.global;
@@ -274,6 +259,38 @@ pub fn handler(ctx: Context<CompleteJob>, direction: u8) -> Result<()> {
             global_signer,
         );
         token::transfer(bonus_ctx, bonus_total)?;
+    }
+
+    // --- Reimburse authority for adjacent room rent (manual lamport transfer) ---
+    // Done AFTER all CPIs to avoid interference with runtime balance tracking.
+    if is_new_adjacent_room {
+        let room_space = 8 + RoomAccount::INIT_SPACE;
+        let rent_cost = Rent::get()?.minimum_balance(room_space);
+
+        let global_info = ctx.accounts.global.to_account_info();
+        let authority_info = ctx.accounts.authority.to_account_info();
+
+        msg!(
+            "reimburse: rent_cost={} global_before={} auth_before={}",
+            rent_cost,
+            global_info.lamports(),
+            authority_info.lamports()
+        );
+
+        **global_info.try_borrow_mut_lamports()? = global_info
+            .lamports()
+            .checked_sub(rent_cost)
+            .ok_or(ChainDepthError::TreasuryInsufficientFunds)?;
+        **authority_info.try_borrow_mut_lamports()? = authority_info
+            .lamports()
+            .checked_add(rent_cost)
+            .ok_or(ChainDepthError::Overflow)?;
+
+        msg!(
+            "reimburse: global_after={} auth_after={}",
+            global_info.lamports(),
+            authority_info.lamports()
+        );
     }
 
     let bonus_per_helper = bonus_total / helper_count;

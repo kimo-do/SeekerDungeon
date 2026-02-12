@@ -41,6 +41,7 @@ GameObject:
   m_Component:
   - component: {fileID: 8108187839386721665}
   - component: {fileID: 2354948009085777646}
+  - component: {fileID: 4239647304060119240}
   m_Layer: 0
   m_Name: pile_of_rubble_0
   m_TagString: Untagged
@@ -89,7 +90,7 @@ SpriteRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: a97c105638bdf8b4a8650670310a4cd3, type: 2}
+  - {fileID: 2100000, guid: 0d2475f0f2cb4554e9213596b2dc9a53, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -113,7 +114,7 @@ SpriteRenderer:
   m_SortingOrder: 3
   m_MaskInteraction: 0
   m_Sprite: {fileID: 3813719652652902520, guid: 79bc55d437f88e2498d50c54fabeb312, type: 3}
-  m_Color: {r: 0.5647059, g: 0.5647059, b: 0.5647059, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -122,6 +123,22 @@ SpriteRenderer:
   m_SpriteTileMode: 0
   m_WasSpriteAssigned: 1
   m_SpriteSortPoint: 0
+--- !u!114 &4239647304060119240
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2100925208778463271}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 482c7600b08aa5244be5eb0d388edea3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Dungeon.VisualInteractable
+  minFade: 0
+  maxFade: 0.3
+  speed: 2
+  interactable: 0
 --- !u!1 &2992463744400123949
 GameObject:
   m_ObjectHideFlags: 0
@@ -291,6 +308,7 @@ GameObject:
   - component: {fileID: 3712199569117451898}
   - component: {fileID: 7024149248588985783}
   - component: {fileID: 8104235527574302912}
+  - component: {fileID: 600749607180434880}
   m_Layer: 6
   m_Name: Open
   m_TagString: Untagged
@@ -339,7 +357,7 @@ SpriteRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: a97c105638bdf8b4a8650670310a4cd3, type: 2}
+  - {fileID: 2100000, guid: 0d2475f0f2cb4554e9213596b2dc9a53, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -363,7 +381,7 @@ SpriteRenderer:
   m_SortingOrder: 1
   m_MaskInteraction: 0
   m_Sprite: {fileID: -57011214009805528, guid: b900182b35e2eb943a32eb0173e711f6, type: 3}
-  m_Color: {r: 0.5660378, g: 0.5660378, b: 0.5660378, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -418,15 +436,31 @@ PolygonCollider2D:
   m_AutoTiling: 0
   m_Points:
     m_Paths:
-    - - {x: -0.06, y: 0.099999994}
-      - {x: -0.099999994, y: 0.06}
-      - {x: -0.099999994, y: -0.06}
-      - {x: -0.06, y: -0.099999994}
-      - {x: 0.06, y: -0.099999994}
-      - {x: 0.099999994, y: -0.06}
-      - {x: 0.099999994, y: 0.06}
-      - {x: 0.06, y: 0.099999994}
+    - - {x: -0.20019126, y: 0.14248204}
+      - {x: -0.20620546, y: 0.05787578}
+      - {x: -0.21682602, y: -0.057876}
+      - {x: -0.22568054, y: -0.121241204}
+      - {x: 0.22143234, y: -0.12973738}
+      - {x: 0.18708836, y: 0.12692171}
+      - {x: 0.08300707, y: 0.13221976}
+      - {x: -0.105680555, y: 0.12973744}
   m_UseDelaunayMesh: 1
+--- !u!114 &600749607180434880
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5819057181823761226}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 482c7600b08aa5244be5eb0d388edea3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Dungeon.VisualInteractable
+  minFade: 0
+  maxFade: 0.3
+  speed: 2
+  interactable: 0
 --- !u!1 &6074303631626626339
 GameObject:
   m_ObjectHideFlags: 0
@@ -689,7 +723,7 @@ SpriteRenderer:
   m_SortingOrder: 2
   m_MaskInteraction: 0
   m_Sprite: {fileID: -57011214009805528, guid: b900182b35e2eb943a32eb0173e711f6, type: 3}
-  m_Color: {r: 0.5647059, g: 0.5647059, b: 0.5647059, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0

@@ -260,9 +260,9 @@ pub fn handler(ctx: Context<MovePlayer>, new_x: i8, new_y: i8) -> Result<()> {
         ctx.accounts.global.depth = room_depth;
     }
 
-    // Reimburse authority for room creation rent from treasury (global PDA)
+    // Reimburse authority for room creation rent from treasury (manual lamport transfer)
     if is_new_room {
-        let room_space = 8 + std::mem::size_of::<RoomAccount>();
+        let room_space = 8 + RoomAccount::INIT_SPACE;
         let rent_cost = Rent::get()?.minimum_balance(room_space);
         let global_info = ctx.accounts.global.to_account_info();
         let authority_info = ctx.accounts.authority.to_account_info();

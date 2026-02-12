@@ -503,9 +503,11 @@ namespace SeekerDungeon.Solana
         }
 
         /// <summary>
-        /// Fetch room state at coordinates using generated client
+        /// Fetch room state at coordinates using generated client.
+        /// Set fireEvent to false when polling silently (e.g. auto-completer) to
+        /// avoid triggering snapshot rebuilds that cause pop-in / camera snaps.
         /// </summary>
-        public async UniTask<RoomAccount> FetchRoomState(int x, int y)
+        public async UniTask<RoomAccount> FetchRoomState(int x, int y, bool fireEvent = true)
         {
             if (CurrentGlobalState == null)
             {
@@ -544,7 +546,10 @@ namespace SeekerDungeon.Solana
 
                 CurrentRoomState = result.ParsedResult;
                 Log($"Room State: Walls=[{string.Join(",", CurrentRoomState.Walls)}], HasChest={CurrentRoomState.HasChest}");
-                OnRoomStateUpdated?.Invoke(CurrentRoomState);
+                if (fireEvent)
+                {
+                    OnRoomStateUpdated?.Invoke(CurrentRoomState);
+                }
 
                 return CurrentRoomState;
             }
