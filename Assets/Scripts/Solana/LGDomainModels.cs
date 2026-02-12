@@ -118,6 +118,7 @@ namespace SeekerDungeon.Solana
         public uint HelperCount { get; init; }
         public ulong Progress { get; init; }
         public ulong RequiredProgress { get; init; }
+        public ulong StartSlot { get; init; }
         public bool IsCompleted { get; init; }
         public bool IsOpen => WallState == RoomWallState.Open;
         public bool IsRubble => WallState == RoomWallState.Rubble;
@@ -437,6 +438,7 @@ namespace SeekerDungeon.Solana
             var progress = room.Progress ?? Array.Empty<ulong>();
             var required = room.BaseSlots ?? Array.Empty<ulong>();
             var completed = room.JobCompleted ?? Array.Empty<bool>();
+            var startSlots = room.StartSlot ?? Array.Empty<ulong>();
 
             return new DoorJobView
             {
@@ -447,6 +449,7 @@ namespace SeekerDungeon.Solana
                 HelperCount = directionIndex < helperCounts.Length ? helperCounts[directionIndex] : 0,
                 Progress = directionIndex < progress.Length ? progress[directionIndex] : 0,
                 RequiredProgress = directionIndex < required.Length ? required[directionIndex] : 0,
+                StartSlot = directionIndex < startSlots.Length ? startSlots[directionIndex] : 0,
                 IsCompleted = directionIndex < completed.Length && completed[directionIndex]
             };
         }

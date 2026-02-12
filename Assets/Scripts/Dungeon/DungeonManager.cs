@@ -131,8 +131,39 @@ namespace SeekerDungeon.Dungeon
             // Check loot receipt PDA to determine if local player already looted
             roomView.HasLocalPlayerLooted = await _lgManager.CheckHasLocalPlayerLooted();
 
+            // Fetch current slot for accurate timer calculation
+            var currentSlot = await FetchCurrentSlotAsync();
+            if (_roomController != null && currentSlot > 0)
+            {
+                _roomController.SetCurrentSlot(currentSlot);
+            }
+
             var occupants = await _lgManager.FetchRoomOccupants(_currentRoomX, _currentRoomY);
             ApplySnapshot(roomView, occupants);
+        }
+
+        private async UniTask<ulong> FetchCurrentSlotAsync()
+        {
+            var rpc = Web3.Wallet?.ActiveRpcClient;
+            if (rpc == null)
+            {
+                return 0UL;
+            }
+
+            try
+            {
+                var slotResult = await rpc.GetSlotAsync(global::Solana.Unity.Rpc.Types.Commitment.Confirmed);
+                if (slotResult.WasSuccessful && slotResult.Result > 0)
+                {
+                    return slotResult.Result;
+                }
+            }
+            catch (System.Exception ex)
+            {
+                LogError($"Failed to fetch current slot: {ex.Message}");
+            }
+
+            return 0UL;
         }
 
         public async UniTask TransitionToCurrentPlayerRoomAsync()

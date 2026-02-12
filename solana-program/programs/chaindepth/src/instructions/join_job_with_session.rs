@@ -148,7 +148,9 @@ pub fn handler(ctx: Context<JoinJobWithSession>, direction: u8) -> Result<()> {
         .checked_add(RoomAccount::STAKE_AMOUNT)
         .ok_or(ChainDepthError::Overflow)?;
 
+    msg!("JoinJob: adding job for player, current jobs={}", player_account.active_jobs.len());
     player_account.add_job(room.x, room.y, direction)?;
+    msg!("JoinJob: after add_job, jobs={}", player_account.active_jobs.len());
 
     let (expected_room_presence, _) = Pubkey::find_program_address(
         &[

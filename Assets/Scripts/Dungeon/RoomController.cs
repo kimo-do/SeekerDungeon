@@ -49,6 +49,7 @@ namespace SeekerDungeon.Dungeon
         private int _backgroundRoomX;
         private int _backgroundRoomY;
         private bool _hasAppliedFirstSnapshot;
+        private ulong _lastKnownSlot;
 
         private void Awake()
         {
@@ -97,6 +98,9 @@ namespace SeekerDungeon.Dungeon
             {
                 _hasAppliedFirstSnapshot = true;
                 SetAllLayersSuppressSpawnPop(true);
+
+                // Re-resolve interactable renderers now that door visuals are in the correct state
+                RefreshAllInteractableRenderers();
             }
         }
 
@@ -199,6 +203,20 @@ namespace SeekerDungeon.Dungeon
             if (_centerVisualInteractable != null)
             {
                 _centerVisualInteractable.Interactable = false;
+            }
+
+            // Clear cached center interactable so it gets re-resolved for the next room
+            _centerVisualInteractable = null;
+        }
+
+        private void RefreshAllInteractableRenderers()
+        {
+            foreach (var vi in _doorInteractableByDirection.Values)
+            {
+                if (vi != null)
+                {
+                    vi.Refresh();
+                }
             }
         }
 
@@ -403,6 +421,14 @@ namespace SeekerDungeon.Dungeon
 
         private void UpdateDoorTimer(RoomDirection direction, DoorJobView door)
         {
+            UpdateDoorTimerWithSlot(direction, door, _lastKnownSlot);
+        }
+
+        /// <summary>
+        /// Update the timer using a specific slot value for accurate time calculation.
+        /// </summary>
+        public void UpdateDoorTimerWithSlot(RoomDirection direction, DoorJobView door, ulong currentSlot)
+        {
             if (door == null || timerCanvasPrefab == null)
             {
                 return;
@@ -411,7 +437,8 @@ namespace SeekerDungeon.Dungeon
             var isActiveJob = door.WallState == RoomWallState.Rubble &&
                               !door.IsCompleted &&
                               door.HelperCount > 0 &&
-                              door.RequiredProgress > 0;
+                              door.RequiredProgress > 0 &&
+                              door.StartSlot > 0;
 
             var timerView = GetOrCreateDoorTimer(direction);
             if (timerView == null || timerView.Root == null)
@@ -426,13 +453,31 @@ namespace SeekerDungeon.Dungeon
                 return;
             }
 
-            var remainingProgress = door.Progress >= door.RequiredProgress ? 0UL : door.RequiredProgress - door.Progress;
-            var secondsRemaining = door.HelperCount == 0
-                ? 0f
-                : (remainingProgress / (float)door.HelperCount) * Mathf.Max(0.01f, slotSecondsEstimate);
+            // Calculate remaining time based on slots
+            // effectiveProgress = (currentSlot - startSlot) * helperCount
+            // remainingSlots = (requiredProgress - effectiveProgress) / helperCount
+            // remainingSeconds = remainingSlots * slotSecondsEstimate
+            var elapsedSlots = currentSlot > door.StartSlot ? currentSlot - door.StartSlot : 0UL;
+            var effectiveProgress = elapsedSlots * door.HelperCount;
+            var remainingProgress = door.RequiredProgress > effectiveProgress
+                ? door.RequiredProgress - effectiveProgress
+                : 0UL;
+
+            var remainingSlots = door.HelperCount > 0
+                ? (float)remainingProgress / door.HelperCount
+                : 0f;
+            var secondsRemaining = remainingSlots * Mathf.Max(0.01f, slotSecondsEstimate);
 
             timerView.SecondsRemaining = secondsRemaining;
             timerView.Label.text = FormatRemainingTime(secondsRemaining);
+        }
+
+        /// <summary>
+        /// Set the current slot value for timer calculations.
+        /// </summary>
+        public void SetCurrentSlot(ulong slot)
+        {
+            _lastKnownSlot = slot;
         }
 
         private DoorTimerView GetOrCreateDoorTimer(RoomDirection direction)

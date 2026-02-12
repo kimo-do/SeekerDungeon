@@ -31,12 +31,32 @@ namespace SeekerDungeon.Dungeon
             get => interactable;
             set
             {
+                if (interactable == value)
+                {
+                    return;
+                }
+
                 interactable = value;
-                if (!interactable)
+                if (interactable)
+                {
+                    // Re-resolve renderers in case the hierarchy changed (e.g. new room)
+                    ResolveRenderers();
+                }
+                else
                 {
                     SetOutlineFade(0f);
                 }
             }
+        }
+
+        /// <summary>
+        /// Force re-resolve renderers. Call after the visual hierarchy changes
+        /// (e.g. room transition enabling/disabling child objects).
+        /// </summary>
+        public void Refresh()
+        {
+            _resolved = false;
+            ResolveRenderers();
         }
 
         private void OnEnable()

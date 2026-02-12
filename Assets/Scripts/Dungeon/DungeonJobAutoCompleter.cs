@@ -127,19 +127,6 @@ namespace SeekerDungeon.Dungeon
                 return idlePollSeconds;
             }
 
-            var activeJobsInCurrentRoom = (player.ActiveJobs ?? Array.Empty<Chaindepth.Types.ActiveJob>())
-                .Where(job =>
-                    job != null &&
-                    job.RoomX == player.CurrentRoomX &&
-                    job.RoomY == player.CurrentRoomY &&
-                    job.Direction <= LGConfig.DIRECTION_WEST)
-                .ToArray();
-
-            if (activeJobsInCurrentRoom.Length == 0)
-            {
-                return idlePollSeconds;
-            }
-
             // fireEvent: false avoids triggering snapshot rebuilds / pop-in / camera snaps
             var room = await lgManager.FetchRoomState(player.CurrentRoomX, player.CurrentRoomY, fireEvent: false);
             if (room == null)
@@ -147,18 +134,14 @@ namespace SeekerDungeon.Dungeon
                 return idlePollSeconds;
             }
 
-            var currentSlot = await FetchCurrentSlotAsync();
-            var minDelaySeconds = maxRecheckSeconds;
-            var selectedDirection = (byte)255;
-            var selectedRemainingProgress = ulong.MaxValue;
-
-            foreach (var job in activeJobsInCurrentRoom)
+            // ── Find active jobs by checking helper stakes (more reliable than player.ActiveJobs) ──
+            // player.ActiveJobs can be empty due to deserialization/realloc issues, but helper stakes
+            // are the on-chain source of truth.
+            var activeDirections = new List<byte>();
+            for (byte dir = 0; dir <= LGConfig.DIRECTION_WEST; dir++)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var direction = job.Direction;
-                var directionIndex = (int)direction;
-                if (directionIndex < 0 || directionIndex >= room.Walls.Length)
+                var directionIndex = (int)dir;
+                if (directionIndex >= room.Walls.Length)
                 {
                     continue;
                 }
@@ -168,6 +151,36 @@ namespace SeekerDungeon.Dungeon
                 {
                     continue;
                 }
+
+                var helperCount = directionIndex < room.HelperCounts.Length ? room.HelperCounts[directionIndex] : 0U;
+                if (helperCount == 0)
+                {
+                    continue;
+                }
+
+                // Check if this player has a helper stake for this direction
+                var hasStake = await lgManager.HasHelperStakeInCurrentRoom(dir);
+                if (hasStake)
+                {
+                    activeDirections.Add(dir);
+                }
+            }
+
+            if (activeDirections.Count == 0)
+            {
+                return idlePollSeconds;
+            }
+
+            var currentSlot = await FetchCurrentSlotAsync();
+            var minDelaySeconds = maxRecheckSeconds;
+            var selectedDirection = (byte)255;
+            var selectedRemainingProgress = ulong.MaxValue;
+
+            foreach (var direction in activeDirections)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var directionIndex = (int)direction;
 
                 var helperCount = directionIndex < room.HelperCounts.Length ? room.HelperCounts[directionIndex] : 0U;
                 var startSlot = directionIndex < room.StartSlot.Length ? room.StartSlot[directionIndex] : 0UL;
@@ -285,16 +298,21 @@ namespace SeekerDungeon.Dungeon
                 return;
             }
 
-            if (!lgManager.HasActiveJobInCurrentRoom(direction))
+            // Use helper stake check (more reliable than player.ActiveJobs)
+            var hasHelperStake = await lgManager.HasHelperStakeInCurrentRoom(direction);
+            if (!hasHelperStake)
             {
+                Log($"No helper stake found for {directionName}, skipping CompleteJob");
                 return;
             }
 
             try
             {
+                Log($"Calling CompleteJob for {directionName}...");
                 await lgManager.CompleteJob(direction);
                 // Success: reset fail count
                 _completeJobFailCount.Remove(direction);
+                Log($"CompleteJob succeeded for {directionName}");
             }
             catch (Exception ex)
             {

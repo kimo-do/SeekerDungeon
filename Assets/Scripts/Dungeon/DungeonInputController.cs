@@ -185,8 +185,40 @@ namespace SeekerDungeon.Dungeon
                 if (door != null)
                 {
                     var wasDoorOpenBeforeInteraction = IsDoorOpenInCurrentState(door.Direction);
+                    var wasRubbleBeforeInteraction = IsDoorRubbleInCurrentState(door.Direction);
                     var hadRoomBefore = TryGetCurrentRoomCoordinates(out var previousRoomX, out var previousRoomY);
+
+                    // ── Optimistic UI: immediately show job visuals if clicking rubble ──
+                    // This makes the game feel responsive while we wait for the transaction.
+                    if (wasRubbleBeforeInteraction && !wasDoorOpenBeforeInteraction)
+                    {
+                        ResolveLocalPlayerController();
+                        if (_localPlayerController != null)
+                        {
+                            var equippedId = _lgManager.CurrentPlayerState != null
+                                ? LGDomainMapper.ToItemId(_lgManager.CurrentPlayerState.EquippedItemId)
+                                : ItemId.BronzePickaxe;
+                            _localPlayerController.ShowWieldedItem(equippedId);
+                        }
+
+                        if (localPlayerJobMover != null)
+                        {
+                            if (roomController != null &&
+                                roomController.TryGetDoorStandPosition(door.Direction, out var standPosition))
+                            {
+                                localPlayerJobMover.MoveTo(standPosition);
+                            }
+                            else
+                            {
+                                localPlayerJobMover.MoveTo(door.InteractWorldPosition);
+                            }
+                        }
+                    }
+
+                    // ── Execute the on-chain interaction ──
                     var signature = await _lgManager.InteractWithDoor((byte)door.Direction);
+
+                    // ── Post-transaction: determine what actually happened ──
                     await _lgManager.FetchPlayerState();
                     var hasHelperStakeAfterInteraction = await _lgManager.HasHelperStakeInCurrentRoom((byte)door.Direction);
                     var playerMovedRooms = hadRoomBefore &&
@@ -208,29 +240,7 @@ namespace SeekerDungeon.Dungeon
                     }
                     else if (!string.IsNullOrWhiteSpace(signature) || hasHelperStakeAfterInteraction)
                     {
-                        // Player started or is working a rubble-clearing job -- show wielded item
-                        if (_localPlayerController != null)
-                        {
-                            var equippedId = _lgManager.CurrentPlayerState != null
-                                ? LGDomainMapper.ToItemId(_lgManager.CurrentPlayerState.EquippedItemId)
-                                : ItemId.BronzePickaxe;
-                            _localPlayerController.ShowWieldedItem(equippedId);
-                        }
-
-                        if (localPlayerJobMover != null)
-                        {
-                            if (roomController != null &&
-                                roomController.TryGetDoorStandPosition(door.Direction, out var standPosition))
-                            {
-                                localPlayerJobMover.MoveTo(standPosition);
-                            }
-                            else
-                            {
-                                localPlayerJobMover.MoveTo(door.InteractWorldPosition);
-                            }
-                        }
-
-                        // Immediately refresh room state so the timer appears without waiting for subscription
+                        // Player is working a rubble-clearing job -- refresh room state for timer
                         if (dungeonManager != null)
                         {
                             await dungeonManager.RefreshCurrentRoomSnapshotAsync();
@@ -238,11 +248,14 @@ namespace SeekerDungeon.Dungeon
                     }
                     else
                     {
-                        // Door is now open (job completed) -- hide wielded item
+                        // Transaction failed or door is now open -- revert optimistic UI if needed
                         var isDoorOpenNow = IsDoorOpenInCurrentState(door.Direction);
-                        if (isDoorOpenNow && _localPlayerController != null)
+                        if (_localPlayerController != null)
                         {
-                            _localPlayerController.HideAllWieldedItems();
+                            if (isDoorOpenNow || !wasRubbleBeforeInteraction)
+                            {
+                                _localPlayerController.HideAllWieldedItems();
+                            }
                         }
                     }
 
@@ -380,6 +393,23 @@ namespace SeekerDungeon.Dungeon
             }
 
             return roomState.Walls[directionIndex] == LGConfig.WALL_OPEN;
+        }
+
+        private bool IsDoorRubbleInCurrentState(RoomDirection direction)
+        {
+            var roomState = _lgManager?.CurrentRoomState;
+            if (roomState?.Walls == null)
+            {
+                return false;
+            }
+
+            var directionIndex = (int)direction;
+            if (directionIndex < 0 || directionIndex >= roomState.Walls.Length)
+            {
+                return false;
+            }
+
+            return roomState.Walls[directionIndex] == LGConfig.WALL_RUBBLE;
         }
 
         private static bool TryGetPointerDownPosition(out Vector2 position, out int pointerId)
