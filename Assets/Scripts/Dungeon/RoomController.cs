@@ -140,6 +140,51 @@ namespace SeekerDungeon.Dungeon
             return layer.TryGetLocalPlayerStandPosition(out worldPosition);
         }
 
+        /// <summary>
+        /// Returns the dedicated arrival position for a door and the facing
+        /// direction the player should have when entering through it.
+        /// Falls back to <see cref="TryGetDoorStandPosition"/> when no
+        /// arrival anchor is configured.
+        /// </summary>
+        public bool TryGetDoorArrivalPosition(
+            RoomDirection direction,
+            out Vector3 worldPosition,
+            out OccupantFacingDirection facing)
+        {
+            worldPosition = default;
+            facing = GetArrivalFacing(direction);
+
+            if (!_doorLayerByDirection.TryGetValue(direction, out var layer) || layer == null)
+            {
+                return false;
+            }
+
+            if (layer.TryGetArrivalPosition(out worldPosition))
+            {
+                return true;
+            }
+
+            // Fallback: use the first visual slot position.
+            return layer.TryGetLocalPlayerStandPosition(out worldPosition);
+        }
+
+        /// <summary>
+        /// Determines which way the player should face when arriving through
+        /// a given door. Coming from the West door means the player walked
+        /// rightward, so face Right, and vice versa.
+        /// </summary>
+        private static OccupantFacingDirection GetArrivalFacing(RoomDirection entryDoor)
+        {
+            return entryDoor switch
+            {
+                RoomDirection.West => OccupantFacingDirection.Right,   // entered from left side, face right
+                RoomDirection.East => OccupantFacingDirection.Left,    // entered from right side, face left
+                RoomDirection.South => OccupantFacingDirection.Right,  // entered from bottom, default face right
+                RoomDirection.North => OccupantFacingDirection.Right,  // entered from top, default face right
+                _ => OccupantFacingDirection.Right
+            };
+        }
+
         public bool TryGetIdleStandPosition(out Vector3 worldPosition)
         {
             worldPosition = default;

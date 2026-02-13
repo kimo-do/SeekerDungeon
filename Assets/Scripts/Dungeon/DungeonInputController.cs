@@ -193,6 +193,13 @@ namespace SeekerDungeon.Dungeon
                     var wasRubbleBeforeInteraction = IsDoorRubbleInCurrentState(door.Direction);
                     var hadRoomBefore = TryGetCurrentRoomCoordinates(out var previousRoomX, out var previousRoomY);
 
+                    GameplayActionLog.DoorClicked(
+                        door.Direction.ToString(),
+                        hadRoomBefore ? previousRoomX : -1,
+                        hadRoomBefore ? previousRoomY : -1,
+                        wasDoorOpenBeforeInteraction ? "Open" : wasRubbleBeforeInteraction ? "Rubble" : "Solid",
+                        _lgManager?.HasActiveJobInCurrentRoom((byte)door.Direction) ?? false);
+
                     // ── Optimistic UI: immediately show job visuals if clicking rubble ──
                     // This makes the game feel responsive while we wait for the transaction.
                     if (wasRubbleBeforeInteraction && !wasDoorOpenBeforeInteraction)
@@ -228,20 +235,39 @@ namespace SeekerDungeon.Dungeon
                     }
 
                     // ── Execute the on-chain interaction ──
-                    var signature = await _lgManager.InteractWithDoor((byte)door.Direction);
+                    var doorResult = await _lgManager.InteractWithDoor((byte)door.Direction);
 
-                    // ── Post-transaction: determine what actually happened ──
+                    GameplayActionLog.DoorTxResult(
+                        door.Direction.ToString(),
+                        doorResult.Success,
+                        doorResult.Success ? doorResult.Signature : doorResult.Error);
+
+                    // ── Post-transaction: explicit state refresh ──
                     await _lgManager.FetchPlayerState();
                     var hasHelperStakeAfterInteraction = await _lgManager.HasHelperStakeInCurrentRoom((byte)door.Direction);
                     var playerMovedRooms = hadRoomBefore &&
                                            TryGetCurrentRoomCoordinates(out var currentRoomX, out var currentRoomY) &&
                                            (currentRoomX != previousRoomX || currentRoomY != previousRoomY);
-                    var openDoorMoveAttempted = wasDoorOpenBeforeInteraction && !string.IsNullOrWhiteSpace(signature);
+                    var openDoorMoveAttempted = wasDoorOpenBeforeInteraction && doorResult.Success;
                     var shouldTransitionRoom = (playerMovedRooms || openDoorMoveAttempted) && dungeonManager != null;
                     ResolveLocalPlayerController();
 
+                    {
+                        TryGetCurrentRoomCoordinates(out var postRoomX, out var postRoomY);
+                        GameplayActionLog.DoorPostState(
+                            postRoomX, postRoomY,
+                            playerMovedRooms,
+                            shouldTransitionRoom,
+                            hasHelperStakeAfterInteraction);
+                    }
+
                     if (shouldTransitionRoom)
                     {
+                        var (adjX, adjY) = hadRoomBefore
+                            ? LGConfig.GetAdjacentCoords(previousRoomX, previousRoomY, (byte)door.Direction)
+                            : (previousRoomX, previousRoomY);
+                        GameplayActionLog.DoorOutcome($"Transitioning to ({adjX},{adjY})");
+
                         // Player moved rooms -- clear optimistic job state and hide any wielded item
                         if (dungeonManager != null)
                         {
@@ -252,8 +278,6 @@ namespace SeekerDungeon.Dungeon
                             // destination so the transition targets the correct room.
                             if (hadRoomBefore)
                             {
-                                var (adjX, adjY) = LGConfig.GetAdjacentCoords(
-                                    previousRoomX, previousRoomY, (byte)door.Direction);
                                 dungeonManager.SetOptimisticTargetRoom(adjX, adjY);
                             }
                         }
@@ -269,8 +293,10 @@ namespace SeekerDungeon.Dungeon
 
                         await dungeonManager.TransitionToCurrentPlayerRoomAsync();
                     }
-                    else if (!string.IsNullOrWhiteSpace(signature) || hasHelperStakeAfterInteraction)
+                    else if (doorResult.Success || hasHelperStakeAfterInteraction)
                     {
+                        GameplayActionLog.DoorOutcome("Working job -- refreshing room snapshot");
+
                         // Player is working a rubble-clearing job -- refresh room state for timer.
                         // The optimistic direction stays active to protect against stale reads;
                         // it will auto-clear once real data confirms the job.
@@ -281,6 +307,8 @@ namespace SeekerDungeon.Dungeon
                     }
                     else
                     {
+                        GameplayActionLog.DoorOutcome("TX failed, no stake -- reverting optimistic UI");
+
                         // Transaction failed and player has no stake -- revert all
                         // optimistic visuals (position, wielded item, timer).
                         if (dungeonManager != null)
@@ -313,6 +341,15 @@ namespace SeekerDungeon.Dungeon
                         (roomState.CenterType == LGConfig.CENTER_CHEST ||
                          (roomState.CenterType == LGConfig.CENTER_BOSS && roomState.BossDefeated));
 
+                    {
+                        TryGetCurrentRoomCoordinates(out var ctrRoomX, out var ctrRoomY);
+                        var ctrType = roomState == null ? "unknown"
+                            : roomState.CenterType == LGConfig.CENTER_CHEST ? "Chest"
+                            : roomState.CenterType == LGConfig.CENTER_BOSS ? (roomState.BossDefeated ? "Boss(dead)" : "Boss(alive)")
+                            : "Empty";
+                        GameplayActionLog.CenterClicked(ctrRoomX, ctrRoomY, ctrType);
+                    }
+
                     // Subscribe to loot result temporarily if this is a lootable center
                     SeekerDungeon.Solana.LootResult capturedLootResult = null;
                     void OnLootResult(SeekerDungeon.Solana.LootResult result) { capturedLootResult = result; }
@@ -323,14 +360,17 @@ namespace SeekerDungeon.Dungeon
 
                     try
                     {
-                        var signature = await _lgManager.InteractWithCenter();
-                        if (!string.IsNullOrWhiteSpace(signature) && localPlayerJobMover != null)
+                        var centerResult = await _lgManager.InteractWithCenter();
+                        GameplayActionLog.CenterTxResult(
+                            centerResult.Success,
+                            centerResult.Success ? centerResult.Signature : centerResult.Error);
+                        if (centerResult.Success && localPlayerJobMover != null)
                         {
                             localPlayerJobMover.MoveTo(center.InteractWorldPosition);
                         }
 
                         // Play chest open animation on the visual controller
-                        if (!string.IsNullOrWhiteSpace(signature) && isLootableCenter && roomController != null)
+                        if (centerResult.Success && isLootableCenter && roomController != null)
                         {
                             roomController.PlayChestOpenAnimation();
                         }

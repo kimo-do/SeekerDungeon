@@ -28,6 +28,10 @@ namespace SeekerDungeon.Dungeon
 
         [SerializeField] private float completeJobFailCooldownSeconds = 30f;
         [SerializeField] private int maxCompleteJobRetries = 3;
+        [SerializeField] private float confirmTxPollSeconds = 1.5f;
+        [SerializeField] private int confirmTxMaxPolls = 10;
+        [SerializeField] private int maxClaimRetries = 3;
+        [SerializeField] private float claimRetryDelaySeconds = 2f;
 
         [Header("Debug")]
         [SerializeField] private bool logDebugMessages = true;
@@ -257,6 +261,46 @@ namespace SeekerDungeon.Dungeon
             return slotResult.Result;
         }
 
+        /// <summary>
+        /// Polls the RPC until the given transaction signature reaches Confirmed
+        /// commitment, or until the poll limit is exceeded.
+        /// </summary>
+        private async UniTask<bool> WaitForTxConfirmationAsync(string signature)
+        {
+            if (string.IsNullOrWhiteSpace(signature))
+            {
+                return false;
+            }
+
+            var rpc = Web3.Wallet?.ActiveRpcClient;
+            if (rpc == null)
+            {
+                return false;
+            }
+
+            for (var poll = 1; poll <= confirmTxMaxPolls; poll++)
+            {
+                await UniTask.Delay(TimeSpan.FromSeconds(confirmTxPollSeconds));
+
+                try
+                {
+                    var confirmed = await rpc.ConfirmTransaction(signature, Commitment.Confirmed);
+                    if (confirmed)
+                    {
+                        Log($"TX confirmed after {poll} poll(s): {signature.Substring(0, 16)}...");
+                        return true;
+                    }
+                }
+                catch (Exception e)
+                {
+                    Log($"ConfirmTransaction poll {poll} error: {e.Message}");
+                }
+            }
+
+            Log($"TX confirmation timed out after {confirmTxMaxPolls} polls: {signature.Substring(0, 16)}...");
+            return false;
+        }
+
         private async UniTask TryTickAndCompleteJobAsync(byte direction)
         {
             var directionName = LGConfig.GetDirectionName(direction);
@@ -270,98 +314,68 @@ namespace SeekerDungeon.Dungeon
                 return;
             }
 
-            // Suppress DungeonManager event-driven snapshot rebuilds while we
-            // run the TX cycle. The onSuccess callbacks inside TickJob /
-            // CompleteJob / ClaimJobReward each fetch state and fire events,
-            // which would push stale intermediate snapshots (timer resets,
-            // player teleporting to idle, rubble reappearing).
-            dungeonManager?.SuppressEventSnapshots();
-            try
+            // ── Step 1: Complete (auto-ticks + frees job slot on-chain) ──
+            Log($"Calling CompleteJob for {directionName}...");
+            var completeResult = await lgManager.CompleteJob(direction);
+            GameplayActionLog.AutoComplete(directionName, "CompleteJob", completeResult.Success,
+                completeResult.Success ? completeResult.Signature : completeResult.Error);
+            if (!completeResult.Success)
             {
-                // ── Step 1: Tick ──────────────────────────────────────────
-                var tickSig = await lgManager.TickJob(direction);
-                if (string.IsNullOrWhiteSpace(tickSig))
-                {
-                    Log($"TickJob TX failed for {directionName}, aborting cycle");
-                    failCount = (_completeJobFailCount.TryGetValue(direction, out var tc) ? tc : 0) + 1;
-                    _completeJobFailCount[direction] = failCount;
-                    SetNextAttemptAt(direction, Time.unscaledTime + completeJobFailCooldownSeconds);
-                    return;
-                }
+                failCount = (_completeJobFailCount.TryGetValue(direction, out var cc) ? cc : 0) + 1;
+                _completeJobFailCount[direction] = failCount;
+                SetNextAttemptAt(direction, Time.unscaledTime + completeJobFailCooldownSeconds);
+                Log($"CompleteJob TX failed for {directionName} (attempt {failCount}/{maxCompleteJobRetries})");
+                return;
+            }
 
-                var room = lgManager.CurrentRoomState;
-                var player = lgManager.CurrentPlayerState;
-                if (room == null || player == null)
-                {
-                    return;
-                }
+            _completeJobFailCount.Remove(direction);
+            Log($"CompleteJob succeeded for {directionName}");
 
-                var directionIndex = (int)direction;
-                if (directionIndex < 0 || directionIndex >= room.Walls.Length)
-                {
-                    return;
-                }
+            // Wait for CompleteJob TX to be confirmed on-chain before
+            // proceeding. Without this, ClaimJobReward's preflight reads
+            // stale state and fails with JobNotCompleted, and the snapshot
+            // refresh still shows rubble.
+            var confirmed = await WaitForTxConfirmationAsync(completeResult.Signature);
+            if (!confirmed)
+            {
+                Log($"CompleteJob TX confirmation timed out for {directionName}. " +
+                    "Will retry claim next cycle.");
+            }
 
-                var wallState = room.Walls[directionIndex];
-                var progress = directionIndex < room.Progress.Length ? room.Progress[directionIndex] : 0UL;
-                var required = directionIndex < room.BaseSlots.Length ? room.BaseSlots[directionIndex] : 0UL;
-                if (wallState != LGConfig.WALL_RUBBLE)
-                {
-                    // Wall is no longer rubble, reset fail count
-                    _completeJobFailCount.Remove(direction);
-                    return;
-                }
-
-                if (progress < required)
-                {
-                    Log($"Auto-complete not ready yet: {directionName} progress={progress}/{required}");
-                    return;
-                }
-
-                // Use helper stake check (more reliable than player.ActiveJobs)
-                var hasHelperStake = await lgManager.HasHelperStakeInCurrentRoom(direction);
-                if (!hasHelperStake)
-                {
-                    Log($"No helper stake found for {directionName}, skipping CompleteJob");
-                    return;
-                }
-
-                // ── Step 2: Complete ──────────────────────────────────────
-                Log($"Calling CompleteJob for {directionName}...");
-                var completeSig = await lgManager.CompleteJob(direction);
-                if (string.IsNullOrWhiteSpace(completeSig))
-                {
-                    failCount = (_completeJobFailCount.TryGetValue(direction, out var cc) ? cc : 0) + 1;
-                    _completeJobFailCount[direction] = failCount;
-                    SetNextAttemptAt(direction, Time.unscaledTime + completeJobFailCooldownSeconds);
-                    Log($"CompleteJob TX failed for {directionName} (attempt {failCount}/{maxCompleteJobRetries})");
-                    return;
-                }
-
-                _completeJobFailCount.Remove(direction);
-                Log($"CompleteJob succeeded for {directionName}");
-
-                // ── Step 3: Claim reward ──────────────────────────────────
-                Log($"Calling ClaimJobReward for {directionName}...");
-                var claimSig = await lgManager.ClaimJobReward(direction);
-                if (string.IsNullOrWhiteSpace(claimSig))
-                {
-                    Log($"ClaimJobReward TX failed for {directionName} (non-fatal, will retry next cycle)");
-                }
-                else
+            // ── Step 2: Claim reward (token payout + HelperStake closure) ──
+            // Retry a few times because the wall is no longer Rubble after
+            // CompleteJob, so the normal polling loop will skip this direction.
+            var claimSucceeded = false;
+            for (var attempt = 1; attempt <= maxClaimRetries; attempt++)
+            {
+                Log($"Calling ClaimJobReward for {directionName} (attempt {attempt}/{maxClaimRetries})...");
+                var claimResult = await lgManager.ClaimJobReward(direction);
+                GameplayActionLog.AutoComplete(directionName, "ClaimJobReward", claimResult.Success,
+                    claimResult.Success ? claimResult.Signature : claimResult.Error);
+                if (claimResult.Success)
                 {
                     Log($"ClaimJobReward succeeded for {directionName}");
+                    claimSucceeded = true;
+                    break;
+                }
+
+                Log($"ClaimJobReward TX failed for {directionName} (attempt {attempt}/{maxClaimRetries})");
+                if (attempt < maxClaimRetries)
+                {
+                    await UniTask.Delay(TimeSpan.FromSeconds(claimRetryDelaySeconds));
                 }
             }
-            finally
+
+            if (!claimSucceeded)
             {
-                // Resume event-driven snapshots and push one clean snapshot
-                // that reflects the actual post-TX state.
-                dungeonManager?.ResumeEventSnapshots();
-                if (dungeonManager != null)
-                {
-                    await dungeonManager.RefreshCurrentRoomSnapshotAsync();
-                }
+                Log($"ClaimJobReward exhausted retries for {directionName}. " +
+                    "Player may need to claim manually.");
+            }
+
+            // Push one clean snapshot that reflects the actual post-TX state.
+            if (dungeonManager != null)
+            {
+                await dungeonManager.RefreshCurrentRoomSnapshotAsync();
             }
         }
 

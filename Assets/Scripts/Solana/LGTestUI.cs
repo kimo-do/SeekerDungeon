@@ -419,12 +419,12 @@ namespace SeekerDungeon.Solana
 
             LogMessage($"({currentX}, {currentY}) -> ({newX}, {newY})");
 
-            _manager.MovePlayer(newX, newY).ContinueWith(sig =>
+            _manager.MovePlayer(newX, newY).ContinueWith(result =>
             {
-                if (sig != null)
+                if (result.Success)
                 {
-                    SetStatus($"Move TX: {sig.Substring(0, 16)}...");
-                    LogMessage($"Move success: {sig}");
+                    SetStatus($"Move TX: {result.Signature.Substring(0, 16)}...");
+                    LogMessage($"Move success: {result.Signature}");
                 }
                 else
                 {
@@ -446,12 +446,12 @@ namespace SeekerDungeon.Solana
             SetStatus($"Door action: {dirName}...");
             LogMessage($"Door action requested: {dirName}...");
 
-            _manager.InteractWithDoor(direction).ContinueWith(sig =>
+            _manager.InteractWithDoor(direction).ContinueWith(result =>
             {
-                if (sig != null)
+                if (result.Success)
                 {
                     SetStatus($"Door action sent ({dirName})");
-                    LogMessage($"Door action success: {sig}");
+                    LogMessage($"Door action success: {result.Signature}");
                 }
                 else
                 {
@@ -474,12 +474,12 @@ namespace SeekerDungeon.Solana
             SetStatus($"Center action: {centerName}...");
             LogMessage($"Center action requested ({centerName})...");
 
-            _manager.InteractWithCenter().ContinueWith(sig =>
+            _manager.InteractWithCenter().ContinueWith(result =>
             {
-                if (sig != null)
+                if (result.Success)
                 {
                     SetStatus($"Center action success");
-                    LogMessage($"Center action success: {sig}");
+                    LogMessage($"Center action success: {result.Signature}");
                 }
                 else
                 {

@@ -26,6 +26,7 @@ pub struct CompleteJob<'info> {
     pub global: Box<Account<'info, GlobalAccount>>,
 
     #[account(
+        mut,
         seeds = [PlayerAccount::SEED_PREFIX, player.key().as_ref()],
         bump = player_account.bump
     )]
@@ -134,6 +135,20 @@ pub fn handler(ctx: Context<CompleteJob>, direction: u8) -> Result<()> {
     let clock = Clock::get()?;
     let dir_idx = direction as usize;
 
+    // Auto-tick: calculate current progress from elapsed slots so the
+    // client does not need to send a separate TickJob first.
+    {
+        let room = &mut ctx.accounts.room;
+        let helper_count_raw = room.helper_counts[dir_idx] as u64;
+        if helper_count_raw > 0 && room.start_slot[dir_idx] > 0 {
+            let elapsed = clock.slot.saturating_sub(room.start_slot[dir_idx]);
+            let effective = elapsed
+                .checked_mul(helper_count_raw)
+                .ok_or(ChainDepthError::Overflow)?;
+            room.progress[dir_idx] = effective.min(room.base_slots[dir_idx]);
+        }
+    }
+
     {
         let room = &ctx.accounts.room;
         require!(room.is_rubble(direction), ChainDepthError::NotRubble);
@@ -166,6 +181,13 @@ pub fn handler(ctx: Context<CompleteJob>, direction: u8) -> Result<()> {
         room.walls[dir_idx] = WALL_OPEN;
         room.job_completed[dir_idx] = true;
     }
+
+    // Free the completer's active job slot immediately so they can join
+    // new jobs without waiting for ClaimJobReward. The claim handler
+    // also calls remove_job, but retain() makes that a safe no-op.
+    ctx.accounts
+        .player_account
+        .remove_job(room_x, room_y, direction);
 
     let opposite_dir = RoomAccount::opposite_direction(direction);
     let is_new_adjacent_room;

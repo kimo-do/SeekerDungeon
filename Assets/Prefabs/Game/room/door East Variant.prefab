@@ -12,6 +12,22 @@ PrefabInstance:
       propertyPath: direction
       value: 2
       objectReference: {fileID: 0}
+    - target: {fileID: 3402940518622165540, guid: b36a00540318b094bab796ed809c1b6f, type: 3}
+      propertyPath: visualSlots.Array.data[3].facingDirection
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3402940518622165540, guid: b36a00540318b094bab796ed809c1b6f, type: 3}
+      propertyPath: visualSlots.Array.data[4].facingDirection
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3402940518622165540, guid: b36a00540318b094bab796ed809c1b6f, type: 3}
+      propertyPath: visualSlots.Array.data[5].facingDirection
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3402940518622165540, guid: b36a00540318b094bab796ed809c1b6f, type: 3}
+      propertyPath: visualSlots.Array.data[6].facingDirection
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 4620619433739010482, guid: b36a00540318b094bab796ed809c1b6f, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0.491

@@ -316,8 +316,8 @@ namespace SeekerDungeon.Solana
             {
                 await EnsurePlayerInitializedAsync();
 
-                var signature = await lgManager.CreatePlayerProfile((ushort)SelectedSkin, displayName);
-                if (string.IsNullOrWhiteSpace(signature))
+                var profileResult = await lgManager.CreatePlayerProfile((ushort)SelectedSkin, displayName);
+                if (!profileResult.Success)
                 {
                     EmitError("Create profile transaction failed.");
                     return;

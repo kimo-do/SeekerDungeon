@@ -27,6 +27,9 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private DoorOccupantSlot[] visualSlots;
         [SerializeField] private GameObject occupantVisualPrefab;
         [SerializeField] private Transform visualSpawnRoot;
+        [Header("Arrival")]
+        [Tooltip("Where the local player appears when traveling through this door into the room.")]
+        [SerializeField] private Transform arrivalAnchor;
         [Header("Spawn Pop")]
         [SerializeField] private float spawnPopDuration = 0.1f;
         [SerializeField] private float spawnPopStartScaleMultiplier = 0.82f;
@@ -46,6 +49,22 @@ namespace SeekerDungeon.Dungeon
         public void SetSuppressSpawnPop(bool suppress)
         {
             _suppressSpawnPop = suppress;
+        }
+
+        /// <summary>
+        /// Returns the dedicated arrival anchor position for this door.
+        /// Used when the local player enters the room through this door.
+        /// </summary>
+        public bool TryGetArrivalPosition(out Vector3 worldPosition)
+        {
+            worldPosition = default;
+            if (arrivalAnchor == null)
+            {
+                return false;
+            }
+
+            worldPosition = arrivalAnchor.position;
+            return true;
         }
 
         public bool TryGetLocalPlayerStandPosition(out Vector3 worldPosition)

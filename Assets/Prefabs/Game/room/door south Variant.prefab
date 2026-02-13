@@ -12,6 +12,34 @@ PrefabInstance:
       propertyPath: direction
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: 3402940518622165540, guid: b36a00540318b094bab796ed809c1b6f, type: 3}
+      propertyPath: visualSlots.Array.data[0].facingDirection
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3402940518622165540, guid: b36a00540318b094bab796ed809c1b6f, type: 3}
+      propertyPath: visualSlots.Array.data[1].facingDirection
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3402940518622165540, guid: b36a00540318b094bab796ed809c1b6f, type: 3}
+      propertyPath: visualSlots.Array.data[2].facingDirection
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3402940518622165540, guid: b36a00540318b094bab796ed809c1b6f, type: 3}
+      propertyPath: visualSlots.Array.data[3].facingDirection
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3402940518622165540, guid: b36a00540318b094bab796ed809c1b6f, type: 3}
+      propertyPath: visualSlots.Array.data[4].facingDirection
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3402940518622165540, guid: b36a00540318b094bab796ed809c1b6f, type: 3}
+      propertyPath: visualSlots.Array.data[5].facingDirection
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3402940518622165540, guid: b36a00540318b094bab796ed809c1b6f, type: 3}
+      propertyPath: visualSlots.Array.data[6].facingDirection
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 3712199569117451898, guid: b36a00540318b094bab796ed809c1b6f, type: 3}
       propertyPath: m_LocalPosition.y
       value: 0.378

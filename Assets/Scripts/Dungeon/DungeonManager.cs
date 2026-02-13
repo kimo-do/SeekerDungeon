@@ -31,7 +31,7 @@ namespace SeekerDungeon.Dungeon
         private readonly List<DungeonOccupantVisual> _idleOccupants = new();
         private bool _releasedGameplayDoorsReadyHold;
         private bool _deferHoldRelease;
-        private bool _suppressEventSnapshots;
+        private bool _isExplicitRefreshing;
         private DungeonRoomSnapshot _lastDeferredSnapshot;
         private DungeonOccupantVisual _localRoomOccupant;
         private string _localPlacementSignature = string.Empty;
@@ -167,13 +167,18 @@ namespace SeekerDungeon.Dungeon
                 return;
             }
 
-            _suppressEventSnapshots = true;
+            // Prevent event-driven rebuilds while we do a controlled refresh.
+            // FetchRoomState/FetchRoomOccupants fire events that trigger
+            // HandleRoomStateUpdated/HandleRoomOccupantsUpdated. We skip
+            // those to avoid duplicate snapshot rebuilds.
+            _isExplicitRefreshing = true;
             try
             {
                 var room = await _lgManager.FetchRoomState(_currentRoomX, _currentRoomY);
                 if (room == null)
                 {
                     LogError($"Room not found at ({_currentRoomX}, {_currentRoomY}).");
+                    GameplayActionLog.Error($"Room PDA not initialized at ({_currentRoomX}, {_currentRoomY})");
                     return;
                 }
 
@@ -195,7 +200,7 @@ namespace SeekerDungeon.Dungeon
             }
             finally
             {
-                _suppressEventSnapshots = false;
+                _isExplicitRefreshing = false;
             }
         }
 
@@ -282,11 +287,11 @@ namespace SeekerDungeon.Dungeon
                     Log($"Job at {label} is completed (wall={wallState}, flag={jobCompleted}), claiming...");
                     try
                     {
-                        var claimSig = isCurrentRoom
+                        var claimResult = isCurrentRoom
                             ? await _lgManager.ClaimJobReward(dir)
                             : await _lgManager.ClaimJobRewardForRoom(dir, roomX, roomY);
 
-                        if (string.IsNullOrWhiteSpace(claimSig))
+                        if (!claimResult.Success)
                         {
                             Log($"Claim TX failed for {label}");
                         }
@@ -304,7 +309,8 @@ namespace SeekerDungeon.Dungeon
                     continue;
                 }
 
-                // ── Case 2: Wall is rubble and progress ready → tick + complete + claim ──
+                // ── Case 2: Wall is rubble and progress ready → complete + claim ──
+                // CompleteJob now auto-ticks on-chain, so no separate TickJob needed.
                 if (wallState == LGConfig.WALL_RUBBLE && currentSlot > 0)
                 {
                     var helperCount = dirIndex < room.HelperCounts.Length
@@ -334,31 +340,21 @@ namespace SeekerDungeon.Dungeon
 
                     try
                     {
-                        // Step 1: Tick
-                        var tickSig = isCurrentRoom
-                            ? await _lgManager.TickJob(dir)
-                            : await _lgManager.TickJobForRoom(dir, roomX, roomY);
-                        if (string.IsNullOrWhiteSpace(tickSig))
-                        {
-                            Log($"TickJob TX failed for {label}, aborting");
-                            continue;
-                        }
-
-                        // Step 2: Complete
-                        var completeSig = isCurrentRoom
+                        // Step 1: Complete (auto-ticks + frees job slot on-chain)
+                        var completeResult = isCurrentRoom
                             ? await _lgManager.CompleteJob(dir)
                             : await _lgManager.CompleteJobForRoom(dir, roomX, roomY);
-                        if (string.IsNullOrWhiteSpace(completeSig))
+                        if (!completeResult.Success)
                         {
                             Log($"CompleteJob TX failed for {label}, aborting");
                             continue;
                         }
 
-                        // Step 3: Claim
-                        var claimSig = isCurrentRoom
+                        // Step 2: Claim (token payout + HelperStake closure)
+                        var claimResult = isCurrentRoom
                             ? await _lgManager.ClaimJobReward(dir)
                             : await _lgManager.ClaimJobRewardForRoom(dir, roomX, roomY);
-                        if (string.IsNullOrWhiteSpace(claimSig))
+                        if (!claimResult.Success)
                         {
                             Log($"ClaimJobReward TX failed for {label} (non-fatal)");
                         }
@@ -371,6 +367,12 @@ namespace SeekerDungeon.Dungeon
                         Log($"Finalize failed for {label}: {ex.Message}");
                     }
                 }
+            }
+
+            // Single controlled state refresh after all cleanup TXs
+            if (anyCleaned)
+            {
+                await _lgManager.RefreshAllState();
             }
 
             return anyCleaned;
@@ -402,6 +404,9 @@ namespace SeekerDungeon.Dungeon
 
         public async UniTask TransitionToCurrentPlayerRoomAsync()
         {
+            var prevX = _currentRoomX;
+            var prevY = _currentRoomY;
+
             var sceneLoadController = SceneLoadController.GetOrCreate();
             await sceneLoadController.FadeToBlackAsync();
 
@@ -414,6 +419,19 @@ namespace SeekerDungeon.Dungeon
                 _hasSnappedCameraForRoom = false;
                 _roomController?.PrepareForRoomTransition();
                 await ResolveCurrentRoomCoordinatesAsync();
+
+                // Patch CurrentPlayerState so that LGManager (and the input
+                // controller) immediately see the correct room coordinates.
+                // Without this, RPC read-after-write lag keeps the old position
+                // and causes every second door-click to target the wrong room.
+                if (_lgManager?.CurrentPlayerState != null)
+                {
+                    _lgManager.CurrentPlayerState.CurrentRoomX = (sbyte)_currentRoomX;
+                    _lgManager.CurrentPlayerState.CurrentRoomY = (sbyte)_currentRoomY;
+                }
+
+                GameplayActionLog.RoomTransitionStart(prevX, prevY, _currentRoomX, _currentRoomY);
+
                 await RefreshCurrentRoomSnapshotAsync();
 
                 // Clean up any stale active jobs before revealing the new room.
@@ -431,6 +449,9 @@ namespace SeekerDungeon.Dungeon
             }
             finally
             {
+                GameplayActionLog.RoomTransitionEnd(
+                    _currentRoomX, _currentRoomY, true);
+
                 sceneLoadController.ClearTransitionText();
                 await sceneLoadController.FadeFromBlackAsync();
             }
@@ -543,21 +564,9 @@ namespace SeekerDungeon.Dungeon
             }
         }
 
-        /// <summary>
-        /// Suppress event-driven snapshot rebuilds. Used by the auto-completer
-        /// while it runs a tick + complete + claim cycle so intermediate
-        /// on-success callbacks do not push stale snapshots.
-        /// </summary>
-        public void SuppressEventSnapshots() => _suppressEventSnapshots = true;
-
-        /// <summary>
-        /// Resume event-driven snapshot rebuilds.
-        /// </summary>
-        public void ResumeEventSnapshots() => _suppressEventSnapshots = false;
-
         private void HandleRoomStateUpdated(Chaindepth.Accounts.RoomAccount roomAccount)
         {
-            if (_suppressEventSnapshots)
+            if (_isExplicitRefreshing)
             {
                 return;
             }
@@ -588,7 +597,7 @@ namespace SeekerDungeon.Dungeon
 
         private void HandleRoomOccupantsUpdated(IReadOnlyList<RoomOccupantView> occupants)
         {
-            if (_suppressEventSnapshots)
+            if (_isExplicitRefreshing)
             {
                 return;
             }
@@ -1057,6 +1066,26 @@ namespace SeekerDungeon.Dungeon
             localPlayerController.transform.rotation = Quaternion.identity;
         }
 
+        /// <summary>
+        /// Flips the local player's x-scale to match the given facing direction.
+        /// Uses the same convention as <see cref="DoorOccupantVisual2D"/>: positive
+        /// x = Right, negative x = Left.
+        /// </summary>
+        private static void ApplyLocalPlayerFacing(
+            LGPlayerController controller,
+            OccupantFacingDirection facing)
+        {
+            if (controller == null)
+            {
+                return;
+            }
+
+            var localScale = controller.transform.localScale;
+            var absX = Mathf.Abs(localScale.x);
+            localScale.x = facing == OccupantFacingDirection.Right ? absX : -absX;
+            controller.transform.localScale = localScale;
+        }
+
         private void UpdateLocalPlayerPlacement(DungeonRoomSnapshot snapshot)
         {
             if (snapshot?.Room == null)
@@ -1092,19 +1121,21 @@ namespace SeekerDungeon.Dungeon
             var placementSignature = $"{snapshot.Room.X}:{snapshot.Room.Y}:{activity}:{activityDirection}";
 
             // Entry-direction override: when the player just entered this room
-            // through a door, place them at that door instead of a random idle
-            // spot. Consumed on first use so it only affects the initial spawn.
+            // through a door, place them at the dedicated arrival anchor and
+            // face the correct direction. Consumed on first use.
             if (activity == OccupantActivity.Idle && _roomEntryDirection.HasValue)
             {
                 var entryDir = _roomEntryDirection.Value;
                 _roomEntryDirection = null;
 
                 if (_roomController != null &&
-                    _roomController.TryGetDoorStandPosition(entryDir, out var entryPosition))
+                    _roomController.TryGetDoorArrivalPosition(entryDir, out var entryPosition, out var arrivalFacing))
                 {
                     var currentPos = localPlayerController.transform.position;
                     localPlayerController.transform.position = new Vector3(entryPosition.x, entryPosition.y, currentPos.z);
                     localPlayerController.transform.rotation = Quaternion.identity;
+                    ApplyLocalPlayerFacing(localPlayerController, arrivalFacing);
+
                     if (!localPlayerController.gameObject.activeSelf)
                     {
                         localPlayerController.gameObject.SetActive(true);

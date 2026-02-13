@@ -888,18 +888,18 @@ namespace SeekerDungeon.Solana
         /// Performs the next sensible action for a blocked rubble door:
         /// Join -> Tick -> Complete -> Claim.
         /// </summary>
-        public async UniTask<string> InteractWithDoor(byte direction)
+        public async UniTask<TxResult> InteractWithDoor(byte direction)
         {
             if (Web3.Wallet == null)
             {
                 LogError("Wallet not connected");
-                return null;
+                return TxResult.Fail("Wallet not connected");
             }
 
             if (direction > LGConfig.DIRECTION_WEST)
             {
                 LogError($"Invalid direction: {direction}");
-                return null;
+                return TxResult.Fail("Invalid direction");
             }
 
             if (CurrentGlobalState == null || CurrentPlayerState == null)
@@ -910,14 +910,14 @@ namespace SeekerDungeon.Solana
             if (CurrentPlayerState == null)
             {
                 LogError("Player not initialized");
-                return null;
+                return TxResult.Fail("Player not initialized");
             }
 
             var room = await FetchCurrentRoom();
             if (room == null)
             {
                 LogError("Current room not loaded");
-                return null;
+                return TxResult.Fail("Current room not loaded");
             }
 
             var dir = direction;
@@ -933,7 +933,7 @@ namespace SeekerDungeon.Solana
                 {
                     Log($"Door {LGConfig.GetDirectionName(direction)} is solid and cannot be worked.");
                 }
-                return null;
+                return TxResult.Fail("Door cannot be worked");
             }
 
             var hasActiveJob = HasActiveJobInCurrentRoom(direction);
@@ -949,17 +949,17 @@ namespace SeekerDungeon.Solana
                 if (!hasActiveJob)
                 {
                     LogError("Job is completed, but this player is not an active helper for claiming.");
-                    return null;
+                    return TxResult.Fail("Not an active helper");
                 }
                 return await ClaimJobReward(direction);
             }
 
             if (!hasActiveJob)
             {
-                var joinSignature = await JoinJob(direction);
-                if (!string.IsNullOrWhiteSpace(joinSignature))
+                var joinResult = await JoinJob(direction);
+                if (joinResult.Success)
                 {
-                    return joinSignature;
+                    return joinResult;
                 }
 
                 if (IsAlreadyJoinedError())
@@ -972,7 +972,7 @@ namespace SeekerDungeon.Solana
                         room = await FetchCurrentRoom();
                         if (room == null)
                         {
-                            return null;
+                            return TxResult.Fail("Room not loaded after refresh");
                         }
                     }
                 }
@@ -983,7 +983,7 @@ namespace SeekerDungeon.Solana
                     room = await FetchCurrentRoom();
                     if (room == null)
                     {
-                        return null;
+                        return TxResult.Fail("Room not loaded after refresh");
                     }
 
                     if (room.Walls[dir] == LGConfig.WALL_OPEN)
@@ -995,10 +995,10 @@ namespace SeekerDungeon.Solana
                     hasActiveJob = await HasHelperStakeInCurrentRoom(direction);
                     if (!hasActiveJob)
                     {
-                        var retryJoinSignature = await JoinJob(direction);
-                        if (!string.IsNullOrWhiteSpace(retryJoinSignature))
+                        var retryJoinResult = await JoinJob(direction);
+                        if (retryJoinResult.Success)
                         {
-                            return retryJoinSignature;
+                            return retryJoinResult;
                         }
                         hasActiveJob = await HasHelperStakeInCurrentRoom(direction);
                     }
@@ -1006,7 +1006,7 @@ namespace SeekerDungeon.Solana
 
                 if (!hasActiveJob)
                 {
-                    return null;
+                    return TxResult.Fail("Could not join job");
                 }
             }
 
@@ -1014,10 +1014,10 @@ namespace SeekerDungeon.Solana
             var required = room.BaseSlots[dir];
             if (progress >= required)
             {
-                var completeSignature = await CompleteJob(direction);
-                if (!string.IsNullOrWhiteSpace(completeSignature))
+                var completeResult = await CompleteJob(direction);
+                if (completeResult.Success)
                 {
-                    return completeSignature;
+                    return completeResult;
                 }
 
                 if (IsMissingActiveJobError())
@@ -1031,13 +1031,13 @@ namespace SeekerDungeon.Solana
                     }
                 }
 
-                return null;
+                return TxResult.Fail("CompleteJob failed");
             }
 
-            var tickSignature = await TickJob(direction);
-            if (!string.IsNullOrWhiteSpace(tickSignature))
+            var tickResult = await TickJob(direction);
+            if (tickResult.Success)
             {
-                return tickSignature;
+                return tickResult;
             }
 
             if (IsMissingActiveJobError())
@@ -1051,7 +1051,7 @@ namespace SeekerDungeon.Solana
                 }
             }
 
-            return null;
+            return TxResult.Fail("TickJob failed");
         }
 
         /// <summary>
@@ -1060,12 +1060,12 @@ namespace SeekerDungeon.Solana
         /// Boss alive: Join or Tick
         /// Boss defeated: Loot
         /// </summary>
-        public async UniTask<string> InteractWithCenter()
+        public async UniTask<TxResult> InteractWithCenter()
         {
             if (Web3.Wallet == null)
             {
                 LogError("Wallet not connected");
-                return null;
+                return TxResult.Fail("Wallet not connected");
             }
 
             if (CurrentGlobalState == null || CurrentPlayerState == null)
@@ -1076,20 +1076,20 @@ namespace SeekerDungeon.Solana
             if (CurrentPlayerState == null)
             {
                 LogError("Player not initialized");
-                return null;
+                return TxResult.Fail("Player not initialized");
             }
 
             var room = await FetchCurrentRoom();
             if (room == null)
             {
                 LogError("Current room not loaded");
-                return null;
+                return TxResult.Fail("Current room not loaded");
             }
 
             if (room.CenterType == LGConfig.CENTER_EMPTY)
             {
                 Log("Center is empty. No center action available.");
-                return null;
+                return TxResult.Fail("Center empty");
             }
 
             if (room.CenterType == LGConfig.CENTER_CHEST)
@@ -1101,7 +1101,7 @@ namespace SeekerDungeon.Solana
             if (room.CenterType != LGConfig.CENTER_BOSS)
             {
                 LogError($"Unknown center type: {room.CenterType}");
-                return null;
+                return TxResult.Fail("Unknown center type");
             }
 
             if (room.BossDefeated)
@@ -1217,19 +1217,19 @@ namespace SeekerDungeon.Solana
         /// Tick a job for a specific room (not necessarily the player's current room).
         /// TickJob is permissionless and only needs the room PDA.
         /// </summary>
-        public async UniTask<string> TickJobForRoom(byte direction, int roomX, int roomY)
+        public async UniTask<TxResult> TickJobForRoom(byte direction, int roomX, int roomY)
         {
             if (Web3.Wallet == null || CurrentGlobalState == null)
             {
                 LogError("Wallet or global state not available");
-                return null;
+                return TxResult.Fail("Wallet or global state not available");
             }
 
             Log($"Ticking job at ({roomX},{roomY}) direction {LGConfig.GetDirectionName(direction)}...");
 
             try
             {
-                var signature = await ExecuteGameplayActionAsync(
+                var result = await ExecuteGameplayActionAsync(
                     "TickJob",
                     (context) =>
                     {
@@ -1245,39 +1245,38 @@ namespace SeekerDungeon.Solana
                             direction,
                             _programId
                         );
-                    },
-                    async (signature) =>
-                    {
-                        Log($"Job ticked at ({roomX},{roomY})! TX: {signature}");
-                        // Fetch the job's room state quietly (no event for our current room).
-                        await FetchRoomState(roomX, roomY, fireEvent: false);
                     });
 
-                return signature;
+                if (result.Success)
+                {
+                    Log($"Job ticked at ({roomX},{roomY})! TX: {result.Signature}");
+                }
+
+                return result;
             }
             catch (Exception e)
             {
                 LogError($"TickJobForRoom failed at ({roomX},{roomY}): {e.Message}");
-                return null;
+                return TxResult.Fail(e.Message);
             }
         }
 
         /// <summary>
         /// Complete a job for a specific room (not necessarily the player's current room).
         /// </summary>
-        public async UniTask<string> CompleteJobForRoom(byte direction, int roomX, int roomY)
+        public async UniTask<TxResult> CompleteJobForRoom(byte direction, int roomX, int roomY)
         {
             if (Web3.Wallet == null || CurrentPlayerState == null || CurrentGlobalState == null)
             {
                 LogError("Wallet, player, or global state not available");
-                return null;
+                return TxResult.Fail("Wallet, player, or global state not available");
             }
 
             Log($"Completing job at ({roomX},{roomY}) direction {LGConfig.GetDirectionName(direction)}...");
 
             try
             {
-                var signature = await ExecuteGameplayActionAsync(
+                var result = await ExecuteGameplayActionAsync(
                     "CompleteJob",
                     (context) =>
                     {
@@ -1307,19 +1306,19 @@ namespace SeekerDungeon.Solana
                             direction,
                             _programId
                         );
-                    },
-                    async (signature) =>
-                    {
-                        Log($"Job completed at ({roomX},{roomY})! TX: {signature}");
-                        await FetchRoomState(roomX, roomY, fireEvent: false);
                     });
 
-                return signature;
+                if (result.Success)
+                {
+                    Log($"Job completed at ({roomX},{roomY})! TX: {result.Signature}");
+                }
+
+                return result;
             }
             catch (Exception e)
             {
                 LogError($"CompleteJobForRoom failed at ({roomX},{roomY}): {e.Message}");
-                return null;
+                return TxResult.Fail(e.Message);
             }
         }
 
@@ -1327,19 +1326,19 @@ namespace SeekerDungeon.Solana
         /// Claim a job reward for a specific room (not necessarily the player's current room).
         /// The room_presence PDA is always derived from the player's CURRENT room.
         /// </summary>
-        public async UniTask<string> ClaimJobRewardForRoom(byte direction, int roomX, int roomY)
+        public async UniTask<TxResult> ClaimJobRewardForRoom(byte direction, int roomX, int roomY)
         {
             if (Web3.Wallet == null || CurrentPlayerState == null || CurrentGlobalState == null)
             {
                 LogError("Wallet, player, or global state not available");
-                return null;
+                return TxResult.Fail("Wallet, player, or global state not available");
             }
 
             Log($"Claiming reward at ({roomX},{roomY}) direction {LGConfig.GetDirectionName(direction)}...");
 
             try
             {
-                var signature = await ExecuteGameplayActionAsync(
+                var result = await ExecuteGameplayActionAsync(
                     "ClaimJobReward",
                     (context) =>
                     {
@@ -1378,19 +1377,19 @@ namespace SeekerDungeon.Solana
                             direction,
                             _programId
                         );
-                    },
-                    async (signature) =>
-                    {
-                        Log($"Job reward claimed at ({roomX},{roomY})! TX: {signature}");
-                        await RefreshAllState();
                     });
 
-                return signature;
+                if (result.Success)
+                {
+                    Log($"Job reward claimed at ({roomX},{roomY})! TX: {result.Signature}");
+                }
+
+                return result;
             }
             catch (Exception e)
             {
                 LogError($"ClaimJobRewardForRoom failed at ({roomX},{roomY}): {e.Message}");
-                return null;
+                return TxResult.Fail(e.Message);
             }
         }
 
@@ -1460,12 +1459,12 @@ namespace SeekerDungeon.Solana
         /// <summary>
         /// Move player to new coordinates
         /// </summary>
-        public async UniTask<string> MovePlayer(int newX, int newY)
+        public async UniTask<TxResult> MovePlayer(int newX, int newY)
         {
             if (Web3.Wallet == null)
             {
                 LogError("Wallet not connected");
-                return null;
+                return TxResult.Fail("Wallet not connected");
             }
 
             Log($"Moving player to ({newX}, {newY})...");
@@ -1491,7 +1490,7 @@ namespace SeekerDungeon.Solana
 
             try
             {
-                var signature = await ExecuteGameplayActionAsync(
+                var result = await ExecuteGameplayActionAsync(
                     "MovePlayer",
                     (context) =>
                     {
@@ -1534,54 +1533,37 @@ namespace SeekerDungeon.Solana
                             (sbyte)newY,
                             _programId
                         );
-                    },
-                    async (signature) =>
-                    {
-                        Log($"Move transaction sent: {signature}");
-                        await RefreshAllState();
-                        if (CurrentPlayerState != null &&
-                            TryGetMoveDirection(
-                                newX,
-                                newY,
-                                CurrentPlayerState.CurrentRoomX,
-                                CurrentPlayerState.CurrentRoomY,
-                                out var returnDirection) &&
-                            CurrentRoomState != null &&
-                            CurrentRoomState.Walls != null &&
-                            returnDirection < CurrentRoomState.Walls.Length)
-                        {
-                            var returnWallState = CurrentRoomState.Walls[returnDirection];
-                            Log(
-                                $"Move topology check: room=({CurrentPlayerState.CurrentRoomX},{CurrentPlayerState.CurrentRoomY}) " +
-                                $"returnDirection={LGConfig.GetDirectionName(returnDirection)} " +
-                                $"returnWall={LGConfig.GetWallStateName(returnWallState)}");
-                        }
                     });
 
-                return signature;
+                if (result.Success)
+                {
+                    Log($"Move transaction sent: {result.Signature}");
+                }
+
+                return result;
             }
             catch (Exception e)
             {
                 LogError($"Move failed: {e.Message}");
-                return null;
+                return TxResult.Fail(e.Message);
             }
         }
 
         /// <summary>
         /// Join a job in the specified direction
         /// </summary>
-        public async UniTask<string> JoinJob(byte direction)
+        public async UniTask<TxResult> JoinJob(byte direction)
         {
             if (Web3.Wallet == null)
             {
                 LogError("Wallet not connected");
-                return null;
+                return TxResult.Fail("Wallet not connected");
             }
 
             if (CurrentPlayerState == null || CurrentGlobalState == null)
             {
                 LogError("Player or global state not loaded");
-                return null;
+                return TxResult.Fail("Player or global state not loaded");
             }
 
             Log($"Joining job in direction {LGConfig.GetDirectionName(direction)}...");
@@ -1635,10 +1617,10 @@ namespace SeekerDungeon.Solana
                 {
                     LogError("JoinJob blocked: your SKR token account (ATA) is not initialized for this wallet.");
                     LogError("Mint/fund SKR first, then retry JoinJob.");
-                    return null;
+                    return TxResult.Fail("SKR token account not initialized");
                 }
 
-                var signature = await ExecuteGameplayActionAsync(
+                var result = await ExecuteGameplayActionAsync(
                     "JoinJob",
                     (context) =>
                     {
@@ -1698,49 +1680,48 @@ namespace SeekerDungeon.Solana
                             direction,
                             _programId
                         );
-                    },
-                    async (signature) =>
-                    {
-                        Log($"Joined job! TX: {signature}");
-                        await RefreshAllState();
                     });
 
-                if (string.IsNullOrWhiteSpace(signature))
+                if (!result.Success)
                 {
-                    LogError($"JoinJob diag: TX returned null/empty. lastProgramErrorCode={_lastProgramErrorCode?.ToString() ?? "<null>"} (0x{_lastProgramErrorCode:X})");
+                    LogError($"JoinJob diag: TX failed. lastProgramErrorCode={_lastProgramErrorCode?.ToString() ?? "<null>"} (0x{_lastProgramErrorCode:X})");
+                }
+                else
+                {
+                    Log($"Joined job! TX: {result.Signature}");
                 }
 
-                return signature;
+                return result;
             }
             catch (Exception e)
             {
                 LogError($"JoinJob failed: {e.Message}");
-                return null;
+                return TxResult.Fail(e.Message);
             }
         }
 
         /// <summary>
         /// Complete a job in the specified direction
         /// </summary>
-        public async UniTask<string> CompleteJob(byte direction)
+        public async UniTask<TxResult> CompleteJob(byte direction)
         {
             if (Web3.Wallet == null)
             {
                 LogError("Wallet not connected");
-                return null;
+                return TxResult.Fail("Wallet not connected");
             }
 
             if (CurrentPlayerState == null || CurrentGlobalState == null)
             {
                 LogError("Player or global state not loaded");
-                return null;
+                return TxResult.Fail("Player or global state not loaded");
             }
 
             Log($"Completing job in direction {LGConfig.GetDirectionName(direction)}...");
 
             try
             {
-                var signature = await ExecuteGameplayActionAsync(
+                var result = await ExecuteGameplayActionAsync(
                     "CompleteJob",
                     (context) =>
                     {
@@ -1776,44 +1757,44 @@ namespace SeekerDungeon.Solana
                             direction,
                             _programId
                         );
-                    },
-                    async (signature) =>
-                    {
-                        Log($"Job completed! TX: {signature}");
-                        await RefreshAllState();
                     });
 
-                return signature;
+                if (result.Success)
+                {
+                    Log($"Job completed! TX: {result.Signature}");
+                }
+
+                return result;
             }
             catch (Exception e)
             {
                 LogError($"CompleteJob failed: {e.Message}");
-                return null;
+                return TxResult.Fail(e.Message);
             }
         }
 
         /// <summary>
         /// Abandon a job in the specified direction
         /// </summary>
-        public async UniTask<string> AbandonJob(byte direction)
+        public async UniTask<TxResult> AbandonJob(byte direction)
         {
             if (Web3.Wallet == null)
             {
                 LogError("Wallet not connected");
-                return null;
+                return TxResult.Fail("Wallet not connected");
             }
 
             if (CurrentPlayerState == null || CurrentGlobalState == null)
             {
                 LogError("Player or global state not loaded");
-                return null;
+                return TxResult.Fail("Player or global state not loaded");
             }
 
             Log($"Abandoning job in direction {LGConfig.GetDirectionName(direction)}...");
 
             try
             {
-                var signature = await ExecuteGameplayActionAsync(
+                var result = await ExecuteGameplayActionAsync(
                     "AbandonJob",
                     (context) =>
                     {
@@ -1854,19 +1835,19 @@ namespace SeekerDungeon.Solana
                             direction,
                             _programId
                         );
-                    },
-                    async (signature) =>
-                    {
-                        Log($"Job abandoned! TX: {signature}");
-                        await RefreshAllState();
                     });
 
-                return signature;
+                if (result.Success)
+                {
+                    Log($"Job abandoned! TX: {result.Signature}");
+                }
+
+                return result;
             }
             catch (Exception e)
             {
                 LogError($"AbandonJob failed: {e.Message}");
-                return null;
+                return TxResult.Fail(e.Message);
             }
         }
 
@@ -1907,25 +1888,25 @@ namespace SeekerDungeon.Solana
         /// <summary>
         /// Claim reward for a completed job in the specified direction
         /// </summary>
-        public async UniTask<string> ClaimJobReward(byte direction)
+        public async UniTask<TxResult> ClaimJobReward(byte direction)
         {
             if (Web3.Wallet == null)
             {
                 LogError("Wallet not connected");
-                return null;
+                return TxResult.Fail("Wallet not connected");
             }
 
             if (CurrentPlayerState == null || CurrentGlobalState == null)
             {
                 LogError("Player or global state not loaded");
-                return null;
+                return TxResult.Fail("Player or global state not loaded");
             }
 
             Log($"Claiming reward for direction {LGConfig.GetDirectionName(direction)}...");
 
             try
             {
-                var signature = await ExecuteGameplayActionAsync(
+                var result = await ExecuteGameplayActionAsync(
                     "ClaimJobReward",
                     (context) =>
                     {
@@ -1966,37 +1947,37 @@ namespace SeekerDungeon.Solana
                             direction,
                             _programId
                         );
-                    },
-                    async (signature) =>
-                    {
-                        Log($"Job reward claimed! TX: {signature}");
-                        await RefreshAllState();
                     });
 
-                return signature;
+                if (result.Success)
+                {
+                    Log($"Job reward claimed! TX: {result.Signature}");
+                }
+
+                return result;
             }
             catch (Exception e)
             {
                 LogError($"ClaimJobReward failed: {e.Message}");
-                return null;
+                return TxResult.Fail(e.Message);
             }
         }
 
         /// <summary>
         /// Loot a chest in the current room
         /// </summary>
-        public async UniTask<string> LootChest()
+        public async UniTask<TxResult> LootChest()
         {
             if (Web3.Wallet == null)
             {
                 LogError("Wallet not connected");
-                return null;
+                return TxResult.Fail("Wallet not connected");
             }
 
             if (CurrentPlayerState == null || CurrentGlobalState == null)
             {
                 LogError("Player or global state not loaded");
-                return null;
+                return TxResult.Fail("Player or global state not loaded");
             }
 
             Log("Looting chest...");
@@ -2006,7 +1987,7 @@ namespace SeekerDungeon.Solana
 
             try
             {
-                var signature = await ExecuteGameplayActionAsync(
+                var result = await ExecuteGameplayActionAsync(
                     "LootChest",
                     (context) =>
                     {
@@ -2037,56 +2018,57 @@ namespace SeekerDungeon.Solana
                             },
                             _programId
                         );
-                    },
-                    async (signature) =>
-                    {
-                        Log($"Chest looted! TX: {signature}");
-                        await RefreshAllState();
-
-                        // Compute loot diff and fire event
-                        var lootResult = LGDomainMapper.ComputeLootDiff(inventoryBefore, CurrentInventoryState);
-                        if (lootResult.Items.Count > 0)
-                        {
-                            Log($"Loot result: {lootResult.Items.Count} item(s) gained");
-                            OnChestLootResult?.Invoke(lootResult);
-                        }
-                        else
-                        {
-                            Log("Loot result: no new items detected (diff empty)");
-                        }
                     });
 
-                return signature;
+                if (result.Success)
+                {
+                    Log($"Chest looted! TX: {result.Signature}");
+                    await RefreshAllState();
+
+                    // Compute loot diff and fire event
+                    var lootResult = LGDomainMapper.ComputeLootDiff(inventoryBefore, CurrentInventoryState);
+                    if (lootResult.Items.Count > 0)
+                    {
+                        Log($"Loot result: {lootResult.Items.Count} item(s) gained");
+                        OnChestLootResult?.Invoke(lootResult);
+                    }
+                    else
+                    {
+                        Log("Loot result: no new items detected (diff empty)");
+                    }
+                }
+
+                return result;
             }
             catch (Exception e)
             {
                 LogError($"LootChest failed: {e.Message}");
-                return null;
+                return TxResult.Fail(e.Message);
             }
         }
 
         /// <summary>
         /// Equip an inventory item for combat (0 to unequip)
         /// </summary>
-        public async UniTask<string> EquipItem(ushort itemId)
+        public async UniTask<TxResult> EquipItem(ushort itemId)
         {
             if (Web3.Wallet == null)
             {
                 LogError("Wallet not connected");
-                return null;
+                return TxResult.Fail("Wallet not connected");
             }
 
             if (CurrentPlayerState == null)
             {
                 LogError("Player state not loaded");
-                return null;
+                return TxResult.Fail("Player state not loaded");
             }
 
             Log($"Equipping item id {itemId}...");
 
             try
             {
-                var signature = await ExecuteGameplayActionAsync(
+                var result = await ExecuteGameplayActionAsync(
                     "EquipItem",
                     (context) =>
                     {
@@ -2113,42 +2095,42 @@ namespace SeekerDungeon.Solana
                             itemId,
                             _programId
                         );
-                    },
-                    async (signature) =>
-                    {
-                        Log($"Equipped item. TX: {signature}");
-                        await FetchPlayerState();
                     });
 
-                return signature;
+                if (result.Success)
+                {
+                    Log($"Equipped item. TX: {result.Signature}");
+                }
+
+                return result;
             }
             catch (Exception e)
             {
                 LogError($"EquipItem failed: {e.Message}");
-                return null;
+                return TxResult.Fail(e.Message);
             }
         }
 
         /// <summary>
         /// Set player skin id in profile and current room presence.
         /// </summary>
-        public async UniTask<string> SetPlayerSkin(ushort skinId)
+        public async UniTask<TxResult> SetPlayerSkin(ushort skinId)
         {
             if (Web3.Wallet == null)
             {
                 LogError("Wallet not connected");
-                return null;
+                return TxResult.Fail("Wallet not connected");
             }
 
             if (CurrentPlayerState == null || CurrentGlobalState == null)
             {
                 LogError("Player or global state not loaded");
-                return null;
+                return TxResult.Fail("Player or global state not loaded");
             }
 
             try
             {
-                var signature = await ExecuteGameplayActionAsync(
+                var result = await ExecuteGameplayActionAsync(
                     "SetPlayerSkin",
                     (context) =>
                     {
@@ -2175,38 +2157,42 @@ namespace SeekerDungeon.Solana
                             skinId,
                             _programId
                         );
-                    },
-                    async (_) => { await FetchPlayerProfile(); });
+                    });
 
-                return signature;
+                if (result.Success)
+                {
+                    Log($"Skin set. TX: {result.Signature}");
+                }
+
+                return result;
             }
             catch (Exception error)
             {
                 LogError($"SetPlayerSkin failed: {error.Message}");
-                return null;
+                return TxResult.Fail(error.Message);
             }
         }
 
         /// <summary>
         /// Create/update profile (skin + optional display name) and grant starter pickaxe once.
         /// </summary>
-        public async UniTask<string> CreatePlayerProfile(ushort skinId, string displayName)
+        public async UniTask<TxResult> CreatePlayerProfile(ushort skinId, string displayName)
         {
             if (Web3.Wallet == null)
             {
                 LogError("Wallet not connected");
-                return null;
+                return TxResult.Fail("Wallet not connected");
             }
 
             if (CurrentPlayerState == null || CurrentGlobalState == null)
             {
                 LogError("Player or global state not loaded");
-                return null;
+                return TxResult.Fail("Player or global state not loaded");
             }
 
             try
             {
-                var signature = await ExecuteGameplayActionAsync(
+                var result = await ExecuteGameplayActionAsync(
                     "CreatePlayerProfile",
                     (context) =>
                     {
@@ -2238,40 +2224,45 @@ namespace SeekerDungeon.Solana
                             _programId
                         );
                     },
-                    async (_) => { await RefreshAllState(); },
                     ensureSessionIfPossible: false);
 
-                return signature;
+                if (result.Success)
+                {
+                    Log($"Profile created. TX: {result.Signature}");
+                    await RefreshAllState();
+                }
+
+                return result;
             }
             catch (Exception error)
             {
                 LogError($"CreatePlayerProfile failed: {error.Message}");
-                return null;
+                return TxResult.Fail(error.Message);
             }
         }
 
         /// <summary>
         /// Join the boss fight in the current room
         /// </summary>
-        public async UniTask<string> JoinBossFight()
+        public async UniTask<TxResult> JoinBossFight()
         {
             if (Web3.Wallet == null)
             {
                 LogError("Wallet not connected");
-                return null;
+                return TxResult.Fail("Wallet not connected");
             }
 
             if (CurrentPlayerState == null || CurrentGlobalState == null)
             {
                 LogError("Player or global state not loaded");
-                return null;
+                return TxResult.Fail("Player or global state not loaded");
             }
 
             Log("Joining boss fight...");
 
             try
             {
-                var signature = await ExecuteGameplayActionAsync(
+                var result = await ExecuteGameplayActionAsync(
                     "JoinBossFight",
                     (context) =>
                     {
@@ -2306,44 +2297,44 @@ namespace SeekerDungeon.Solana
                             },
                             _programId
                         );
-                    },
-                    async (signature) =>
-                    {
-                        Log($"Joined boss fight! TX: {signature}");
-                        await FetchRoomState(CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY);
                     });
 
-                return signature;
+                if (result.Success)
+                {
+                    Log($"Joined boss fight! TX: {result.Signature}");
+                }
+
+                return result;
             }
             catch (Exception e)
             {
                 LogError($"JoinBossFight failed: {e.Message}");
-                return null;
+                return TxResult.Fail(e.Message);
             }
         }
 
         /// <summary>
         /// Tick boss HP in the current room
         /// </summary>
-        public async UniTask<string> TickBossFight()
+        public async UniTask<TxResult> TickBossFight()
         {
             if (Web3.Wallet == null)
             {
                 LogError("Wallet not connected");
-                return null;
+                return TxResult.Fail("Wallet not connected");
             }
 
             if (CurrentPlayerState == null || CurrentGlobalState == null)
             {
                 LogError("Player or global state not loaded");
-                return null;
+                return TxResult.Fail("Player or global state not loaded");
             }
 
             Log("Ticking boss fight...");
 
             try
             {
-                var signature = await ExecuteGameplayActionAsync(
+                var result = await ExecuteGameplayActionAsync(
                     "TickBossFight",
                     (context) =>
                     {
@@ -2362,37 +2353,37 @@ namespace SeekerDungeon.Solana
                             },
                             _programId
                         );
-                    },
-                    async (signature) =>
-                    {
-                        Log($"Boss ticked! TX: {signature}");
-                        await FetchRoomState(CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY);
                     });
 
-                return signature;
+                if (result.Success)
+                {
+                    Log($"Boss ticked! TX: {result.Signature}");
+                }
+
+                return result;
             }
             catch (Exception e)
             {
                 LogError($"TickBossFight failed: {e.Message}");
-                return null;
+                return TxResult.Fail(e.Message);
             }
         }
 
         /// <summary>
         /// Loot defeated boss in current room (fighters only)
         /// </summary>
-        public async UniTask<string> LootBoss()
+        public async UniTask<TxResult> LootBoss()
         {
             if (Web3.Wallet == null)
             {
                 LogError("Wallet not connected");
-                return null;
+                return TxResult.Fail("Wallet not connected");
             }
 
             if (CurrentPlayerState == null || CurrentGlobalState == null)
             {
                 LogError("Player or global state not loaded");
-                return null;
+                return TxResult.Fail("Player or global state not loaded");
             }
 
             Log("Looting boss...");
@@ -2402,7 +2393,7 @@ namespace SeekerDungeon.Solana
 
             try
             {
-                var signature = await ExecuteGameplayActionAsync(
+                var result = await ExecuteGameplayActionAsync(
                     "LootBoss",
                     (context) =>
                     {
@@ -2443,52 +2434,53 @@ namespace SeekerDungeon.Solana
                             },
                             _programId
                         );
-                    },
-                    async (signature) =>
-                    {
-                        Log($"Boss looted! TX: {signature}");
-                        await RefreshAllState();
-
-                        // Compute loot diff and fire event
-                        var lootResult = LGDomainMapper.ComputeLootDiff(inventoryBefore, CurrentInventoryState);
-                        if (lootResult.Items.Count > 0)
-                        {
-                            Log($"Boss loot result: {lootResult.Items.Count} item(s) gained");
-                            OnChestLootResult?.Invoke(lootResult);
-                        }
                     });
 
-                return signature;
+                if (result.Success)
+                {
+                    Log($"Boss looted! TX: {result.Signature}");
+                    await RefreshAllState();
+
+                    // Compute loot diff and fire event
+                    var lootResult = LGDomainMapper.ComputeLootDiff(inventoryBefore, CurrentInventoryState);
+                    if (lootResult.Items.Count > 0)
+                    {
+                        Log($"Boss loot result: {lootResult.Items.Count} item(s) gained");
+                        OnChestLootResult?.Invoke(lootResult);
+                    }
+                }
+
+                return result;
             }
             catch (Exception e)
             {
                 LogError($"LootBoss failed: {e.Message}");
-                return null;
+                return TxResult.Fail(e.Message);
             }
         }
 
         /// <summary>
         /// Tick/update a job's progress
         /// </summary>
-        public async UniTask<string> TickJob(byte direction)
+        public async UniTask<TxResult> TickJob(byte direction)
         {
             if (Web3.Wallet == null)
             {
                 LogError("Wallet not connected");
-                return null;
+                return TxResult.Fail("Wallet not connected");
             }
 
             if (CurrentPlayerState == null || CurrentGlobalState == null)
             {
                 LogError("Player or global state not loaded");
-                return null;
+                return TxResult.Fail("Player or global state not loaded");
             }
 
             Log($"Ticking job in direction {LGConfig.GetDirectionName(direction)}...");
 
             try
             {
-                var signature = await ExecuteGameplayActionAsync(
+                var result = await ExecuteGameplayActionAsync(
                     "TickJob",
                     (context) =>
                     {
@@ -2507,44 +2499,44 @@ namespace SeekerDungeon.Solana
                             direction,
                             _programId
                         );
-                    },
-                    async (signature) =>
-                    {
-                        Log($"Job ticked! TX: {signature}");
-                        await FetchRoomState(CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY);
                     });
 
-                return signature;
+                if (result.Success)
+                {
+                    Log($"Job ticked! TX: {result.Signature}");
+                }
+
+                return result;
             }
             catch (Exception e)
             {
                 LogError($"TickJob failed: {e.Message}");
-                return null;
+                return TxResult.Fail(e.Message);
             }
         }
 
         /// <summary>
         /// Boost a job with additional tokens
         /// </summary>
-        public async UniTask<string> BoostJob(byte direction, ulong boostAmount)
+        public async UniTask<TxResult> BoostJob(byte direction, ulong boostAmount)
         {
             if (Web3.Wallet == null)
             {
                 LogError("Wallet not connected");
-                return null;
+                return TxResult.Fail("Wallet not connected");
             }
 
             if (CurrentPlayerState == null || CurrentGlobalState == null)
             {
                 LogError("Player or global state not loaded");
-                return null;
+                return TxResult.Fail("Player or global state not loaded");
             }
 
             Log($"Boosting job in direction {LGConfig.GetDirectionName(direction)} with {boostAmount} tokens...");
 
             try
             {
-                var signature = await ExecuteGameplayActionAsync(
+                var result = await ExecuteGameplayActionAsync(
                     "BoostJob",
                     (context) =>
                     {
@@ -2573,19 +2565,19 @@ namespace SeekerDungeon.Solana
                             boostAmount,
                             _programId
                         );
-                    },
-                    async (signature) =>
-                    {
-                        Log($"Job boosted! TX: {signature}");
-                        await FetchRoomState(CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY);
                     });
 
-                return signature;
+                if (result.Success)
+                {
+                    Log($"Job boosted! TX: {result.Signature}");
+                }
+
+                return result;
             }
             catch (Exception e)
             {
                 LogError($"BoostJob failed: {e.Message}");
-                return null;
+                return TxResult.Fail(e.Message);
             }
         }
 
@@ -2629,16 +2621,15 @@ namespace SeekerDungeon.Solana
             return context;
         }
 
-        private async UniTask<string> ExecuteGameplayActionAsync(
+        private async UniTask<TxResult> ExecuteGameplayActionAsync(
             string actionName,
             Func<GameplaySigningContext, TransactionInstruction> buildInstruction,
-            Func<string, UniTask> onSuccess = null,
             bool ensureSessionIfPossible = true)
         {
             if (Web3.Wallet?.Account == null)
             {
                 LogError($"{actionName} failed: wallet not connected.");
-                return null;
+                return TxResult.Fail("Wallet not connected");
             }
 
             var walletSessionManager = GetWalletSessionManager();
@@ -2658,7 +2649,7 @@ namespace SeekerDungeon.Solana
             if (signingContext.SignerAccount == null || signingContext.Authority == null || signingContext.Player == null)
             {
                 LogError($"{actionName} failed: signer context is missing.");
-                return null;
+                return TxResult.Fail("Signer context missing");
             }
 
             var signature = await SendTransaction(
@@ -2668,47 +2659,46 @@ namespace SeekerDungeon.Solana
 
             if (!string.IsNullOrWhiteSpace(signature))
             {
-                if (onSuccess != null)
-                {
-                    await onSuccess(signature);
-                }
-                return signature;
+                return TxResult.Ok(signature);
             }
+
+            var errorDetail = FormatProgramError(_lastProgramErrorCode);
 
             if (!signingContext.UsesSessionSigner || walletSessionManager == null)
             {
-                return null;
+                return TxResult.Fail($"{actionName} TX failed{errorDetail}");
             }
 
             if (!walletSessionManager.IsSessionRecoverableProgramError(_lastProgramErrorCode))
             {
-                return null;
+                return TxResult.Fail($"{actionName} TX failed (non-recoverable){errorDetail}");
             }
 
             Log($"{actionName} failed with recoverable session error. Attempting one session restart.");
             var restarted = await walletSessionManager.EnsureGameplaySessionAsync();
             if (!restarted)
             {
-                return null;
+                return TxResult.Fail($"{actionName} session restart failed");
             }
 
             var retryContext = BuildGameplaySigningContext(walletSessionManager);
             if (!retryContext.UsesSessionSigner || retryContext.SignerAccount == null)
             {
                 LogError($"{actionName} retry failed: session signer unavailable after restart.");
-                return null;
+                return TxResult.Fail($"{actionName} retry signer unavailable");
             }
 
             var retrySignature = await SendTransaction(
                 buildInstruction(retryContext),
                 retryContext.SignerAccount,
                 new List<Account> { retryContext.SignerAccount });
-            if (!string.IsNullOrWhiteSpace(retrySignature) && onSuccess != null)
+
+            if (!string.IsNullOrWhiteSpace(retrySignature))
             {
-                await onSuccess(retrySignature);
+                return TxResult.Ok(retrySignature);
             }
 
-            return retrySignature;
+            return TxResult.Fail($"{actionName} retry TX failed");
         }
 
         /// <summary>
@@ -3201,14 +3191,39 @@ namespace SeekerDungeon.Solana
             return _lastProgramErrorCode.HasValue && _lastProgramErrorCode.Value == 3012;
         }
 
-        private async UniTask<string> MoveThroughDoor(byte direction)
+        /// <summary>
+        /// Formats the last program error code into a human-readable suffix
+        /// for inclusion in TxResult error messages.
+        /// Returns an empty string when there is no error code.
+        /// </summary>
+        private string FormatProgramError(uint? errorCode)
+        {
+            if (!errorCode.HasValue)
+            {
+                return string.Empty;
+            }
+
+            if (TryMapProgramError(errorCode.Value, out var programMsg))
+            {
+                return $" [program: {programMsg} (0x{errorCode.Value:X})]";
+            }
+
+            if (TryMapAnchorFrameworkError(errorCode.Value, out var anchorMsg))
+            {
+                return $" [anchor: {anchorMsg} (0x{errorCode.Value:X})]";
+            }
+
+            return $" [error: 0x{errorCode.Value:X}]";
+        }
+
+        private async UniTask<TxResult> MoveThroughDoor(byte direction)
         {
             if (CurrentPlayerState == null)
             {
                 await FetchPlayerState();
                 if (CurrentPlayerState == null)
                 {
-                    return null;
+                    return TxResult.Fail("Player state not loaded");
                 }
             }
 
@@ -3217,20 +3232,20 @@ namespace SeekerDungeon.Solana
                 CurrentPlayerState.CurrentRoomY,
                 direction);
 
-            var moveSignature = await MovePlayer(targetX, targetY);
-            if (!string.IsNullOrWhiteSpace(moveSignature))
+            var moveResult = await MovePlayer(targetX, targetY);
+            if (moveResult.Success)
             {
-                return moveSignature;
+                return moveResult;
             }
 
             if (IsFrameworkAccountNotInitializedError())
             {
                 Log("MovePlayer hit AccountNotInitialized. Refreshing state and retrying once.");
                 await RefreshAllState();
-                moveSignature = await MovePlayer(targetX, targetY);
+                moveResult = await MovePlayer(targetX, targetY);
             }
 
-            return moveSignature;
+            return moveResult;
         }
 
         private static bool TryMapProgramError(uint errorCode, out string message)
