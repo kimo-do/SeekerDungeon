@@ -23,6 +23,7 @@ pub mod session_auth;
 pub mod set_player_skin;
 pub mod tick_boss_fight;
 pub mod tick_job;
+pub mod unlock_door;
 
 pub use abandon_job::*;
 pub use add_inventory_item::*;
@@ -48,3 +49,4 @@ pub use reset_player_for_testing::*;
 pub use set_player_skin::*;
 pub use tick_boss_fight::*;
 pub use tick_job::*;
+pub use unlock_door::*;

@@ -649,9 +649,11 @@ namespace SeekerDungeon.Dungeon
 
                     // Interactable when the player can perform an onchain action right now:
                     //  - Open door: can walk through
+                    //  - Locked door: can unlock with key
                     //  - Rubble, not yet working on it: can start clearing
                     //  - Anything else (solid wall, already working, completed): not interactable
                     var canInteract = door.IsOpen ||
+                                     door.IsLocked ||
                                      (door.IsRubble && !door.IsCompleted && !localPlayerWorking);
                     vi.Interactable = canInteract;
                 }

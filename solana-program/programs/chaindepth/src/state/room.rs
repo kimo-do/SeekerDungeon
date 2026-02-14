@@ -14,6 +14,11 @@ pub const DIRECTION_WEST: u8 = 3;
 pub const WALL_SOLID: u8 = 0;
 pub const WALL_RUBBLE: u8 = 1;
 pub const WALL_OPEN: u8 = 2;
+pub const WALL_LOCKED: u8 = 3;
+
+/// Door lock kind constants
+pub const LOCK_KIND_NONE: u8 = 0;
+pub const LOCK_KIND_SKELETON: u8 = 1;
 
 /// Center state constants
 pub const CENTER_EMPTY: u8 = 0;
@@ -33,8 +38,11 @@ pub struct RoomAccount {
     pub season_seed: u64,
 
     /// Wall states: [North, South, East, West]
-    /// 0 = solid wall (impassable), 1 = rubble (can clear), 2 = open (passable)
+    /// 0 = solid wall (impassable), 1 = rubble (can clear), 2 = open (passable), 3 = locked
     pub walls: [u8; 4],
+
+    /// Per-door lock kind: 0 = none, 1 = skeleton lock
+    pub door_lock_kinds: [u8; 4],
 
     /// Count of active helpers per direction
     pub helper_counts: [u32; 4],
@@ -59,6 +67,9 @@ pub struct RoomAccount {
 
     /// Whether this room has a chest
     pub has_chest: bool,
+
+    /// If true, this chest always grants SkeletonKey x1 in addition to normal chest loot.
+    pub forced_key_drop: bool,
 
     /// What is in the room center (empty/chest/boss)
     pub center_type: u8,
@@ -157,6 +168,10 @@ impl RoomAccount {
     /// Check if wall at direction is open (passable)
     pub fn is_open(&self, direction: u8) -> bool {
         self.walls[direction as usize] == WALL_OPEN
+    }
+
+    pub fn is_locked(&self, direction: u8) -> bool {
+        self.walls[direction as usize] == WALL_LOCKED
     }
 
     pub fn is_valid_center_type(center_type: u8) -> bool {

@@ -6,6 +6,7 @@ pub mod loot_receipt;
 pub mod player;
 pub mod player_profile;
 pub mod room;
+pub mod room_generation;
 pub mod room_presence;
 pub mod session_authority;
 
@@ -17,5 +18,6 @@ pub use loot_receipt::*;
 pub use player::*;
 pub use player_profile::*;
 pub use room::*;
+pub use room_generation::*;
 pub use room_presence::*;
 pub use session_authority::*;

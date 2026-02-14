@@ -37,7 +37,8 @@ namespace SeekerDungeon.Solana
         CreatePlayerProfile = 1 << 9,
         JoinBossFight = 1 << 10,
         LootChest = 1 << 11,
-        LootBoss = 1 << 12
+        LootBoss = 1 << 12,
+        UnlockDoor = 1 << 13
     }
 
     public enum WalletLoginMode
@@ -149,7 +150,8 @@ namespace SeekerDungeon.Solana
                 SessionInstructionAllowlist.CreatePlayerProfile |
                 SessionInstructionAllowlist.JoinBossFight |
                 SessionInstructionAllowlist.LootChest |
-                SessionInstructionAllowlist.LootBoss
+                SessionInstructionAllowlist.LootBoss |
+                SessionInstructionAllowlist.UnlockDoor
             );
 
         [Header("Debug")]

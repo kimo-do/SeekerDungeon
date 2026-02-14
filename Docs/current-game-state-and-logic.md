@@ -28,10 +28,12 @@ This is the current gameplay logic that exists onchain, translated into Unity-fr
 ### Room (`["room", season_seed, x, y]`)
 - Authoritative state for one map room.
 - Door fields:
-  - `walls[4]`: `0=solid`, `1=rubble`, `2=open`
+  - `walls[4]`: `0=solid`, `1=rubble`, `2=open`, `3=locked`
+  - `door_lock_kinds[4]`: `0=none`, `1=skeleton`
   - `helper_counts`, `progress`, `base_slots`, `job_completed`, `bonus_per_helper`
 - Center fields:
   - `center_type`: `0=empty`, `1=chest`, `2=boss`
+  - `forced_key_drop`: chest grants `SkeletonKey x1` in addition to normal loot
   - `center_id`: boss identifier for Unity spawn selection
   - Boss runtime: `boss_max_hp`, `boss_current_hp`, `boss_total_dps`, `boss_fighter_count`, `boss_defeated`
 - Loot memory:
@@ -75,6 +77,11 @@ This is the current gameplay logic that exists onchain, translated into Unity-fr
   - `center_type = boss`
   - `center_id` set deterministically for Unity boss variant
   - HP scales by depth and boss id.
+- Locked doors can appear deterministically on discovered rooms:
+  - max 1 per room
+  - never on return direction
+  - requires key item to unlock
+- One deterministic forced-key chest exists per depth ring (global-soft key guarantee).
 
 ## Door Job Flow (Rubble Doors)
 
@@ -86,6 +93,7 @@ flowchart TD
     A[Click Door] --> B{Wall state}
     B -->|Solid| C[Cannot interact]
     B -->|Open| D[Already open]
+    B -->|Locked| L[UnlockDoor consume key]
     B -->|Rubble| E{Player has active job?}
     E -->|No| F[JoinJob]
     E -->|Yes| G{Job completed?}
@@ -129,6 +137,7 @@ Current item ids:
 - `1 = Ore`
 - `2 = Tool`
 - `3 = Buff`
+- `214 = SkeletonKey`
 
 ## Unity Methods Already Wired
 

@@ -75,6 +75,11 @@ pub mod chaindepth {
         instructions::move_player::handler(ctx, new_x, new_y)
     }
 
+    /// Unlock a locked door using the required key item.
+    pub fn unlock_door(ctx: Context<UnlockDoor>, direction: u8) -> Result<()> {
+        instructions::unlock_door::handler(ctx, direction)
+    }
+
     /// Join a job to clear rubble (stakes SKR)
     pub fn join_job(ctx: Context<JoinJob>, direction: u8) -> Result<()> {
         instructions::join_job::handler(ctx, direction)

@@ -9,6 +9,9 @@ pub enum ChainDepthError {
     #[msg("Invalid move: wall is not open")]
     WallNotOpen,
 
+    #[msg("Wall is not locked")]
+    WallNotLocked,
+
     #[msg("Invalid move: coordinates out of bounds")]
     OutOfBounds,
 
@@ -54,6 +57,12 @@ pub enum ChainDepthError {
 
     #[msg("Not enough items")]
     InsufficientItemAmount,
+
+    #[msg("Missing required key item")]
+    MissingRequiredKey,
+
+    #[msg("Invalid lock kind")]
+    InvalidLockKind,
 
     // Loot errors
     #[msg("Room has no chest")]

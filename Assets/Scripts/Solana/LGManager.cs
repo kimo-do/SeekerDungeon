@@ -929,6 +929,20 @@ namespace SeekerDungeon.Solana
                     Log($"Door {LGConfig.GetDirectionName(direction)} is open. Moving player through door.");
                     return await MoveThroughDoor(direction);
                 }
+                else if (wallState == LGConfig.WALL_LOCKED)
+                {
+                    Log($"Door {LGConfig.GetDirectionName(direction)} is locked. Attempting unlock.");
+                    var unlockResult = await UnlockDoor(direction);
+                    if (!unlockResult.Success && IsMissingRequiredKeyError())
+                    {
+                        return TxResult.Fail("Missing required key: SkeletonKey");
+                    }
+                    if (unlockResult.Success)
+                    {
+                        await RefreshAllState();
+                    }
+                    return unlockResult;
+                }
                 else
                 {
                     Log($"Door {LGConfig.GetDirectionName(direction)} is solid and cannot be worked.");
@@ -1545,6 +1559,75 @@ namespace SeekerDungeon.Solana
             catch (Exception e)
             {
                 LogError($"Move failed: {e.Message}");
+                return TxResult.Fail(e.Message);
+            }
+        }
+
+        /// <summary>
+        /// Unlock a locked door in the current room by consuming the required key.
+        /// </summary>
+        public async UniTask<TxResult> UnlockDoor(byte direction)
+        {
+            if (Web3.Wallet == null)
+            {
+                LogError("Wallet not connected");
+                return TxResult.Fail("Wallet not connected");
+            }
+
+            if (CurrentPlayerState == null || CurrentGlobalState == null)
+            {
+                LogError("Player or global state not loaded");
+                return TxResult.Fail("Player or global state not loaded");
+            }
+
+            Log($"Unlocking door in direction {LGConfig.GetDirectionName(direction)}...");
+
+            try
+            {
+                var result = await ExecuteGameplayActionAsync(
+                    "UnlockDoor",
+                    (context) =>
+                    {
+                        var playerPda = DerivePlayerPda(context.Player);
+                        var roomPda = DeriveRoomPda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY);
+                        var (adjacentX, adjacentY) = LGConfig.GetAdjacentCoords(
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY,
+                            direction);
+                        var adjacentRoomPda = DeriveRoomPda(CurrentGlobalState.SeasonSeed, adjacentX, adjacentY);
+                        var inventoryPda = DeriveInventoryPda(context.Player);
+
+                        return ChaindepthProgram.UnlockDoor(
+                            new UnlockDoorAccounts
+                            {
+                                Authority = context.Authority,
+                                Player = context.Player,
+                                Global = _globalPda,
+                                PlayerAccount = playerPda,
+                                Room = roomPda,
+                                AdjacentRoom = adjacentRoomPda,
+                                Inventory = inventoryPda,
+                                SessionAuthority = context.SessionAuthority,
+                                SystemProgram = SystemProgram.ProgramIdKey
+                            },
+                            direction,
+                            _programId
+                        );
+                    });
+
+                if (result.Success)
+                {
+                    Log($"Door unlocked! TX: {result.Signature}");
+                }
+
+                return result;
+            }
+            catch (Exception e)
+            {
+                LogError($"UnlockDoor failed: {e.Message}");
                 return TxResult.Fail(e.Message);
             }
         }
@@ -3189,6 +3272,12 @@ namespace SeekerDungeon.Solana
         private bool IsFrameworkAccountNotInitializedError()
         {
             return _lastProgramErrorCode.HasValue && _lastProgramErrorCode.Value == 3012;
+        }
+
+        private bool IsMissingRequiredKeyError()
+        {
+            return _lastProgramErrorCode.HasValue &&
+                   _lastProgramErrorCode.Value == (uint)Chaindepth.Errors.ChaindepthErrorKind.MissingRequiredKey;
         }
 
         /// <summary>

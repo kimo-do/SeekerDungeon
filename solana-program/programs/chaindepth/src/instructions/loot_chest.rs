@@ -137,6 +137,10 @@ pub fn handler(ctx: Context<LootChest>) -> Result<()> {
     }
     inventory.add_item(item_id, u32::from(item_amount), durability)?;
 
+    if room.forced_key_drop {
+        inventory.add_item(item_ids::SKELETON_KEY, 1, 0)?;
+    }
+
     emit!(ChestLooted {
         room_x: room.x,
         room_y: room.y,

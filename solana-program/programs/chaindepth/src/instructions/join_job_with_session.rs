@@ -45,9 +45,20 @@ pub struct JoinJobWithSession<'info> {
     )]
     pub room: Box<Account<'info, RoomAccount>>,
 
-    /// CHECK: validated in handler against expected RoomPresence PDA and ownership.
-    #[account(mut)]
-    pub room_presence: UncheckedAccount<'info>,
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = RoomPresence::DISCRIMINATOR.len() + RoomPresence::INIT_SPACE,
+        seeds = [
+            RoomPresence::SEED_PREFIX,
+            &global.season_seed.to_le_bytes(),
+            &[player_account.current_room_x as u8],
+            &[player_account.current_room_y as u8],
+            player.key().as_ref()
+        ],
+        bump
+    )]
+    pub room_presence: Box<Account<'info, RoomPresence>>,
 
     /// Escrow token account for this room direction.
     #[account(
@@ -152,35 +163,22 @@ pub fn handler(ctx: Context<JoinJobWithSession>, direction: u8) -> Result<()> {
     player_account.add_job(room.x, room.y, direction)?;
     msg!("JoinJob: after add_job, jobs={}", player_account.active_jobs.len());
 
-    let (expected_room_presence, _) = Pubkey::find_program_address(
-        &[
-            RoomPresence::SEED_PREFIX,
-            &ctx.accounts.global.season_seed.to_le_bytes(),
-            &[room.x as u8],
-            &[room.y as u8],
-            player_key.as_ref(),
-        ],
-        ctx.program_id,
-    );
+    if ctx.accounts.room_presence.player == Pubkey::default() {
+        ctx.accounts.room_presence.player = player_key;
+        ctx.accounts.room_presence.season_seed = ctx.accounts.global.season_seed;
+        ctx.accounts.room_presence.room_x = room.x;
+        ctx.accounts.room_presence.room_y = room.y;
+        ctx.accounts.room_presence.skin_id = 0;
+        ctx.accounts.room_presence.equipped_item_id = player_account.equipped_item_id;
+        ctx.accounts.room_presence.is_current = true;
+        ctx.accounts.room_presence.bump = ctx.bumps.room_presence;
+    }
     require_keys_eq!(
-        expected_room_presence,
-        ctx.accounts.room_presence.key(),
+        ctx.accounts.room_presence.player,
+        player_key,
         ChainDepthError::NotInRoom
     );
-
-    let room_presence_info = ctx.accounts.room_presence.to_account_info();
-    require_keys_eq!(
-        *room_presence_info.owner,
-        *ctx.program_id,
-        ChainDepthError::NotInRoom
-    );
-    let mut room_presence_data = room_presence_info.try_borrow_mut_data()?;
-    let mut room_presence_bytes: &[u8] = &room_presence_data;
-    let mut room_presence = RoomPresence::try_deserialize(&mut room_presence_bytes)?;
-    require_keys_eq!(room_presence.player, player_key, ChainDepthError::NotInRoom);
-    room_presence.set_door_job(direction);
-    let mut room_presence_write_buffer: &mut [u8] = &mut room_presence_data;
-    room_presence.try_serialize(&mut room_presence_write_buffer)?;
+    ctx.accounts.room_presence.set_door_job(direction);
 
     let helper_stake = &mut ctx.accounts.helper_stake;
     helper_stake.player = player_key;

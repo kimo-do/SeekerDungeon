@@ -20,7 +20,8 @@ namespace SeekerDungeon.Solana
         Unknown = 255,
         Solid = 0,
         Rubble = 1,
-        Open = 2
+        Open = 2,
+        Locked = 3
     }
 
     public enum RoomDirection : byte
@@ -115,6 +116,8 @@ namespace SeekerDungeon.Solana
     {
         public RoomDirection Direction { get; init; }
         public RoomWallState WallState { get; init; }
+        public byte LockKind { get; init; }
+        public ItemId RequiredKeyItemId { get; init; }
         public uint HelperCount { get; init; }
         public ulong Progress { get; init; }
         public ulong RequiredProgress { get; init; }
@@ -122,6 +125,7 @@ namespace SeekerDungeon.Solana
         public bool IsCompleted { get; init; }
         public bool IsOpen => WallState == RoomWallState.Open;
         public bool IsRubble => WallState == RoomWallState.Rubble;
+        public bool IsLocked => WallState == RoomWallState.Locked;
     }
 
     public sealed class MonsterView
@@ -141,6 +145,7 @@ namespace SeekerDungeon.Solana
         public RoomCenterType CenterType { get; init; }
         public int LootedCount { get; init; }
         public bool HasLocalPlayerLooted { get; set; }
+        public bool ForcedKeyDrop { get; init; }
         public PublicKey CreatedBy { get; init; }
         public IReadOnlyDictionary<RoomDirection, DoorJobView> Doors { get; init; }
         private MonsterView _monster;
@@ -243,6 +248,7 @@ namespace SeekerDungeon.Solana
                 CenterType = ToCenterType(room.CenterType),
                 LootedCount = (int)room.LootedCount,
                 HasLocalPlayerLooted = false,
+                ForcedKeyDrop = room.ForcedKeyDrop,
                 CreatedBy = room.CreatedBy,
                 Doors = doors
             };
@@ -302,6 +308,7 @@ namespace SeekerDungeon.Solana
                 0 => RoomWallState.Solid,
                 1 => RoomWallState.Rubble,
                 2 => RoomWallState.Open,
+                3 => RoomWallState.Locked,
                 _ => RoomWallState.Unknown
             };
         }
@@ -439,6 +446,8 @@ namespace SeekerDungeon.Solana
             var required = room.BaseSlots ?? Array.Empty<ulong>();
             var completed = room.JobCompleted ?? Array.Empty<bool>();
             var startSlots = room.StartSlot ?? Array.Empty<ulong>();
+            var lockKinds = room.DoorLockKinds ?? Array.Empty<byte>();
+            var lockKind = directionIndex < lockKinds.Length ? lockKinds[directionIndex] : (byte)0;
 
             return new DoorJobView
             {
@@ -446,6 +455,8 @@ namespace SeekerDungeon.Solana
                 WallState = directionIndex < walls.Length
                     ? ToWallState(walls[directionIndex])
                     : RoomWallState.Unknown,
+                LockKind = lockKind,
+                RequiredKeyItemId = ToRequiredKeyItem(lockKind),
                 HelperCount = directionIndex < helperCounts.Length ? helperCounts[directionIndex] : 0,
                 Progress = directionIndex < progress.Length ? progress[directionIndex] : 0,
                 RequiredProgress = directionIndex < required.Length ? required[directionIndex] : 0,
@@ -453,6 +464,14 @@ namespace SeekerDungeon.Solana
                 IsCompleted = directionIndex < completed.Length && completed[directionIndex]
             };
         }
+
+        private static ItemId ToRequiredKeyItem(byte lockKind)
+        {
+            return lockKind switch
+            {
+                1 => ItemId.SkeletonKey,
+                _ => ItemId.None
+            };
+        }
     }
 }
-

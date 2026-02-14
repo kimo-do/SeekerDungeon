@@ -354,6 +354,8 @@ namespace Chaindepth
 
             public byte[] Walls { get; set; }
 
+            public byte[] DoorLockKinds { get; set; }
+
             public uint[] HelperCounts { get; set; }
 
             public ulong[] Progress { get; set; }
@@ -369,6 +371,8 @@ namespace Chaindepth
             public ulong[] BonusPerHelper { get; set; }
 
             public bool HasChest { get; set; }
+
+            public bool ForcedKeyDrop { get; set; }
 
             public byte CenterType { get; set; }
 
@@ -412,6 +416,8 @@ namespace Chaindepth
                 result.SeasonSeed = _data.GetU64(offset);
                 offset += 8;
                 result.Walls = _data.GetBytes(offset, 4);
+                offset += 4;
+                result.DoorLockKinds = _data.GetBytes(offset, 4);
                 offset += 4;
                 result.HelperCounts = new uint[4];
                 for (uint resultHelperCountsIdx = 0; resultHelperCountsIdx < 4; resultHelperCountsIdx++)
@@ -463,6 +469,8 @@ namespace Chaindepth
                 }
 
                 result.HasChest = _data.GetBool(offset);
+                offset += 1;
+                result.ForcedKeyDrop = _data.GetBool(offset);
                 offset += 1;
                 result.CenterType = _data.GetU8(offset);
                 offset += 1;
@@ -615,43 +623,46 @@ namespace Chaindepth
         {
             NotAdjacent = 6000U,
             WallNotOpen = 6001U,
-            OutOfBounds = 6002U,
-            InvalidDirection = 6003U,
-            NotRubble = 6004U,
-            AlreadyJoined = 6005U,
-            JobFull = 6006U,
-            NotHelper = 6007U,
-            JobNotReady = 6008U,
-            NoActiveJob = 6009U,
-            JobAlreadyCompleted = 6010U,
-            JobNotCompleted = 6011U,
-            TooManyActiveJobs = 6012U,
-            InventoryFull = 6013U,
-            InvalidItemId = 6014U,
-            InvalidItemAmount = 6015U,
-            InsufficientItemAmount = 6016U,
-            NoChest = 6017U,
-            AlreadyLooted = 6018U,
-            TreasuryInsufficientFunds = 6019U,
-            NotInRoom = 6020U,
-            NoBoss = 6021U,
-            BossAlreadyDefeated = 6022U,
-            BossNotDefeated = 6023U,
-            AlreadyFightingBoss = 6024U,
-            NotBossFighter = 6025U,
-            InvalidCenterType = 6026U,
-            DisplayNameTooLong = 6027U,
-            InvalidSessionExpiry = 6028U,
-            InvalidSessionAllowlist = 6029U,
-            SessionExpired = 6030U,
-            SessionInactive = 6031U,
-            SessionInstructionNotAllowed = 6032U,
-            SessionSpendCapExceeded = 6033U,
-            SeasonNotEnded = 6034U,
-            Unauthorized = 6035U,
-            InsufficientBalance = 6036U,
-            TransferFailed = 6037U,
-            Overflow = 6038U
+            WallNotLocked = 6002U,
+            OutOfBounds = 6003U,
+            InvalidDirection = 6004U,
+            NotRubble = 6005U,
+            AlreadyJoined = 6006U,
+            JobFull = 6007U,
+            NotHelper = 6008U,
+            JobNotReady = 6009U,
+            NoActiveJob = 6010U,
+            JobAlreadyCompleted = 6011U,
+            JobNotCompleted = 6012U,
+            TooManyActiveJobs = 6013U,
+            InventoryFull = 6014U,
+            InvalidItemId = 6015U,
+            InvalidItemAmount = 6016U,
+            InsufficientItemAmount = 6017U,
+            MissingRequiredKey = 6018U,
+            InvalidLockKind = 6019U,
+            NoChest = 6020U,
+            AlreadyLooted = 6021U,
+            TreasuryInsufficientFunds = 6022U,
+            NotInRoom = 6023U,
+            NoBoss = 6024U,
+            BossAlreadyDefeated = 6025U,
+            BossNotDefeated = 6026U,
+            AlreadyFightingBoss = 6027U,
+            NotBossFighter = 6028U,
+            InvalidCenterType = 6029U,
+            DisplayNameTooLong = 6030U,
+            InvalidSessionExpiry = 6031U,
+            InvalidSessionAllowlist = 6032U,
+            SessionExpired = 6033U,
+            SessionInactive = 6034U,
+            SessionInstructionNotAllowed = 6035U,
+            SessionSpendCapExceeded = 6036U,
+            SeasonNotEnded = 6037U,
+            Unauthorized = 6038U,
+            InsufficientBalance = 6039U,
+            TransferFailed = 6040U,
+            Overflow = 6041U
         }
     }
 
@@ -1058,7 +1069,7 @@ namespace Chaindepth
 
         protected override Dictionary<uint, ProgramError<ChaindepthErrorKind>> BuildErrorsDictionary()
         {
-            return new Dictionary<uint, ProgramError<ChaindepthErrorKind>>{{6000U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NotAdjacent, "Invalid move: target room is not adjacent")}, {6001U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.WallNotOpen, "Invalid move: wall is not open")}, {6002U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.OutOfBounds, "Invalid move: coordinates out of bounds")}, {6003U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidDirection, "Invalid direction: must be 0-3 (N/S/E/W)")}, {6004U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NotRubble, "Wall is not rubble: cannot start job")}, {6005U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.AlreadyJoined, "Already joined this job")}, {6006U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.JobFull, "Job is full: maximum helpers reached")}, {6007U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NotHelper, "Not a helper on this job")}, {6008U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.JobNotReady, "Job not ready: progress insufficient")}, {6009U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NoActiveJob, "No active job at this location")}, {6010U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.JobAlreadyCompleted, "Job has already been completed")}, {6011U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.JobNotCompleted, "Job has not been completed yet")}, {6012U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.TooManyActiveJobs, "Too many active jobs: abandon one first")}, {6013U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InventoryFull, "Inventory is full")}, {6014U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidItemId, "Invalid item id")}, {6015U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidItemAmount, "Invalid item amount")}, {6016U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InsufficientItemAmount, "Not enough items")}, {6017U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NoChest, "Room has no chest")}, {6018U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.AlreadyLooted, "Already looted this chest")}, {6019U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.TreasuryInsufficientFunds, "Treasury has insufficient SOL to reimburse room rent")}, {6020U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NotInRoom, "Player not in this room")}, {6021U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NoBoss, "No boss in this room center")}, {6022U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.BossAlreadyDefeated, "Boss is already defeated")}, {6023U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.BossNotDefeated, "Boss has not been defeated yet")}, {6024U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.AlreadyFightingBoss, "Player is already fighting this boss")}, {6025U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NotBossFighter, "Player is not a fighter for this boss")}, {6026U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidCenterType, "Invalid center type")}, {6027U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.DisplayNameTooLong, "Display name is too long")}, {6028U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidSessionExpiry, "Invalid session expiry values")}, {6029U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidSessionAllowlist, "Session instruction allowlist cannot be empty")}, {6030U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.SessionExpired, "Session has expired")}, {6031U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.SessionInactive, "Session is inactive")}, {6032U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.SessionInstructionNotAllowed, "Instruction is not allowed by session policy")}, {6033U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.SessionSpendCapExceeded, "Session spend cap exceeded")}, {6034U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.SeasonNotEnded, "Season has not ended yet")}, {6035U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.Unauthorized, "Unauthorized: only admin can perform this action")}, {6036U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InsufficientBalance, "Insufficient balance for stake")}, {6037U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.TransferFailed, "Token transfer failed")}, {6038U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.Overflow, "Arithmetic overflow")}, };
+            return new Dictionary<uint, ProgramError<ChaindepthErrorKind>>{{6000U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NotAdjacent, "Invalid move: target room is not adjacent")}, {6001U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.WallNotOpen, "Invalid move: wall is not open")}, {6002U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.WallNotLocked, "Wall is not locked")}, {6003U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.OutOfBounds, "Invalid move: coordinates out of bounds")}, {6004U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidDirection, "Invalid direction: must be 0-3 (N/S/E/W)")}, {6005U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NotRubble, "Wall is not rubble: cannot start job")}, {6006U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.AlreadyJoined, "Already joined this job")}, {6007U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.JobFull, "Job is full: maximum helpers reached")}, {6008U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NotHelper, "Not a helper on this job")}, {6009U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.JobNotReady, "Job not ready: progress insufficient")}, {6010U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NoActiveJob, "No active job at this location")}, {6011U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.JobAlreadyCompleted, "Job has already been completed")}, {6012U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.JobNotCompleted, "Job has not been completed yet")}, {6013U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.TooManyActiveJobs, "Too many active jobs: abandon one first")}, {6014U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InventoryFull, "Inventory is full")}, {6015U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidItemId, "Invalid item id")}, {6016U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidItemAmount, "Invalid item amount")}, {6017U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InsufficientItemAmount, "Not enough items")}, {6018U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.MissingRequiredKey, "Missing required key item")}, {6019U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidLockKind, "Invalid lock kind")}, {6020U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NoChest, "Room has no chest")}, {6021U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.AlreadyLooted, "Already looted this chest")}, {6022U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.TreasuryInsufficientFunds, "Treasury has insufficient SOL to reimburse room rent")}, {6023U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NotInRoom, "Player not in this room")}, {6024U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NoBoss, "No boss in this room center")}, {6025U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.BossAlreadyDefeated, "Boss is already defeated")}, {6026U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.BossNotDefeated, "Boss has not been defeated yet")}, {6027U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.AlreadyFightingBoss, "Player is already fighting this boss")}, {6028U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NotBossFighter, "Player is not a fighter for this boss")}, {6029U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidCenterType, "Invalid center type")}, {6030U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.DisplayNameTooLong, "Display name is too long")}, {6031U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidSessionExpiry, "Invalid session expiry values")}, {6032U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidSessionAllowlist, "Session instruction allowlist cannot be empty")}, {6033U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.SessionExpired, "Session has expired")}, {6034U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.SessionInactive, "Session is inactive")}, {6035U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.SessionInstructionNotAllowed, "Instruction is not allowed by session policy")}, {6036U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.SessionSpendCapExceeded, "Session spend cap exceeded")}, {6037U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.SeasonNotEnded, "Season has not ended yet")}, {6038U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.Unauthorized, "Unauthorized: only admin can perform this action")}, {6039U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InsufficientBalance, "Insufficient balance for stake")}, {6040U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.TransferFailed, "Token transfer failed")}, {6041U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.Overflow, "Arithmetic overflow")}, };
         }
     }
 
@@ -1504,6 +1515,27 @@ namespace Chaindepth
             public PublicKey Room { get; set; }
         }
 
+        public class UnlockDoorAccounts
+        {
+            public PublicKey Authority { get; set; }
+
+            public PublicKey Player { get; set; }
+
+            public PublicKey Global { get; set; }
+
+            public PublicKey PlayerAccount { get; set; }
+
+            public PublicKey Room { get; set; }
+
+            public PublicKey AdjacentRoom { get; set; }
+
+            public PublicKey Inventory { get; set; }
+
+            public PublicKey SessionAuthority { get; set; }
+
+            public PublicKey SystemProgram { get; set; } = new PublicKey("11111111111111111111111111111111");
+        }
+
         public static class ChaindepthProgram
         {
             public const string ID = "3Ctc2FgnNHQtGAcZftMS4ykLhJYjLzBD3hELKy55DnKo";
@@ -1898,6 +1930,22 @@ namespace Chaindepth
                 byte[] _data = new byte[1200];
                 int offset = 0;
                 _data.WriteU64(8672572876003750988UL, offset);
+                offset += 8;
+                _data.WriteU8(direction, offset);
+                offset += 1;
+                byte[] resultData = new byte[offset];
+                Array.Copy(_data, resultData, offset);
+                return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
+            }
+
+            public static Solana.Unity.Rpc.Models.TransactionInstruction UnlockDoor(UnlockDoorAccounts accounts, byte direction, PublicKey programId = null)
+            {
+                programId ??= new(ID);
+                List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
+                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Authority, true), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Player, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Global, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.PlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Room, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.AdjacentRoom, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Inventory, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.SessionAuthority == null ? programId : accounts.SessionAuthority, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
+                byte[] _data = new byte[1200];
+                int offset = 0;
+                _data.WriteU64(1945469879090199389UL, offset);
                 offset += 8;
                 _data.WriteU8(direction, offset);
                 offset += 1;

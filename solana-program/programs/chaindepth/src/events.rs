@@ -82,6 +82,16 @@ pub struct PlayerMoved {
     pub to_y: i8,
 }
 
+/// Emitted when a player unlocks a locked door with a key item
+#[event]
+pub struct DoorUnlocked {
+    pub room_x: i8,
+    pub room_y: i8,
+    pub direction: u8,
+    pub player: Pubkey,
+    pub key_item_id: u16,
+}
+
 /// Emitted when global state is initialized
 #[event]
 pub struct GlobalInitialized {

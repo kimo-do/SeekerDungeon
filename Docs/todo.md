@@ -1,4 +1,7 @@
-- Make locked doors, unlockable by key
+- [x] Make locked doors, unlockable by key
+- [ ] Tune locked door spawn cadence after playtest telemetry.
+- [ ] Tune forced key chest cadence after playtest telemetry.
+- [ ] Publish upgraded program + reset/migrate season state before enabling locked doors on shared devnet/mainnet.
 - entrance spawn room
 - Add extraction, add to highscore
 - player combat, show kills

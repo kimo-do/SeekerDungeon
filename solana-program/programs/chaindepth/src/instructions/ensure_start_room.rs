@@ -58,7 +58,9 @@ pub fn handler(ctx: Context<EnsureStartRoom>) -> Result<()> {
     start_room.total_staked = [0; 4];
     start_room.job_completed = [false; 4];
     start_room.bonus_per_helper = [0; 4];
+    start_room.door_lock_kinds = [0; 4];
     start_room.has_chest = false;
+    start_room.forced_key_drop = false;
     start_room.center_type = CENTER_EMPTY;
     start_room.center_id = 0;
     start_room.boss_max_hp = 0;

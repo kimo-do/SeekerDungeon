@@ -4,8 +4,8 @@ use crate::errors::ChainDepthError;
 use crate::events::PlayerMoved;
 use crate::instructions::session_auth::authorize_player_action;
 use crate::state::{
-    session_instruction_bits, GlobalAccount, PlayerAccount, PlayerProfile, RoomAccount,
-    RoomPresence, SessionAuthority, CENTER_BOSS, CENTER_CHEST, CENTER_EMPTY, WALL_OPEN, WALL_RUBBLE,
+    calculate_depth, initialize_discovered_room, session_instruction_bits, GlobalAccount,
+    PlayerAccount, PlayerProfile, RoomAccount, RoomPresence, SessionAuthority, WALL_OPEN,
 };
 
 #[derive(Accounts)]
@@ -201,48 +201,24 @@ pub fn handler(ctx: Context<MovePlayer>, new_x: i8, new_y: i8) -> Result<()> {
         ChainDepthError::WallNotOpen
     );
 
+    let clock = Clock::get()?;
     let opposite_direction = RoomAccount::opposite_direction(direction);
     let target_room = &mut ctx.accounts.target_room;
     let is_new_room = target_room.season_seed == 0;
     if is_new_room {
-        let room_depth = calculate_depth(new_x, new_y);
-        let room_hash = generate_room_hash(season_seed, new_x, new_y);
-
-        target_room.x = new_x;
-        target_room.y = new_y;
-        target_room.season_seed = season_seed;
-        target_room.walls = generate_walls(room_hash, opposite_direction);
-        RoomAccount::clamp_boundary_walls(&mut target_room.walls, new_x, new_y);
-        target_room.helper_counts = [0; 4];
-        target_room.progress = [0; 4];
-        target_room.start_slot = [0; 4];
-        target_room.base_slots = [RoomAccount::calculate_base_slots(room_depth); 4];
-        target_room.total_staked = [0; 4];
-        target_room.job_completed = [false; 4];
-        target_room.bonus_per_helper = [0; 4];
-
-        let (center_type, center_id) = generate_room_center(season_seed, new_x, new_y, room_depth);
-        let boss_max_hp = if center_type == CENTER_BOSS {
-            RoomAccount::boss_hp_for_depth(room_depth, center_id)
-        } else {
-            0
-        };
-
-        target_room.has_chest = center_type == CENTER_CHEST;
-        target_room.center_type = center_type;
-        target_room.center_id = center_id;
-        target_room.boss_max_hp = boss_max_hp;
-        target_room.boss_current_hp = boss_max_hp;
-        target_room.boss_last_update_slot = Clock::get()?.slot;
-        target_room.boss_total_dps = 0;
-        target_room.boss_fighter_count = 0;
-        target_room.boss_defeated = false;
-        target_room.looted_count = 0;
-        target_room.created_by = player_key;
-        target_room.created_slot = Clock::get()?.slot;
-        target_room.bump = ctx.bumps.target_room;
+        initialize_discovered_room(
+            target_room,
+            season_seed,
+            new_x,
+            new_y,
+            opposite_direction,
+            player_key,
+            clock.slot,
+            ctx.bumps.target_room,
+        );
     }
     target_room.walls[opposite_direction as usize] = WALL_OPEN;
+    target_room.door_lock_kinds[opposite_direction as usize] = 0;
     let return_wall_state = target_room.walls[opposite_direction as usize];
     msg!(
         "move_topology target=({}, {}) return_dir={} return_wall_state={}",
@@ -303,70 +279,6 @@ pub fn handler(ctx: Context<MovePlayer>, new_x: i8, new_y: i8) -> Result<()> {
     });
 
     Ok(())
-}
-
-fn generate_room_hash(seed: u64, x: i8, y: i8) -> u64 {
-    let mut hash = seed;
-    hash = hash.wrapping_mul(31).wrapping_add(x as u64);
-    hash = hash.wrapping_mul(31).wrapping_add(y as u64);
-    hash
-}
-
-fn generate_walls(hash: u64, entrance_direction: u8) -> [u8; 4] {
-    let mut walls = [0u8; 4];
-
-    for direction in 0..4 {
-        if direction == entrance_direction as usize {
-            walls[direction] = WALL_OPEN;
-        } else {
-            let wall_hash = (hash >> (direction * 8)) % 10;
-            walls[direction] = if wall_hash < 6 {
-                WALL_RUBBLE
-            } else if wall_hash < 9 {
-                0
-            } else {
-                WALL_OPEN
-            };
-        }
-    }
-
-    walls
-}
-
-fn calculate_depth(x: i8, y: i8) -> u32 {
-    let dx = (x - GlobalAccount::START_X).abs() as u32;
-    let dy = (y - GlobalAccount::START_Y).abs() as u32;
-    dx.max(dy)
-}
-
-fn generate_room_center(season_seed: u64, room_x: i8, room_y: i8, depth: u32) -> (u8, u16) {
-    let room_hash = generate_room_hash(season_seed, room_x, room_y);
-
-    if depth == 1 {
-        if is_forced_depth_one_chest(season_seed, room_x, room_y) || (room_hash % 100) < 50 {
-            return (CENTER_CHEST, 1);
-        }
-        return (CENTER_EMPTY, 0);
-    }
-
-    if depth >= 2 && (room_hash % 100) < 50 {
-        let boss_id = ((room_hash % 4) + 1) as u16;
-        return (CENTER_BOSS, boss_id);
-    }
-
-    (CENTER_EMPTY, 0)
-}
-
-fn is_forced_depth_one_chest(season_seed: u64, room_x: i8, room_y: i8) -> bool {
-    let forced_direction = (season_seed % 4) as u8;
-    let expected = match forced_direction {
-        0 => (GlobalAccount::START_X, GlobalAccount::START_Y + 1),
-        1 => (GlobalAccount::START_X, GlobalAccount::START_Y - 1),
-        2 => (GlobalAccount::START_X + 1, GlobalAccount::START_Y),
-        _ => (GlobalAccount::START_X - 1, GlobalAccount::START_Y),
-    };
-
-    room_x == expected.0 && room_y == expected.1
 }
 
 /// Simpler init instruction for new players (spawn at start)
