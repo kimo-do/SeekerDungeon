@@ -46,7 +46,11 @@ pub fn handler(ctx: Context<EnsureStartRoom>) -> Result<()> {
     start_room.x = GlobalAccount::START_X;
     start_room.y = GlobalAccount::START_Y;
     start_room.season_seed = ctx.accounts.global.season_seed;
-    start_room.walls = RoomAccount::generate_start_walls(ctx.accounts.global.season_seed);
+    start_room.walls = RoomAccount::generate_start_walls(
+        ctx.accounts.global.season_seed,
+        GlobalAccount::START_X,
+        GlobalAccount::START_Y,
+    );
     start_room.helper_counts = [0; 4];
     start_room.progress = [0; 4];
     start_room.start_slot = [0; 4];

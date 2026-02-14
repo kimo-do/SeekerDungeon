@@ -498,14 +498,14 @@ namespace SeekerDungeon.Solana
             }
             
             SetStatus("Initializing player...");
-            LogMessage("Initializing player at spawn (5, 5)...");
+            LogMessage($"Initializing player at spawn ({LGConfig.START_X}, {LGConfig.START_Y})...");
             
             _manager.InitPlayer().ContinueWith(sig =>
             {
                 if (sig != null)
                 {
                     SetStatus($"Player initialized!");
-                    SetLabel(_playerStatus, "Player: Initialized at (5, 5)");
+                    SetLabel(_playerStatus, $"Player: Initialized at ({LGConfig.START_X}, {LGConfig.START_Y})");
                     LogMessage($"Init TX: {sig}");
                 }
                 else

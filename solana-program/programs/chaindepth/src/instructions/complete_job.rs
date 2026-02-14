@@ -202,6 +202,8 @@ pub fn handler(ctx: Context<CompleteJob>, direction: u8) -> Result<()> {
 
             let room_hash = generate_room_hash(season_seed, adjacent.x, adjacent.y);
             adjacent.walls = generate_walls(room_hash, opposite_dir);
+            let (ax, ay) = (adjacent.x, adjacent.y);
+            RoomAccount::clamp_boundary_walls(&mut adjacent.walls, ax, ay);
             adjacent.helper_counts = [0; 4];
             adjacent.progress = [0; 4];
             adjacent.start_slot = [0; 4];
@@ -362,8 +364,8 @@ fn generate_walls(hash: u64, entrance_dir: u8) -> [u8; 4] {
 }
 
 fn calculate_depth(x: i8, y: i8) -> u32 {
-    let dx = (x - 5).abs() as u32;
-    let dy = (y - 5).abs() as u32;
+    let dx = (x - GlobalAccount::START_X).abs() as u32;
+    let dy = (y - GlobalAccount::START_Y).abs() as u32;
     dx.max(dy)
 }
 
@@ -386,12 +388,14 @@ fn generate_room_center(season_seed: u64, room_x: i8, room_y: i8, depth: u32) ->
 }
 
 fn is_forced_depth_one_chest(season_seed: u64, room_x: i8, room_y: i8) -> bool {
+    let sx = GlobalAccount::START_X;
+    let sy = GlobalAccount::START_Y;
     let forced_direction = (season_seed % 4) as u8;
     let expected = match forced_direction {
-        0 => (5, 6),
-        1 => (5, 4),
-        2 => (6, 5),
-        _ => (4, 5),
+        0 => (sx, sy + 1),     // North
+        1 => (sx, sy - 1),     // South
+        2 => (sx + 1, sy),     // East
+        _ => (sx - 1, sy),     // West
     };
 
     room_x == expected.0 && room_y == expected.1

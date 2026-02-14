@@ -80,7 +80,11 @@ pub fn handler(ctx: Context<InitGlobal>, initial_prize_pool_amount: u64, season_
     start_room.y = GlobalAccount::START_Y;
     start_room.season_seed = season_seed;
     
-    start_room.walls = RoomAccount::generate_start_walls(season_seed);
+    start_room.walls = RoomAccount::generate_start_walls(
+        season_seed,
+        GlobalAccount::START_X,
+        GlobalAccount::START_Y,
+    );
     
     // Initialize directional job state
     start_room.helper_counts = [0; 4];

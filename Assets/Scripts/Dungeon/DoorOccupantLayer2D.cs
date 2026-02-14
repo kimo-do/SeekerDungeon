@@ -115,6 +115,12 @@ namespace SeekerDungeon.Dungeon
                     continue;
                 }
 
+                // Apply slot-facing to anchor so entire slot scale X is -1 when facing left
+                var anchor = slot.Anchor;
+                var anchorScale = anchor.localScale;
+                anchorScale.x = slot.FacingDirection == OccupantFacingDirection.Left ? -1f : 1f;
+                anchor.localScale = anchorScale;
+
                 var occupant = occupants[index];
                 var key = ResolveOccupantKey(occupant, index);
                 if (!usedKeys.Add(key))

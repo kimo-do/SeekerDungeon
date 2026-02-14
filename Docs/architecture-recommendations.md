@@ -20,9 +20,9 @@
 
 TickJob is useful for keeping the client's timer display accurate. Since it's permissionless, a relayer or the client can call it periodically just to update the on-chain progress field so the UI reflects reality. But it should not be a prerequisite for completion.
 
-### 8. Clamp dungeon generation at map boundaries -- TODO
+### 8. Clamp dungeon generation at map boundaries -- DONE
 
-Edge rooms (where x == 0, x == 9, y == 0, or y == 9 on the current 10x10 grid) must not generate Open or Rubble walls facing outward. A door on the East wall at x=9 leads nowhere and the MovePlayer instruction correctly rejects it as `OutOfBounds`, but the player sees an interactable door and has no idea why it doesn't work. The room seed/generation logic should enforce: if a wall faces outside `MIN_COORD..MAX_COORD`, force it to `Solid`. This applies to both initial room creation and any future re-roll or season-reset logic.
+> Implemented `RoomAccount::clamp_boundary_walls()` in `room.rs`. This helper forces any wall facing outside `MIN_COORD..MAX_COORD` to `WALL_SOLID`. Called after every wall generation site: `move_player.rs`, `complete_job.rs`, `ensure_start_room.rs`, and `init_global.rs`. Also integrated into `generate_start_walls` which now accepts `(x, y)` coordinates. Edge rooms will no longer show interactable doors that lead nowhere.
 
 ---
 
@@ -65,6 +65,14 @@ The auto-completer and cleanup logic both chain multiple TXs (complete -> claim)
 - Single state refresh at the end
 - Logging of the full chain result
 
+### 9. Remove magic numbers for grid size / make dungeon dimensions configurable -- DONE
+
+> All hardcoded grid values replaced with `GlobalAccount::START_X/Y` and `MIN_COORD/MAX_COORD`:
+> - `complete_job.rs` `calculate_depth` now uses `GlobalAccount::START_X/Y` instead of literal `5`.
+> - `complete_job.rs` `is_forced_depth_one_chest` now computes offsets from `START_X/Y` instead of hardcoded coordinates.
+> - Unity side: `LGConfig.cs` already had named constants; two remaining hardcoded `"(5, 5)"` strings in `LGTestUI.cs` were updated to use `LGConfig.START_X/Y`.
+> - Resizing the dungeon is now a matter of changing four constants in `GlobalAccount` and mirroring them in `LGConfig.cs`.
+
 ---
 
 ## Priority Order (updated)
@@ -75,8 +83,10 @@ The auto-completer and cleanup logic both chain multiple TXs (complete -> claim)
 3. ~~Use TxResult instead of null~~ -- DONE
 4. ~~Free job slot on CompleteJob~~ -- DONE (Option B)
 
+5. ~~Remove magic numbers for grid size~~ -- DONE (constants everywhere, grid is now configurable)
+6. ~~Clamp dungeon generation at map boundaries~~ -- DONE (`clamp_boundary_walls` applied at all generation sites)
+
 **Remaining (in suggested order):**
-1. **Clamp dungeon generation at map boundaries** -- edge rooms must not have doors facing outside the grid
-2. **Merge CompleteJob + ClaimJobReward fully on-chain** -- eliminates the 2-TX chain, the cross-room cleanup system becomes trivial
-3. **Formalize optimistic state** -- replaces ad-hoc flags with a clean `OptimisticStateManager`
-4. **TX pipeline** -- reusable sequential TX runner with abort-on-failure
+1. **Merge CompleteJob + ClaimJobReward fully on-chain** -- eliminates the 2-TX chain, the cross-room cleanup system becomes trivial
+2. **Formalize optimistic state** -- replaces ad-hoc flags with a clean `OptimisticStateManager`
+3. **TX pipeline** -- reusable sequential TX runner with abort-on-failure

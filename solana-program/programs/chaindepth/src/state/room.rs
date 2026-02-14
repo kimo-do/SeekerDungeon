@@ -1,5 +1,7 @@
 use anchor_lang::prelude::*;
 
+use super::global::GlobalAccount;
+
 pub const MAX_BOSS_HP: u64 = 100_000;
 
 /// Direction constants
@@ -170,7 +172,7 @@ impl RoomAccount {
         hp.min(MAX_BOSS_HP)
     }
 
-    pub fn generate_start_walls(season_seed: u64) -> [u8; 4] {
+    pub fn generate_start_walls(season_seed: u64, x: i8, y: i8) -> [u8; 4] {
         let mut walls = [WALL_RUBBLE; 4];
         for (direction, wall) in walls.iter_mut().enumerate() {
             let direction_hash = season_seed.wrapping_mul(31).wrapping_add(direction as u64);
@@ -180,7 +182,25 @@ impl RoomAccount {
                 *wall = WALL_RUBBLE;
             }
         }
+        Self::clamp_boundary_walls(&mut walls, x, y);
         walls
+    }
+
+    /// Force walls that face outside the grid boundary to Solid so
+    /// players never see interactable doors that lead nowhere.
+    pub fn clamp_boundary_walls(walls: &mut [u8; 4], x: i8, y: i8) {
+        if y >= GlobalAccount::MAX_COORD {
+            walls[DIRECTION_NORTH as usize] = WALL_SOLID;
+        }
+        if y <= GlobalAccount::MIN_COORD {
+            walls[DIRECTION_SOUTH as usize] = WALL_SOLID;
+        }
+        if x >= GlobalAccount::MAX_COORD {
+            walls[DIRECTION_EAST as usize] = WALL_SOLID;
+        }
+        if x <= GlobalAccount::MIN_COORD {
+            walls[DIRECTION_WEST as usize] = WALL_SOLID;
+        }
     }
 }
 

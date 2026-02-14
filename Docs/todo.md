@@ -1,1 +1,4 @@
 - Make locked doors, unlockable by key
+- entrance spawn room
+- Add extraction, add to highscore
+- player combat, show kills

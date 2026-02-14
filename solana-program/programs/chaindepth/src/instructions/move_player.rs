@@ -212,6 +212,7 @@ pub fn handler(ctx: Context<MovePlayer>, new_x: i8, new_y: i8) -> Result<()> {
         target_room.y = new_y;
         target_room.season_seed = season_seed;
         target_room.walls = generate_walls(room_hash, opposite_direction);
+        RoomAccount::clamp_boundary_walls(&mut target_room.walls, new_x, new_y);
         target_room.helper_counts = [0; 4];
         target_room.progress = [0; 4];
         target_room.start_slot = [0; 4];
