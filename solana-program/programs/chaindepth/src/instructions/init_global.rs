@@ -74,7 +74,7 @@ pub fn handler(ctx: Context<InitGlobal>, initial_prize_pool_amount: u64, season_
     global.jobs_completed = 0;
     global.bump = ctx.bumps.global;
 
-    // Initialize starting room with empty center and mixed walls
+    // Initialize starting room with fixed extraction topology.
     let start_room = &mut ctx.accounts.start_room;
     start_room.x = GlobalAccount::START_X;
     start_room.y = GlobalAccount::START_Y;

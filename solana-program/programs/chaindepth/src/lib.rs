@@ -80,6 +80,11 @@ pub mod chaindepth {
         instructions::unlock_door::handler(ctx, direction)
     }
 
+    /// Extract at entrance stairs and convert carried loot into score.
+    pub fn exit_dungeon(ctx: Context<ExitDungeon>) -> Result<()> {
+        instructions::exit_dungeon::handler(ctx)
+    }
+
     /// Join a job to clear rubble (stakes SKR)
     pub fn join_job(ctx: Context<JoinJob>, direction: u8) -> Result<()> {
         instructions::join_job::handler(ctx, direction)

@@ -1,7 +1,10 @@
 - [x] Make locked doors, unlockable by key
+- [x] Entrance spawn room south stairs + extraction loop baseline implementation.
+- [x] Add extraction scoring and cumulative player score storage.
 - [ ] Tune locked door spawn cadence after playtest telemetry.
 - [ ] Tune forced key chest cadence after playtest telemetry.
+- [ ] Tune extraction item-value table from telemetry.
+- [ ] Tune extraction time-bonus constants/cap after live run data.
+- [ ] Add extraction/score telemetry dashboards and balance alerts.
 - [ ] Publish upgraded program + reset/migrate season state before enabling locked doors on shared devnet/mainnet.
-- entrance spawn room
-- Add extraction, add to highscore
 - player combat, show kills

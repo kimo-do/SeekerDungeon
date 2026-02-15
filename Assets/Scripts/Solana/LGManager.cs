@@ -924,6 +924,16 @@ namespace SeekerDungeon.Solana
             var wallState = room.Walls[dir];
             if (wallState != LGConfig.WALL_RUBBLE)
             {
+                if (wallState == LGConfig.WALL_ENTRANCE_STAIRS)
+                {
+                    Log($"Door {LGConfig.GetDirectionName(direction)} is entrance stairs. Attempting extraction.");
+                    var exitResult = await ExitDungeon();
+                    if (exitResult.Success)
+                    {
+                        await RefreshAllState();
+                    }
+                    return exitResult;
+                }
                 if (wallState == LGConfig.WALL_OPEN)
                 {
                     Log($"Door {LGConfig.GetDirectionName(direction)} is open. Moving player through door.");
@@ -1564,6 +1574,74 @@ namespace SeekerDungeon.Solana
         }
 
         /// <summary>
+        /// Exit the dungeon at spawn entrance stairs and convert loot into score.
+        /// </summary>
+        public async UniTask<TxResult> ExitDungeon()
+        {
+            if (Web3.Wallet == null)
+            {
+                LogError("Wallet not connected");
+                return TxResult.Fail("Wallet not connected");
+            }
+
+            if (CurrentPlayerState == null || CurrentGlobalState == null)
+            {
+                LogError("Player or global state not loaded");
+                return TxResult.Fail("Player or global state not loaded");
+            }
+
+            Log("Exiting dungeon at entrance stairs...");
+
+            try
+            {
+                var result = await ExecuteGameplayActionAsync(
+                    "ExitDungeon",
+                    (context) =>
+                    {
+                        var playerPda = DerivePlayerPda(context.Player);
+                        var roomPda = DeriveRoomPda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY);
+                        var inventoryPda = DeriveInventoryPda(context.Player);
+                        var roomPresencePda = DeriveRoomPresencePda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY,
+                            context.Player);
+
+                        return ChaindepthProgram.ExitDungeon(
+                            new ExitDungeonAccounts
+                            {
+                                Authority = context.Authority,
+                                Player = context.Player,
+                                Global = _globalPda,
+                                PlayerAccount = playerPda,
+                                Room = roomPda,
+                                Inventory = inventoryPda,
+                                RoomPresence = roomPresencePda,
+                                SessionAuthority = context.SessionAuthority,
+                                SystemProgram = SystemProgram.ProgramIdKey
+                            },
+                            _programId
+                        );
+                    });
+
+                if (result.Success)
+                {
+                    Log($"Dungeon exit successful. TX: {result.Signature}");
+                }
+
+                return result;
+            }
+            catch (Exception e)
+            {
+                LogError($"ExitDungeon failed: {e.Message}");
+                return TxResult.Fail(e.Message);
+            }
+        }
+
+        /// <summary>
         /// Unlock a locked door in the current room by consuming the required key.
         /// </summary>
         public async UniTask<TxResult> UnlockDoor(byte direction)
@@ -2066,7 +2144,7 @@ namespace SeekerDungeon.Solana
             Log("Looting chest...");
 
             // Snapshot inventory before loot so we can diff afterwards
-            var inventoryBefore = CurrentInventoryState;
+            var inventoryBefore = CloneInventorySnapshot(CurrentInventoryState);
 
             try
             {
@@ -2472,7 +2550,7 @@ namespace SeekerDungeon.Solana
             Log("Looting boss...");
 
             // Snapshot inventory before loot so we can diff afterwards
-            var inventoryBefore = CurrentInventoryState;
+            var inventoryBefore = CloneInventorySnapshot(CurrentInventoryState);
 
             try
             {
@@ -3109,6 +3187,33 @@ namespace SeekerDungeon.Solana
         {
             return !string.IsNullOrWhiteSpace(reason) &&
                    reason.IndexOf("Unable to parse json", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static InventoryAccount CloneInventorySnapshot(InventoryAccount source)
+        {
+            if (source == null)
+            {
+                return null;
+            }
+
+            var clonedItems = source.Items == null
+                ? Array.Empty<InventoryItem>()
+                : source.Items
+                    .Where(item => item != null)
+                    .Select(item => new InventoryItem
+                    {
+                        ItemId = item.ItemId,
+                        Amount = item.Amount,
+                        Durability = item.Durability
+                    })
+                    .ToArray();
+
+            return new InventoryAccount
+            {
+                Owner = source.Owner,
+                Items = clonedItems,
+                Bump = source.Bump
+            };
         }
 
         private struct RawHttpProbeResult

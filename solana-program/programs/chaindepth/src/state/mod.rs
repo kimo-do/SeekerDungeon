@@ -8,6 +8,7 @@ pub mod player_profile;
 pub mod room;
 pub mod room_generation;
 pub mod room_presence;
+pub mod scoring;
 pub mod session_authority;
 
 pub use boss_fight::*;
@@ -20,4 +21,5 @@ pub use player_profile::*;
 pub use room::*;
 pub use room_generation::*;
 pub use room_presence::*;
+pub use scoring::*;
 pub use session_authority::*;

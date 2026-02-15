@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: c9fa9ab2aaeb5a4469a3831a463ab406
+guid: 9f5c4c0948582bb4d875d89ec81f7a06
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: -4779304520622688563
-    second: mossy_stone_dungeon_0
+      213: -8734975045658756860
+    second: darker_stone_dungeon_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -113,7 +113,7 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: mossy_stone_dungeon_0
+      name: darker_stone_dungeon_0
       rect:
         serializedVersion: 2
         x: 0
@@ -128,8 +128,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: dc6bdde3cdf7cadb0800000000000000
-      internalID: -4779304520622688563
+      spriteID: 409bb91d97227c680800000000000000
+      internalID: -8734975045658756860
       vertices: []
       indices: 
       edges: []
@@ -148,7 +148,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      mossy_stone_dungeon_0: -4779304520622688563
+      darker_stone_dungeon_0: -8734975045658756860
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

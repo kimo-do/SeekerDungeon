@@ -120,7 +120,9 @@ namespace SeekerDungeon.Dungeon
                         Quaternion.identity);
                     _reservedPositions.Add(spawnPosition);
 
-                    if (!_suppressSpawnPop)
+                    var shouldPlaySpawnPop = !_suppressSpawnPop &&
+                                             !OccupantSpawnPopTracker.HasSeen(key);
+                    if (shouldPlaySpawnPop)
                     {
                         var spawnDelay = newVisualIndex * spawnStaggerSeconds;
                         visual.PlaySpawnPop(spawnPopDuration, spawnPopStartScaleMultiplier, spawnDelay);
@@ -130,6 +132,7 @@ namespace SeekerDungeon.Dungeon
 
                 visual.transform.rotation = Quaternion.identity;
                 visual.Bind(occupant, 0, OccupantFacingDirection.Right);
+                OccupantSpawnPopTracker.MarkSeen(key);
             }
 
             ReleaseUnusedVisuals(_usedKeys);

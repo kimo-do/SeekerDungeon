@@ -37,6 +37,9 @@ namespace SeekerDungeon.Dungeon
         private string _localPlacementSignature = string.Empty;
         private bool _hasSnappedCameraForRoom;
         private int _lastTransitionTextIndex = -1;
+        private bool _hasAppliedLocalVisualState;
+        private PlayerSkinId _lastAppliedLocalSkin = PlayerSkinId.Goblin;
+        private string _lastAppliedLocalDisplayName = string.Empty;
 
         // Optimistic job state: bridges the gap between a confirmed JoinJob TX
         // and the RPC returning updated data. Prevents stale reads from reverting
@@ -129,6 +132,7 @@ namespace SeekerDungeon.Dungeon
             EnsureRoomController();
             _hasSnappedCameraForRoom = false;
             _deferHoldRelease = true;
+            OccupantSpawnPopTracker.Reset();
 
             try
             {
@@ -1028,6 +1032,7 @@ namespace SeekerDungeon.Dungeon
                 }
 
                 localPlayerController = playerController;
+                _hasAppliedLocalVisualState = false;
                 if (!localPlayerController.gameObject.activeSelf)
                 {
                     localPlayerController.gameObject.SetActive(true);
@@ -1045,6 +1050,7 @@ namespace SeekerDungeon.Dungeon
             var spawnPosition = localPlayerSpawnPoint != null ? localPlayerSpawnPoint.position : Vector3.zero;
             var spawnedPlayer = Instantiate(localPlayerPrefab, spawnPosition, Quaternion.identity);
             localPlayerController = spawnedPlayer;
+            _hasAppliedLocalVisualState = false;
         }
 
         private void SyncLocalPlayerVisual()
@@ -1058,12 +1064,25 @@ namespace SeekerDungeon.Dungeon
             var skinId = _lgManager?.CurrentProfileState?.SkinId;
             if (skinId.HasValue)
             {
-                localPlayerController.ApplySkin((PlayerSkinId)skinId.Value);
+                var desiredSkin = (PlayerSkinId)skinId.Value;
+                if (!_hasAppliedLocalVisualState || _lastAppliedLocalSkin != desiredSkin)
+                {
+                    localPlayerController.ApplySkin(desiredSkin);
+                    _lastAppliedLocalSkin = desiredSkin;
+                }
             }
 
-            localPlayerController.SetDisplayName(ResolveLocalDisplayName());
+            var desiredDisplayName = ResolveLocalDisplayName();
+            if (!_hasAppliedLocalVisualState ||
+                !string.Equals(_lastAppliedLocalDisplayName, desiredDisplayName, StringComparison.Ordinal))
+            {
+                localPlayerController.SetDisplayName(desiredDisplayName);
+                _lastAppliedLocalDisplayName = desiredDisplayName;
+            }
+
             localPlayerController.SetDisplayNameVisible(true);
             localPlayerController.transform.rotation = Quaternion.identity;
+            _hasAppliedLocalVisualState = true;
         }
 
         /// <summary>
@@ -1171,7 +1190,7 @@ namespace SeekerDungeon.Dungeon
                 }
             }
 
-            if (!TryResolveLocalPlacement(activity, activityDirection, out var worldPosition))
+            if (!TryResolveLocalPlacement(activity, activityDirection, out var worldPosition, out var facingOverride))
             {
                 return;
             }
@@ -1179,6 +1198,10 @@ namespace SeekerDungeon.Dungeon
             var currentPosition = localPlayerController.transform.position;
             localPlayerController.transform.position = new Vector3(worldPosition.x, worldPosition.y, currentPosition.z);
             localPlayerController.transform.rotation = Quaternion.identity;
+            if (facingOverride.HasValue)
+            {
+                ApplyLocalPlayerFacing(localPlayerController, facingOverride.Value);
+            }
             if (!localPlayerController.gameObject.activeSelf)
             {
                 localPlayerController.gameObject.SetActive(true);
@@ -1197,15 +1220,21 @@ namespace SeekerDungeon.Dungeon
         private bool TryResolveLocalPlacement(
             OccupantActivity activity,
             RoomDirection? activityDirection,
-            out Vector3 worldPosition)
+            out Vector3 worldPosition,
+            out OccupantFacingDirection? facingOverride)
         {
             worldPosition = default;
+            facingOverride = null;
 
             if (activity == OccupantActivity.DoorJob && activityDirection.HasValue)
             {
                 if (_roomController != null &&
-                    _roomController.TryGetDoorStandPosition(activityDirection.Value, out worldPosition))
+                    _roomController.TryGetDoorStandPlacement(
+                        activityDirection.Value,
+                        out worldPosition,
+                        out var standFacing))
                 {
+                    facingOverride = standFacing;
                     return true;
                 }
             }

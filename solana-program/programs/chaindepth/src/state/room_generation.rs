@@ -1,8 +1,9 @@
 use anchor_lang::prelude::*;
 
 use super::{
-    GlobalAccount, RoomAccount, CENTER_BOSS, CENTER_CHEST, CENTER_EMPTY, DIRECTION_WEST,
-    LOCK_KIND_NONE, LOCK_KIND_SKELETON, WALL_LOCKED, WALL_OPEN, WALL_RUBBLE, WALL_SOLID,
+    GlobalAccount, RoomAccount, CENTER_BOSS, CENTER_CHEST, CENTER_EMPTY, DIRECTION_NORTH,
+    DIRECTION_WEST, LOCK_KIND_NONE, LOCK_KIND_SKELETON, WALL_LOCKED, WALL_OPEN, WALL_RUBBLE,
+    WALL_SOLID,
 };
 
 const LOCK_MIN_DEPTH: u32 = 2;
@@ -95,6 +96,7 @@ pub fn initialize_discovered_room(
         room_depth,
         entrance_direction,
     );
+    enforce_special_room_topology(room);
     room.helper_counts = [0; 4];
     room.progress = [0; 4];
     room.start_slot = [0; 4];
@@ -125,6 +127,15 @@ pub fn initialize_discovered_room(
     room.created_by = created_by;
     room.created_slot = created_slot;
     room.bump = bump;
+}
+
+pub fn enforce_special_room_topology(room: &mut RoomAccount) {
+    // Reserve start-room south edge for entrance stairs/extraction only:
+    // room (5,4) north wall must never be passable or lockable.
+    if room.x == GlobalAccount::START_X && room.y == GlobalAccount::START_Y - 1 {
+        room.walls[DIRECTION_NORTH as usize] = WALL_SOLID;
+        room.door_lock_kinds[DIRECTION_NORTH as usize] = LOCK_KIND_NONE;
+    }
 }
 
 fn apply_locked_doors(
@@ -283,5 +294,42 @@ mod tests {
         let (forced_x, forced_y) = forced_coords.unwrap();
         assert_eq!(calculate_depth(forced_x, forced_y), depth);
         assert!(is_forced_key_chest(seed, forced_x, forced_y, depth));
+    }
+
+    #[test]
+    fn room_below_start_never_opens_north() {
+        let seed = 999u64;
+        let mut room = RoomAccount {
+            x: GlobalAccount::START_X,
+            y: GlobalAccount::START_Y - 1,
+            season_seed: seed,
+            walls: [WALL_OPEN; 4],
+            door_lock_kinds: [LOCK_KIND_SKELETON; 4],
+            helper_counts: [0; 4],
+            progress: [0; 4],
+            start_slot: [0; 4],
+            base_slots: [0; 4],
+            total_staked: [0; 4],
+            job_completed: [false; 4],
+            bonus_per_helper: [0; 4],
+            has_chest: false,
+            forced_key_drop: false,
+            center_type: CENTER_EMPTY,
+            center_id: 0,
+            boss_max_hp: 0,
+            boss_current_hp: 0,
+            boss_last_update_slot: 0,
+            boss_total_dps: 0,
+            boss_fighter_count: 0,
+            boss_defeated: false,
+            looted_count: 0,
+            created_by: Pubkey::default(),
+            created_slot: 0,
+            bump: 0,
+        };
+
+        enforce_special_room_topology(&mut room);
+        assert_eq!(room.walls[DIRECTION_NORTH as usize], WALL_SOLID);
+        assert_eq!(room.door_lock_kinds[DIRECTION_NORTH as usize], LOCK_KIND_NONE);
     }
 }

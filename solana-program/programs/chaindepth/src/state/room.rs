@@ -15,6 +15,7 @@ pub const WALL_SOLID: u8 = 0;
 pub const WALL_RUBBLE: u8 = 1;
 pub const WALL_OPEN: u8 = 2;
 pub const WALL_LOCKED: u8 = 3;
+pub const WALL_ENTRANCE_STAIRS: u8 = 4;
 
 /// Door lock kind constants
 pub const LOCK_KIND_NONE: u8 = 0;
@@ -38,7 +39,8 @@ pub struct RoomAccount {
     pub season_seed: u64,
 
     /// Wall states: [North, South, East, West]
-    /// 0 = solid wall (impassable), 1 = rubble (can clear), 2 = open (passable), 3 = locked
+    /// 0 = solid wall (impassable), 1 = rubble (can clear), 2 = open (passable),
+    /// 3 = locked, 4 = entrance stairs (extract at spawn room south)
     pub walls: [u8; 4],
 
     /// Per-door lock kind: 0 = none, 1 = skeleton lock
@@ -187,16 +189,9 @@ impl RoomAccount {
         hp.min(MAX_BOSS_HP)
     }
 
-    pub fn generate_start_walls(season_seed: u64, x: i8, y: i8) -> [u8; 4] {
-        let mut walls = [WALL_RUBBLE; 4];
-        for (direction, wall) in walls.iter_mut().enumerate() {
-            let direction_hash = season_seed.wrapping_mul(31).wrapping_add(direction as u64);
-            if (direction_hash % 2) == 0 {
-                *wall = WALL_OPEN;
-            } else {
-                *wall = WALL_RUBBLE;
-            }
-        }
+    pub fn generate_start_walls(_season_seed: u64, x: i8, y: i8) -> [u8; 4] {
+        let mut walls = [WALL_OPEN; 4];
+        walls[DIRECTION_SOUTH as usize] = WALL_ENTRANCE_STAIRS;
         Self::clamp_boundary_walls(&mut walls, x, y);
         walls
     }

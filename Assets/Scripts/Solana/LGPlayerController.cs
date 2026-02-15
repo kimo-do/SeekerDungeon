@@ -44,6 +44,8 @@ namespace SeekerDungeon.Solana
         private Sequence _skinSwitchSequence;
         private GameObject _playerNameInstance;
         private TMP_Text _playerNameText;
+        private Vector3 _playerNameBaseLocalScale = Vector3.one;
+        private bool _hasPlayerNameBaseScale;
 
         private void Awake()
         {
@@ -81,6 +83,11 @@ namespace SeekerDungeon.Solana
                 _playerNameInstance = null;
                 _playerNameText = null;
             }
+        }
+
+        private void LateUpdate()
+        {
+            ApplyNameMirrorCompensation();
         }
 
         public IReadOnlyList<PlayerSkinId> GetConfiguredSkins()
@@ -287,6 +294,39 @@ namespace SeekerDungeon.Solana
             _playerNameInstance.transform.localPosition = Vector3.zero;
             _playerNameInstance.transform.localRotation = Quaternion.identity;
             _playerNameText = _playerNameInstance.GetComponentInChildren<TMP_Text>(true);
+            _playerNameBaseLocalScale = _playerNameInstance.transform.localScale;
+            _hasPlayerNameBaseScale = true;
+            ApplyNameMirrorCompensation();
+        }
+
+        private void ApplyNameMirrorCompensation()
+        {
+            if (_playerNameInstance == null)
+            {
+                return;
+            }
+
+            var nameTransform = _playerNameInstance.transform;
+            if (!_hasPlayerNameBaseScale)
+            {
+                _playerNameBaseLocalScale = nameTransform.localScale;
+                _hasPlayerNameBaseScale = true;
+            }
+
+            var parent = nameTransform.parent;
+            var parentSignX = 1f;
+            if (parent != null)
+            {
+                parentSignX = Mathf.Sign(parent.lossyScale.x);
+                if (Mathf.Approximately(parentSignX, 0f))
+                {
+                    parentSignX = 1f;
+                }
+            }
+
+            var targetScale = _playerNameBaseLocalScale;
+            targetScale.x = Mathf.Abs(_playerNameBaseLocalScale.x) * (parentSignX < 0f ? -1f : 1f);
+            nameTransform.localScale = targetScale;
         }
     }
 }

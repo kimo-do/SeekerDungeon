@@ -33,4 +33,5 @@ pub mod session_instruction_bits {
     pub const LOOT_CHEST: u64 = 1 << 11;
     pub const LOOT_BOSS: u64 = 1 << 12;
     pub const UNLOCK_DOOR: u64 = 1 << 13;
+    pub const EXIT_DUNGEON: u64 = 1 << 14;
 }

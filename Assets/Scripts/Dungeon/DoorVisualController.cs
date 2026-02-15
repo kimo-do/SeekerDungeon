@@ -21,6 +21,7 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private GameObject fallbackVisualRoot;
 
         private readonly Dictionary<RoomWallState, GameObject> _visualByState = new();
+        private RubbleJobVfxController[] _rubbleJobVfxControllers = Array.Empty<RubbleJobVfxController>();
 
         /// <summary>
         /// The VisualInteractable on the currently active state visual, or null.
@@ -31,6 +32,8 @@ namespace SeekerDungeon.Dungeon
         private void Awake()
         {
             RebuildStateIndex();
+            CacheRubbleVfxControllers();
+            SetRubbleJobVfxActive(false);
         }
 
         public void ApplyDoorState(DoorJobView door)
@@ -62,6 +65,13 @@ namespace SeekerDungeon.Dungeon
             ActiveVisualInteractable = targetVisual != null
                 ? targetVisual.GetComponentInChildren<VisualInteractable>(true)
                 : null;
+
+            var isRubbleJobActive = door.WallState == RoomWallState.Rubble &&
+                                    !door.IsCompleted &&
+                                    door.HelperCount > 0 &&
+                                    door.RequiredProgress > 0 &&
+                                    door.StartSlot > 0;
+            SetRubbleJobVfxActive(isRubbleJobActive);
         }
 
         private void RebuildStateIndex()
@@ -76,6 +86,30 @@ namespace SeekerDungeon.Dungeon
                 }
 
                 _visualByState[stateVisual.WallState] = stateVisual.VisualRoot;
+            }
+        }
+
+        private void CacheRubbleVfxControllers()
+        {
+            _rubbleJobVfxControllers = GetComponentsInChildren<RubbleJobVfxController>(true);
+        }
+
+        private void SetRubbleJobVfxActive(bool active)
+        {
+            if (_rubbleJobVfxControllers == null || _rubbleJobVfxControllers.Length == 0)
+            {
+                return;
+            }
+
+            for (var i = 0; i < _rubbleJobVfxControllers.Length; i += 1)
+            {
+                var controller = _rubbleJobVfxControllers[i];
+                if (controller == null)
+                {
+                    continue;
+                }
+
+                controller.SetJobActive(active);
             }
         }
 

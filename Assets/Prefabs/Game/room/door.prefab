@@ -73,6 +73,7 @@ GameObject:
   - component: {fileID: 8108187839386721665}
   - component: {fileID: 2354948009085777646}
   - component: {fileID: 4239647304060119240}
+  - component: {fileID: 5110972278278640348}
   m_Layer: 0
   m_Name: pile_of_rubble_0
   m_TagString: Untagged
@@ -92,7 +93,8 @@ Transform:
   m_LocalPosition: {x: -0.011, y: 0.244, z: 0}
   m_LocalScale: {x: 0.5, y: 0.5, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children: []
+  m_Children:
+  - {fileID: 2350675266361773134}
   m_Father: {fileID: 1138695018599043152}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 180}
 --- !u!212 &2354948009085777646
@@ -167,9 +169,27 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Dungeon.VisualInteractable
   minFade: 0
-  maxFade: 0.3
-  speed: 2
   interactable: 0
+--- !u!114 &5110972278278640348
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2100925208778463271}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cd1059fa55c45c3438cee72f1be39011, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Dungeon.RubbleJobVfxController
+  vfxRoots: []
+  particleSystems: []
+  spawnedVfxPrefab: {fileID: 5050334451986296420, guid: 2373a6a6d0de8c1448722cf450254855, type: 3}
+  spawnedVfxAnchor: {fileID: 2350675266361773134}
+  spawnedVfxParent: {fileID: 0}
+  destroySpawnedVfxWhenFullyStopped: 1
+  deactivateRootsOnStop: 0
+  stopAndClearOnDisable: 0
 --- !u!1 &2992463744400123949
 GameObject:
   m_ObjectHideFlags: 0
@@ -327,6 +347,37 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 4620619433739010482}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &5667746776477286885
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2350675266361773134}
+  m_Layer: 0
+  m_Name: anchorvfx
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &2350675266361773134
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5667746776477286885}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 8108187839386721665}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &5819057181823761226
 GameObject:
@@ -489,8 +540,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Dungeon.VisualInteractable
   minFade: 0
-  maxFade: 0.3
-  speed: 2
   interactable: 0
 --- !u!1 &6074303631626626339
 GameObject:

@@ -77,6 +77,15 @@ pub enum ChainDepthError {
     #[msg("Player not in this room")]
     NotInRoom,
 
+    #[msg("Player is not at the entrance room")]
+    NotAtEntranceRoom,
+
+    #[msg("Entrance stairs are required to exit")]
+    EntranceStairsRequired,
+
+    #[msg("Cannot exit while having active jobs")]
+    CannotExitWithActiveJobs,
+
     #[msg("No boss in this room center")]
     NoBoss,
 

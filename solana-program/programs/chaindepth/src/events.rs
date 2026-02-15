@@ -92,6 +92,19 @@ pub struct DoorUnlocked {
     pub key_item_id: u16,
 }
 
+/// Emitted when a player extracts from dungeon entrance stairs.
+#[event]
+pub struct DungeonExited {
+    pub player: Pubkey,
+    pub run_score: u64,
+    pub time_score: u64,
+    pub loot_score: u64,
+    pub extracted_item_stacks: u32,
+    pub extracted_item_units: u32,
+    pub total_score: u64,
+    pub run_duration_slots: u64,
+}
+
 /// Emitted when global state is initialized
 #[event]
 pub struct GlobalInitialized {

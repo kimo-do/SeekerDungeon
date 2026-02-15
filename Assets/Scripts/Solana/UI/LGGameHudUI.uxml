@@ -1,22 +1,29 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
     <Style src="LGGameHudUI.uss"/>
-    <ui:VisualElement name="game-hud-root" class="game-hud-root" picking-mode="Ignore">
-        <ui:VisualElement name="hud-top-bar" class="hud-top-bar">
-            <ui:VisualElement name="hud-balance-column" class="hud-balance-column">
-                <ui:Label name="hud-sol-balance" text="SOL: --" class="hud-balance-label"/>
-                <ui:Label name="hud-skr-balance" text="SKR: --" class="hud-balance-label"/>
-            </ui:VisualElement>
-            <ui:VisualElement name="hud-job-column" class="hud-job-column">
-                <ui:Label name="hud-job-info" text="Job: None" class="hud-job-label"/>
-                <ui:Label name="hud-status" text="" class="hud-status-label"/>
-            </ui:VisualElement>
-            <ui:VisualElement name="hud-action-column" class="hud-action-column">
-                <ui:Button name="hud-btn-back" text="Back" class="hud-button"/>
-                <ui:Button name="hud-btn-disconnect" text="Disconnect" class="hud-button hud-button-danger"/>
-            </ui:VisualElement>
+    <ui:VisualElement name="game-hud-root" class="game-hud-root" picking-mode="Ignore" style="-unity-font-style: bold; -unity-font-definition: url(&quot;project://database/Assets/OpenSans-Bold.ttf?fileID=12800000&amp;guid=540b7a85944effe4fb9eb3de0c29d37a&amp;type=3#OpenSans-Bold&quot;);">
+        <ui:VisualElement name="hud-top-left-actions" class="hud-top-left-actions">
+            <ui:Button name="hud-btn-back" text="Back" class="hud-back-button"/>
         </ui:VisualElement>
+
+        <ui:VisualElement name="hud-top-right-actions" class="top-right-actions">
+            <ui:VisualElement name="wallet-pill-stack" class="wallet-pill-stack">
+                <ui:VisualElement name="wallet-sol-pill" class="wallet-pill" style="background-image: url(&quot;project://database/Assets/Sprites/pill_shaped_ui_elements.png?fileID=-5465383454656379642&amp;guid=bba72545d6bcacf4a9f10aaed00c848b&amp;type=3#pill_shaped_ui_elements (1) (1)_0&quot;); -unity-background-scale-mode: scale-to-fit;">
+                    <ui:Label name="wallet-sol-balance-label" text="--" class="wallet-pill-value"/>
+                </ui:VisualElement>
+                <ui:VisualElement name="wallet-skr-pill" class="wallet-pill" style="background-image: url(&quot;project://database/Assets/Sprites/pill_shaped_ui_elements.png?fileID=-1561673211399531395&amp;guid=bba72545d6bcacf4a9f10aaed00c848b&amp;type=3#pill_shaped_ui_elements (1) (1)_1&quot;); -unity-background-scale-mode: scale-to-fit;">
+                    <ui:Label name="wallet-skr-balance-label" text="--" class="wallet-pill-value"/>
+                </ui:VisualElement>
+            </ui:VisualElement>
+            <ui:Label name="wallet-network-label" text="DEVNET" class="wallet-network-label"/>
+        </ui:VisualElement>
+
+        <ui:VisualElement name="hud-debug-block" class="hud-debug-block">
+            <ui:Label name="hud-job-info" text="job:none" class="hud-debug-label"/>
+            <ui:Label name="hud-status" text="" class="hud-debug-status"/>
+        </ui:VisualElement>
+
         <ui:VisualElement name="hud-inventory-bar" class="hud-inventory-bar">
-            <ui:Button name="hud-btn-bag" class="hud-bag-button" text="Bag"/>
+            <ui:Button name="hud-btn-bag" class="hud-inventory-button" text="Inventory"/>
             <ui:VisualElement name="hud-inventory-slots" class="hud-inventory-slots"/>
         </ui:VisualElement>
     </ui:VisualElement>

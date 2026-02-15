@@ -30,7 +30,8 @@ namespace SeekerDungeon.Solana
         [SerializeField] private bool logDebugMessages = false;
 
         /// <summary>
-        /// Fired when the Bag button is clicked. Listeners should open the full inventory panel.
+        /// Fired when the inventory button is clicked.
+        /// Listeners should open the full inventory panel.
         /// </summary>
         public event Action OnBagClicked;
 
@@ -40,8 +41,8 @@ namespace SeekerDungeon.Solana
         private Label _jobInfoLabel;
         private Label _statusLabel;
         private Button _backButton;
-        private Button _disconnectButton;
         private Button _bagButton;
+        private Label _networkLabel;
         private VisualElement _inventorySlotsContainer;
 
         private readonly Dictionary<ItemId, VisualElement> _slotsByItemId = new();
@@ -82,23 +83,20 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
-            _solBalanceLabel = root.Q<Label>("hud-sol-balance");
-            _skrBalanceLabel = root.Q<Label>("hud-skr-balance");
+            _solBalanceLabel = root.Q<Label>("wallet-sol-balance-label");
+            _skrBalanceLabel = root.Q<Label>("wallet-skr-balance-label");
             _jobInfoLabel = root.Q<Label>("hud-job-info");
             _statusLabel = root.Q<Label>("hud-status");
             _backButton = root.Q<Button>("hud-btn-back");
-            _disconnectButton = root.Q<Button>("hud-btn-disconnect");
             _bagButton = root.Q<Button>("hud-btn-bag");
+            _networkLabel = root.Q<Label>("wallet-network-label");
             _inventorySlotsContainer = root.Q<VisualElement>("hud-inventory-slots");
+
+            SetLabel(_networkLabel, "DEVNET");
 
             if (_backButton != null)
             {
                 _backButton.clicked += HandleBackClicked;
-            }
-
-            if (_disconnectButton != null)
-            {
-                _disconnectButton.clicked += HandleDisconnectClicked;
             }
 
             if (_bagButton != null)
@@ -129,11 +127,6 @@ namespace SeekerDungeon.Solana
             if (_backButton != null)
             {
                 _backButton.clicked -= HandleBackClicked;
-            }
-
-            if (_disconnectButton != null)
-            {
-                _disconnectButton.clicked -= HandleDisconnectClicked;
             }
 
             if (_bagButton != null)
@@ -195,17 +188,6 @@ namespace SeekerDungeon.Solana
             LoadSceneWithFadeAsync(backSceneName).Forget();
         }
 
-        private void HandleDisconnectClicked()
-        {
-            if (_isLoadingScene)
-            {
-                return;
-            }
-
-            walletSessionManager?.Disconnect();
-            LoadSceneWithFadeAsync(loadingSceneName).Forget();
-        }
-
         private async UniTaskVoid LoadSceneWithFadeAsync(string sceneName)
         {
             if (string.IsNullOrWhiteSpace(sceneName))
@@ -237,7 +219,7 @@ namespace SeekerDungeon.Solana
             if (wallet?.ActiveRpcClient == null || account == null)
             {
                 SetLabel(_solBalanceLabel, "SOL: --");
-                SetLabel(_skrBalanceLabel, "SKR: --");
+                SetLabel(_skrBalanceLabel, "--");
                 return;
             }
 
@@ -248,11 +230,11 @@ namespace SeekerDungeon.Solana
             if (solResult.WasSuccessful && solResult.Result != null)
             {
                 var sol = solResult.Result.Value / 1_000_000_000d;
-                SetLabel(_solBalanceLabel, $"SOL: {sol:F3}");
+                SetLabel(_solBalanceLabel, $"{sol:F3}");
             }
             else
             {
-                SetLabel(_solBalanceLabel, "SOL: --");
+                SetLabel(_solBalanceLabel, "--");
             }
 
             // Derive the player's ATA directly (same approach as the main menu)
@@ -265,13 +247,13 @@ namespace SeekerDungeon.Solana
                 var rawAmount = tokenResult.Result.Value.Amount ?? "0";
                 var amountLamports = ulong.TryParse(rawAmount, out var parsed) ? parsed : 0UL;
                 var skrUi = amountLamports / (double)LGConfig.SKR_MULTIPLIER;
-                SetLabel(_skrBalanceLabel, $"SKR: {skrUi:F3}");
+                SetLabel(_skrBalanceLabel, $"{skrUi:F3}");
                 if (logDebugMessages)
                     Debug.Log($"[GameHud] SKR balance: wallet={account.PublicKey.Key.Substring(0, 8)}.. ata={playerAta.Key.Substring(0, 8)}.. raw={rawAmount} ui={skrUi:F3}");
             }
             else
             {
-                SetLabel(_skrBalanceLabel, "SKR: 0");
+                SetLabel(_skrBalanceLabel, "0");
                 if (logDebugMessages)
                     Debug.Log($"[GameHud] SKR balance fetch failed: wallet={account.PublicKey.Key.Substring(0, 8)}.. ata={playerAta.Key.Substring(0, 8)}.. reason={tokenResult?.Reason}");
             }
@@ -281,7 +263,7 @@ namespace SeekerDungeon.Solana
         {
             if (manager?.CurrentPlayerState == null)
             {
-                SetLabel(_jobInfoLabel, "Job: None");
+                SetLabel(_jobInfoLabel, "job:none");
                 return;
             }
 
@@ -289,7 +271,7 @@ namespace SeekerDungeon.Solana
             var activeJobs = player.ActiveJobs;
             if (activeJobs == null || activeJobs.Length == 0)
             {
-                SetLabel(_jobInfoLabel, "Job: None");
+                SetLabel(_jobInfoLabel, "job:none");
                 return;
             }
 
@@ -306,7 +288,7 @@ namespace SeekerDungeon.Solana
 
                 if (manager.CurrentRoomState == null || direction >= manager.CurrentRoomState.Walls.Length)
                 {
-                    SetLabel(_jobInfoLabel, $"Job: {directionName}");
+                    SetLabel(_jobInfoLabel, $"job:{directionName.ToLowerInvariant()}");
                     return;
                 }
 
@@ -314,11 +296,11 @@ namespace SeekerDungeon.Solana
                 var progress = room.Progress[direction];
                 var required = room.BaseSlots[direction];
                 var helpers = room.HelperCounts[direction];
-                SetLabel(_jobInfoLabel, $"Job: {directionName} {progress}/{required} ({helpers} helpers)");
+                SetLabel(_jobInfoLabel, $"job:{directionName.ToLowerInvariant()} p={progress}/{required} h={helpers}");
                 return;
             }
 
-            SetLabel(_jobInfoLabel, "Job: None");
+            SetLabel(_jobInfoLabel, "job:none");
         }
 
         private void SetStatus(string message)

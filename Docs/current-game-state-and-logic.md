@@ -19,6 +19,9 @@ This is the current gameplay logic that exists onchain, translated into Unity-fr
   - `active_jobs` (max 4 door jobs)
   - `equipped_item_id` (0 = no weapon equipped)
   - `jobs_completed`, `chests_looted`
+  - `total_score` (lifetime extracted score)
+  - `runs_extracted`
+  - `current_run_start_slot`, `last_extraction_slot`
 
 ### Player Profile (`["profile", wallet]`)
 - Visual profile data, currently:
@@ -28,7 +31,7 @@ This is the current gameplay logic that exists onchain, translated into Unity-fr
 ### Room (`["room", season_seed, x, y]`)
 - Authoritative state for one map room.
 - Door fields:
-  - `walls[4]`: `0=solid`, `1=rubble`, `2=open`, `3=locked`
+  - `walls[4]`: `0=solid`, `1=rubble`, `2=open`, `3=locked`, `4=entrance_stairs`
   - `door_lock_kinds[4]`: `0=none`, `1=skeleton`
   - `helper_counts`, `progress`, `base_slots`, `job_completed`, `bonus_per_helper`
 - Center fields:
@@ -64,7 +67,11 @@ This is the current gameplay logic that exists onchain, translated into Unity-fr
 
 ### Spawn room `(5,5)`
 - Center is always empty.
-- Four directions always exist, each door randomly starts as rubble or open.
+- Start topology is fixed:
+  - North = open
+  - East = open
+  - West = open
+  - South = entrance stairs (`WALL_ENTRANCE_STAIRS`)
 
 ### Depth 1 rooms
 - Chest chance = 50%.
@@ -106,6 +113,28 @@ flowchart TD
 Notes:
 - Progress updates only when `tick_job` is sent.
 - More helpers speed progress (`elapsed_slots * helper_count`).
+
+## Extraction Flow (Entrance Stairs)
+
+- Extraction is triggered by interacting with the spawn-room south entrance stairs.
+- Onchain instruction: `exit_dungeon`.
+- Requirements:
+  - player must be in `(5,5)`
+  - south wall must be entrance stairs
+  - player must have no active door jobs
+- Score:
+  - `loot_score`: converted from extracted loot items (`item_id` 200..299)
+  - `time_score`: bonus-only, front-loaded then strongly diminished:
+    - first hour: +1 per 300 slots (~2 min)
+    - after hour: +1 per 3000 slots (~20 min)
+    - capped to `max(5, loot_score / 4)` so loot remains dominant
+  - `run_score = loot_score + time_score`
+- Inventory on extraction:
+  - loot-range items are removed and converted to points
+  - non-loot items (weapons/consumables) are kept
+- Lifetime score accumulation:
+  - `player.total_score += run_score`
+  - `runs_extracted += 1`
 
 ## Boss Flow (Center Boss)
 

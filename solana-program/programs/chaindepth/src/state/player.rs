@@ -29,6 +29,18 @@ pub struct PlayerAccount {
     /// Item id currently equipped for combat (0 = none)
     pub equipped_item_id: u16,
 
+    /// Lifetime cumulative score from extracted runs.
+    pub total_score: u64,
+
+    /// Slot when the current dungeon run started (or restarted after extraction).
+    pub current_run_start_slot: u64,
+
+    /// Number of successful dungeon extractions.
+    pub runs_extracted: u64,
+
+    /// Slot of latest successful extraction.
+    pub last_extraction_slot: u64,
+
     /// Season this player data belongs to (for cleanup on reset)
     pub season_seed: u64,
 

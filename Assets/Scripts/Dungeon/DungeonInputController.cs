@@ -2,6 +2,7 @@ using Cysharp.Threading.Tasks;
 using SeekerDungeon.Solana;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.SceneManagement;
 
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
@@ -20,6 +21,7 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private DungeonManager dungeonManager;
         [SerializeField] private LootSequenceController lootSequenceController;
         [SerializeField] private SeekerDungeon.Solana.LGGameHudUI gameHudUI;
+        [SerializeField] private string exitSceneName = "MenuScene";
 
         private LGManager _lgManager;
         private LGPlayerController _localPlayerController;
@@ -191,13 +193,20 @@ namespace SeekerDungeon.Dungeon
                 {
                     var wasDoorOpenBeforeInteraction = IsDoorOpenInCurrentState(door.Direction);
                     var wasRubbleBeforeInteraction = IsDoorRubbleInCurrentState(door.Direction);
+                    var wasEntranceStairsBeforeInteraction = IsDoorEntranceStairsInCurrentState(door.Direction);
                     var hadRoomBefore = TryGetCurrentRoomCoordinates(out var previousRoomX, out var previousRoomY);
 
                     GameplayActionLog.DoorClicked(
                         door.Direction.ToString(),
                         hadRoomBefore ? previousRoomX : -1,
                         hadRoomBefore ? previousRoomY : -1,
-                        wasDoorOpenBeforeInteraction ? "Open" : wasRubbleBeforeInteraction ? "Rubble" : "Solid",
+                        wasDoorOpenBeforeInteraction
+                            ? "Open"
+                            : wasRubbleBeforeInteraction
+                                ? "Rubble"
+                                : wasEntranceStairsBeforeInteraction
+                                    ? "EntranceStairs"
+                                    : "Solid",
                         _lgManager?.HasActiveJobInCurrentRoom((byte)door.Direction) ?? false);
 
                     // ── Optimistic UI: immediately show job visuals if clicking rubble ──
@@ -243,6 +252,14 @@ namespace SeekerDungeon.Dungeon
                         doorResult.Success ? doorResult.Signature : doorResult.Error);
 
                     // ── Post-transaction: explicit state refresh ──
+                    if (wasEntranceStairsBeforeInteraction && doorResult.Success)
+                    {
+                        await _lgManager.RefreshAllState();
+                        await LoadExitSceneAsync();
+                        _nextInteractTime = Time.unscaledTime + interactCooldownSeconds;
+                        return;
+                    }
+
                     await _lgManager.FetchPlayerState();
                     var hasHelperStakeAfterInteraction = await _lgManager.HasHelperStakeInCurrentRoom((byte)door.Direction);
                     var playerMovedRooms = hadRoomBefore &&
@@ -337,6 +354,8 @@ namespace SeekerDungeon.Dungeon
                 {
                     // Check if center is a chest/boss before the TX so we know if loot animation applies
                     var roomState = _lgManager.CurrentRoomState;
+                    var wasChestCenterBeforeInteraction = roomState != null &&
+                                                         roomState.CenterType == LGConfig.CENTER_CHEST;
                     var isLootableCenter = roomState != null &&
                         (roomState.CenterType == LGConfig.CENTER_CHEST ||
                          (roomState.CenterType == LGConfig.CENTER_BOSS && roomState.BossDefeated));
@@ -370,7 +389,16 @@ namespace SeekerDungeon.Dungeon
                         }
 
                         // Play chest open animation on the visual controller
-                        if (centerResult.Success && isLootableCenter && roomController != null)
+                        var currentRoomAfterInteraction = _lgManager.CurrentRoomState;
+                        var isChestCenterAfterInteraction = currentRoomAfterInteraction != null &&
+                                                            currentRoomAfterInteraction.CenterType == LGConfig.CENTER_CHEST;
+                        var alreadyLootedError = !centerResult.Success &&
+                                                 !string.IsNullOrWhiteSpace(centerResult.Error) &&
+                                                 centerResult.Error.IndexOf("AlreadyLooted", System.StringComparison.OrdinalIgnoreCase) >= 0;
+
+                        if (roomController != null &&
+                            ((centerResult.Success && (wasChestCenterBeforeInteraction || isChestCenterAfterInteraction)) ||
+                             (alreadyLootedError && (wasChestCenterBeforeInteraction || isChestCenterAfterInteraction))))
                         {
                             roomController.PlayChestOpenAnimation();
                         }
@@ -491,6 +519,33 @@ namespace SeekerDungeon.Dungeon
             }
 
             return roomState.Walls[directionIndex] == LGConfig.WALL_RUBBLE;
+        }
+
+        private bool IsDoorEntranceStairsInCurrentState(RoomDirection direction)
+        {
+            var roomState = _lgManager?.CurrentRoomState;
+            if (roomState?.Walls == null)
+            {
+                return false;
+            }
+
+            var directionIndex = (int)direction;
+            if (directionIndex < 0 || directionIndex >= roomState.Walls.Length)
+            {
+                return false;
+            }
+
+            return roomState.Walls[directionIndex] == LGConfig.WALL_ENTRANCE_STAIRS;
+        }
+
+        private async UniTask LoadExitSceneAsync()
+        {
+            if (string.IsNullOrWhiteSpace(exitSceneName))
+            {
+                return;
+            }
+
+            await SceneLoadController.GetOrCreate().LoadSceneAsync(exitSceneName, LoadSceneMode.Single);
         }
 
         private static bool TryGetPointerDownPosition(out Vector2 position, out int pointerId)

@@ -5,8 +5,9 @@ use crate::errors::ChainDepthError;
 use crate::events::JobCompleted;
 use crate::instructions::session_auth::authorize_player_action;
 use crate::state::{
-    calculate_depth, initialize_discovered_room, session_instruction_bits, GlobalAccount,
-    HelperStake, PlayerAccount, RoomAccount, SessionAuthority, WALL_OPEN,
+    calculate_depth, enforce_special_room_topology, initialize_discovered_room,
+    session_instruction_bits, GlobalAccount, HelperStake, PlayerAccount, RoomAccount,
+    SessionAuthority, LOCK_KIND_NONE, WALL_OPEN,
 };
 
 #[derive(Accounts)]
@@ -179,7 +180,7 @@ pub fn handler(ctx: Context<CompleteJob>, direction: u8) -> Result<()> {
     {
         let room = &mut ctx.accounts.room;
         room.walls[dir_idx] = WALL_OPEN;
-        room.door_lock_kinds[dir_idx] = 0;
+        room.door_lock_kinds[dir_idx] = LOCK_KIND_NONE;
         room.job_completed[dir_idx] = true;
     }
 
@@ -210,7 +211,8 @@ pub fn handler(ctx: Context<CompleteJob>, direction: u8) -> Result<()> {
         }
 
         adjacent.walls[opposite_dir as usize] = WALL_OPEN;
-        adjacent.door_lock_kinds[opposite_dir as usize] = 0;
+        adjacent.door_lock_kinds[opposite_dir as usize] = LOCK_KIND_NONE;
+        enforce_special_room_topology(adjacent);
         let return_wall_state = adjacent.walls[opposite_dir as usize];
         msg!(
             "complete_job_topology from=({}, {}) to=({}, {}) dir={} return_dir={} return_wall_state={}",

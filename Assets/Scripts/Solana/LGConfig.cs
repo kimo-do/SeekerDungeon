@@ -54,6 +54,7 @@ namespace SeekerDungeon.Solana
         public const byte WALL_RUBBLE = 1;
         public const byte WALL_OPEN = 2;
         public const byte WALL_LOCKED = 3;
+        public const byte WALL_ENTRANCE_STAIRS = 4;
 
         // Center state constants
         public const byte CENTER_EMPTY = 0;
@@ -240,6 +241,7 @@ namespace SeekerDungeon.Solana
                 WALL_RUBBLE => "Rubble",
                 WALL_OPEN => "Open",
                 WALL_LOCKED => "Locked",
+                WALL_ENTRANCE_STAIRS => "EntranceStairs",
                 _ => "Unknown"
             };
         }

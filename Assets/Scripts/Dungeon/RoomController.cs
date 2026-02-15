@@ -140,6 +140,21 @@ namespace SeekerDungeon.Dungeon
             return layer.TryGetLocalPlayerStandPosition(out worldPosition);
         }
 
+        public bool TryGetDoorStandPlacement(
+            RoomDirection direction,
+            out Vector3 worldPosition,
+            out OccupantFacingDirection facingDirection)
+        {
+            worldPosition = default;
+            facingDirection = OccupantFacingDirection.Right;
+            if (!_doorLayerByDirection.TryGetValue(direction, out var layer) || layer == null)
+            {
+                return false;
+            }
+
+            return layer.TryGetLocalPlayerStandPlacement(out worldPosition, out facingDirection);
+        }
+
         /// <summary>
         /// Returns the dedicated arrival position for a door and the facing
         /// direction the player should have when entering through it.
@@ -654,6 +669,7 @@ namespace SeekerDungeon.Dungeon
                     //  - Anything else (solid wall, already working, completed): not interactable
                     var canInteract = door.IsOpen ||
                                      door.IsLocked ||
+                                     door.IsEntranceStairs ||
                                      (door.IsRubble && !door.IsCompleted && !localPlayerWorking);
                     vi.Interactable = canInteract;
                 }

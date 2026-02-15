@@ -4,8 +4,9 @@ use crate::errors::ChainDepthError;
 use crate::events::PlayerMoved;
 use crate::instructions::session_auth::authorize_player_action;
 use crate::state::{
-    calculate_depth, initialize_discovered_room, session_instruction_bits, GlobalAccount,
-    PlayerAccount, PlayerProfile, RoomAccount, RoomPresence, SessionAuthority, WALL_OPEN,
+    calculate_depth, enforce_special_room_topology, initialize_discovered_room,
+    session_instruction_bits, GlobalAccount, PlayerAccount, PlayerProfile, RoomAccount,
+    RoomPresence, SessionAuthority, LOCK_KIND_NONE, WALL_OPEN,
 };
 
 #[derive(Accounts)]
@@ -128,6 +129,7 @@ pub fn handler(ctx: Context<MovePlayer>, new_x: i8, new_y: i8) -> Result<()> {
     let current_room = &ctx.accounts.current_room;
     let season_seed = ctx.accounts.global.season_seed;
     let player_key = ctx.accounts.player.key();
+    let clock = Clock::get()?;
 
     if profile.owner == Pubkey::default() {
         profile.owner = player_key;
@@ -156,6 +158,10 @@ pub fn handler(ctx: Context<MovePlayer>, new_x: i8, new_y: i8) -> Result<()> {
         player_account.jobs_completed = 0;
         player_account.chests_looted = 0;
         player_account.equipped_item_id = 0;
+        player_account.total_score = 0;
+        player_account.current_run_start_slot = clock.slot;
+        player_account.runs_extracted = 0;
+        player_account.last_extraction_slot = 0;
         player_account.season_seed = season_seed;
         player_account.bump = ctx.bumps.player_account;
     }
@@ -201,7 +207,6 @@ pub fn handler(ctx: Context<MovePlayer>, new_x: i8, new_y: i8) -> Result<()> {
         ChainDepthError::WallNotOpen
     );
 
-    let clock = Clock::get()?;
     let opposite_direction = RoomAccount::opposite_direction(direction);
     let target_room = &mut ctx.accounts.target_room;
     let is_new_room = target_room.season_seed == 0;
@@ -218,7 +223,8 @@ pub fn handler(ctx: Context<MovePlayer>, new_x: i8, new_y: i8) -> Result<()> {
         );
     }
     target_room.walls[opposite_direction as usize] = WALL_OPEN;
-    target_room.door_lock_kinds[opposite_direction as usize] = 0;
+    target_room.door_lock_kinds[opposite_direction as usize] = LOCK_KIND_NONE;
+    enforce_special_room_topology(target_room);
     let return_wall_state = target_room.walls[opposite_direction as usize];
     msg!(
         "move_topology target=({}, {}) return_dir={} return_wall_state={}",
@@ -335,6 +341,7 @@ pub fn init_player_handler(ctx: Context<InitPlayer>) -> Result<()> {
     let room_presence = &mut ctx.accounts.room_presence;
     let global = &ctx.accounts.global;
     let player_key = ctx.accounts.player.key();
+    let clock = Clock::get()?;
 
     player_account.owner = player_key;
     player_account.current_room_x = GlobalAccount::START_X;
@@ -343,6 +350,10 @@ pub fn init_player_handler(ctx: Context<InitPlayer>) -> Result<()> {
     player_account.jobs_completed = 0;
     player_account.chests_looted = 0;
     player_account.equipped_item_id = 0;
+    player_account.total_score = 0;
+    player_account.current_run_start_slot = clock.slot;
+    player_account.runs_extracted = 0;
+    player_account.last_extraction_slot = 0;
     player_account.season_seed = global.season_seed;
     player_account.bump = ctx.bumps.player_account;
 

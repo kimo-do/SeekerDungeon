@@ -21,7 +21,8 @@ namespace SeekerDungeon.Solana
         Solid = 0,
         Rubble = 1,
         Open = 2,
-        Locked = 3
+        Locked = 3,
+        EntranceStairs = 4
     }
 
     public enum RoomDirection : byte
@@ -126,6 +127,7 @@ namespace SeekerDungeon.Solana
         public bool IsOpen => WallState == RoomWallState.Open;
         public bool IsRubble => WallState == RoomWallState.Rubble;
         public bool IsLocked => WallState == RoomWallState.Locked;
+        public bool IsEntranceStairs => WallState == RoomWallState.EntranceStairs;
     }
 
     public sealed class MonsterView
@@ -184,6 +186,8 @@ namespace SeekerDungeon.Solana
         public sbyte RoomX { get; init; }
         public sbyte RoomY { get; init; }
         public ulong JobsCompleted { get; init; }
+        public ulong TotalScore { get; init; }
+        public ulong RunsExtracted { get; init; }
         public ItemId EquippedItemId { get; init; }
         public int SkinId { get; init; }
         public string DisplayName { get; init; }
@@ -294,6 +298,8 @@ namespace SeekerDungeon.Solana
                 RoomX = player.CurrentRoomX,
                 RoomY = player.CurrentRoomY,
                 JobsCompleted = player.JobsCompleted,
+                TotalScore = player.TotalScore,
+                RunsExtracted = player.RunsExtracted,
                 EquippedItemId = ToItemId(player.EquippedItemId),
                 SkinId = profile != null ? profile.SkinId : defaultSkinId,
                 DisplayName = profile?.DisplayName ?? string.Empty,
@@ -309,6 +315,7 @@ namespace SeekerDungeon.Solana
                 1 => RoomWallState.Rubble,
                 2 => RoomWallState.Open,
                 3 => RoomWallState.Locked,
+                4 => RoomWallState.EntranceStairs,
                 _ => RoomWallState.Unknown
             };
         }
@@ -398,19 +405,30 @@ namespace SeekerDungeon.Solana
             InventoryAccount before,
             InventoryAccount after)
         {
-            var beforeItems = new Dictionary<ushort, uint>();
+            var beforeTotals = new Dictionary<(ushort itemId, ushort durability), uint>();
+            var afterTotals = new Dictionary<(ushort itemId, ushort durability), uint>();
+
             if (before?.Items != null)
             {
                 foreach (var item in before.Items)
                 {
-                    if (item != null && item.Amount > 0)
+                    if (item == null || item.Amount == 0)
                     {
-                        beforeItems[item.ItemId] = item.Amount;
+                        continue;
+                    }
+
+                    var key = (item.ItemId, item.Durability);
+                    if (beforeTotals.TryGetValue(key, out var existing))
+                    {
+                        beforeTotals[key] = existing + item.Amount;
+                    }
+                    else
+                    {
+                        beforeTotals[key] = item.Amount;
                     }
                 }
             }
 
-            var gained = new List<InventoryItemView>();
             if (after?.Items != null)
             {
                 foreach (var item in after.Items)
@@ -420,18 +438,34 @@ namespace SeekerDungeon.Solana
                         continue;
                     }
 
-                    beforeItems.TryGetValue(item.ItemId, out var previousAmount);
-                    var diff = item.Amount - previousAmount;
-                    if (diff > 0)
+                    var key = (item.ItemId, item.Durability);
+                    if (afterTotals.TryGetValue(key, out var existing))
                     {
-                        gained.Add(new InventoryItemView
-                        {
-                            ItemId = ToItemId(item.ItemId),
-                            Amount = diff,
-                            Durability = item.Durability
-                        });
+                        afterTotals[key] = existing + item.Amount;
+                    }
+                    else
+                    {
+                        afterTotals[key] = item.Amount;
                     }
                 }
+            }
+
+            var gained = new List<InventoryItemView>();
+            foreach (var kvp in afterTotals)
+            {
+                beforeTotals.TryGetValue(kvp.Key, out var previousAmount);
+                var currentAmount = kvp.Value;
+                if (currentAmount <= previousAmount)
+                {
+                    continue;
+                }
+
+                gained.Add(new InventoryItemView
+                {
+                    ItemId = ToItemId(kvp.Key.itemId),
+                    Amount = currentAmount - previousAmount,
+                    Durability = kvp.Key.durability
+                });
             }
 
             return new LootResult { Items = gained };

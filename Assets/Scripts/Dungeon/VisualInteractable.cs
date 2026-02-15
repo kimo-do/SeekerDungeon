@@ -13,8 +13,8 @@ namespace SeekerDungeon.Dungeon
     {
         [Header("Animation")]
         [SerializeField] private float minFade = 0f;
-        [SerializeField] private float maxFade = 0.3f;
-        [SerializeField] private float speed = 2f;
+        private float maxFade = 0.2f;
+        private float speed = 1f;
 
         [Header("State")]
         [SerializeField] private bool interactable;

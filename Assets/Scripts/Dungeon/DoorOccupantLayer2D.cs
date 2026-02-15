@@ -69,7 +69,15 @@ namespace SeekerDungeon.Dungeon
 
         public bool TryGetLocalPlayerStandPosition(out Vector3 worldPosition)
         {
+            return TryGetLocalPlayerStandPlacement(out worldPosition, out _);
+        }
+
+        public bool TryGetLocalPlayerStandPlacement(
+            out Vector3 worldPosition,
+            out OccupantFacingDirection facingDirection)
+        {
             worldPosition = default;
+            facingDirection = OccupantFacingDirection.Right;
             if (visualSlots == null || visualSlots.Length == 0)
             {
                 return false;
@@ -80,14 +88,14 @@ namespace SeekerDungeon.Dungeon
                 ? 0
                 : Mathf.Clamp(occupiedVisibleCount, 0, visualSlots.Length - 1);
 
-            if (TryGetSlotPosition(preferredIndex, out worldPosition))
+            if (TryGetSlotPlacement(preferredIndex, out worldPosition, out facingDirection))
             {
                 return true;
             }
 
             for (var index = 0; index < visualSlots.Length; index += 1)
             {
-                if (TryGetSlotPosition(index, out worldPosition))
+                if (TryGetSlotPlacement(index, out worldPosition, out facingDirection))
                 {
                     return true;
                 }
@@ -151,12 +159,17 @@ namespace SeekerDungeon.Dungeon
                 visualTransform.SetPositionAndRotation(slot.Anchor.position, Quaternion.identity);
                 visual.Bind(occupant, index, slot.FacingDirection);
 
-                if (isNewVisual && !_suppressSpawnPop)
+                var shouldPlaySpawnPop = isNewVisual &&
+                                         !_suppressSpawnPop &&
+                                         !OccupantSpawnPopTracker.HasSeen(key);
+                if (shouldPlaySpawnPop)
                 {
                     var spawnDelay = newVisualIndex * spawnStaggerSeconds;
                     visual.PlaySpawnPop(spawnPopDuration, spawnPopStartScaleMultiplier, spawnDelay);
                     newVisualIndex += 1;
                 }
+
+                OccupantSpawnPopTracker.MarkSeen(key);
             }
 
             ReleaseUnusedVisuals(usedKeys);
@@ -255,9 +268,13 @@ namespace SeekerDungeon.Dungeon
             return $"{occupant.DisplayName}_{index}";
         }
 
-        private bool TryGetSlotPosition(int index, out Vector3 worldPosition)
+        private bool TryGetSlotPlacement(
+            int index,
+            out Vector3 worldPosition,
+            out OccupantFacingDirection facingDirection)
         {
             worldPosition = default;
+            facingDirection = OccupantFacingDirection.Right;
             if (index < 0 || index >= visualSlots.Length)
             {
                 return false;
@@ -270,6 +287,7 @@ namespace SeekerDungeon.Dungeon
             }
 
             worldPosition = slot.Anchor.position;
+            facingDirection = slot.FacingDirection;
             return true;
         }
     }
