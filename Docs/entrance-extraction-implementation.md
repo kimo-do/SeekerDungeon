@@ -22,6 +22,7 @@
   - `CannotExitWithActiveJobs`
 - Added event:
   - `DungeonExited { player, run_score, time_score, loot_score, extracted_item_stacks, extracted_item_units, total_score, run_duration_slots }`
+  - `DungeonExitItemScored { player, item_id, amount, unit_score, stack_score }` (one per scored extracted stack)
 
 ## Extraction Scoring
 - `loot_score`: sum of configured per-item values for extracted loot-range items (`item_id` `200..=299`).

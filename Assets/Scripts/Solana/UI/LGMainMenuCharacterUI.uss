@@ -627,3 +627,207 @@
     font-size: 30px;
     -unity-text-align: middle-center;
 }
+
+.extraction-summary-overlay {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(8, 10, 16, 0.9);
+}
+
+.extraction-summary-banner {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    margin-left: -470px;
+    margin-top: -470px;
+    width: 940px;
+    height: 280px;
+    background-image: url("project://database/Assets/Sprites/celebratory_medieval_banner.png?fileID=21300000&guid=6234184b286f04840a45753b848f9def&type=3#celebratory_medieval_banner_0");
+    -unity-background-scale-mode: scale-to-fit;
+    opacity: 0.96;
+    pointer-events: none;
+}
+
+.extraction-summary-card {
+    width: 92%;
+    max-width: 920px;
+    min-height: 680px;
+    max-height: 94%;
+    padding: 38px 30px 30px 30px;
+    align-items: stretch;
+    background-color: rgba(15, 22, 35, 0.72);
+    background-image: url("project://database/Assets/Sprites/squire_ui_modal.png?fileID=-4845399846067421652&guid=66045a6caca1a264f8bd1a0ef307c99f&type=3#squire_ui_modal_0");
+    -unity-background-scale-mode: sliced;
+    border-top-left-radius: 16px;
+    border-top-right-radius: 16px;
+    border-bottom-left-radius: 16px;
+    border-bottom-right-radius: 16px;
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+}
+
+.extraction-summary-title {
+    font-size: 54px;
+    color: rgb(255, 236, 154);
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    margin-bottom: 10px;
+}
+
+.extraction-summary-subtitle {
+    margin-top: 8px;
+    margin-bottom: 24px;
+    font-size: 30px;
+    color: rgb(208, 222, 248);
+    -unity-text-align: middle-center;
+}
+
+.extraction-summary-items-scroll {
+    flex-grow: 1;
+    margin-bottom: 20px;
+    background-color: rgba(10, 13, 20, 0.72);
+    border-top-left-radius: 14px;
+    border-top-right-radius: 14px;
+    border-bottom-left-radius: 14px;
+    border-bottom-right-radius: 14px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(92, 104, 128, 0.62);
+    border-left-color: rgba(92, 104, 128, 0.62);
+    border-right-color: rgba(48, 58, 78, 0.72);
+    border-bottom-color: rgba(48, 58, 78, 0.72);
+}
+
+.extraction-summary-items {
+    padding: 14px 16px;
+    row-gap: 12px;
+}
+
+.extraction-summary-item-row {
+    min-height: 86px;
+    flex-direction: row;
+    align-items: center;
+    padding-left: 14px;
+    padding-right: 14px;
+    background-color: rgba(28, 34, 48, 0.82);
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+}
+
+.extraction-summary-item-icon {
+    width: 56px;
+    height: 56px;
+    margin-right: 14px;
+}
+
+.extraction-summary-item-name {
+    flex-grow: 1;
+    font-size: 26px;
+    color: rgb(236, 242, 255);
+}
+
+.extraction-summary-item-amount {
+    width: 130px;
+    font-size: 26px;
+    color: rgb(199, 215, 238);
+    -unity-text-align: middle-right;
+}
+
+.extraction-summary-item-points {
+    width: 190px;
+    font-size: 30px;
+    -unity-font-style: bold;
+    color: rgb(255, 219, 128);
+    -unity-text-align: middle-right;
+}
+
+.extraction-summary-totals {
+    margin-top: 8px;
+    margin-bottom: 20px;
+    padding: 16px 18px 14px 18px;
+    background-color: rgba(14, 18, 27, 0.76);
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
+}
+
+.extraction-summary-total-row {
+    min-height: 48px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.extraction-summary-total-row-strong {
+    margin-top: 10px;
+    padding-top: 6px;
+    border-top-width: 1px;
+    border-top-color: rgba(100, 118, 145, 0.68);
+}
+
+.extraction-summary-total-label {
+    font-size: 28px;
+    color: rgb(201, 214, 238);
+}
+
+.extraction-summary-total-label-strong {
+    color: rgb(236, 242, 255);
+}
+
+.extraction-summary-total-value {
+    font-size: 32px;
+    color: rgb(236, 208, 134);
+    -unity-text-align: middle-right;
+}
+
+.extraction-summary-total-value-strong {
+    font-size: 40px;
+    -unity-font-style: bold;
+    color: rgb(255, 224, 139);
+}
+
+.extraction-summary-grand-total-row {
+    margin-top: 16px;
+    min-height: 74px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding-left: 14px;
+    padding-right: 14px;
+    background-color: rgba(82, 58, 28, 0.48);
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+}
+
+.extraction-summary-grand-total-label {
+    font-size: 36px;
+    color: rgb(255, 234, 162);
+    -unity-font-style: bold;
+}
+
+.extraction-summary-grand-total-value {
+    font-size: 46px;
+    color: rgb(255, 239, 181);
+    -unity-font-style: bold;
+    -unity-text-align: middle-right;
+}
+
+.extraction-summary-continue-button {
+    align-self: center;
+    min-width: 420px;
+    margin-top: 8px;
+}

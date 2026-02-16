@@ -18,6 +18,16 @@ namespace SeekerDungeon.Dungeon
         public DoorVisualController VisualController => visualController;
     }
 
+    [Serializable]
+    public sealed class RoomBackgroundPool
+    {
+        [SerializeField] private string id = "default";
+        [SerializeField] private List<GameObject> backgrounds = new();
+
+        public string Id => id;
+        public List<GameObject> Backgrounds => backgrounds;
+    }
+
     public sealed class RoomController : MonoBehaviour
     {
         [SerializeField] private List<DoorLayerBinding> doorLayers = new();
@@ -27,9 +37,12 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private float slotSecondsEstimate = 0.4f;
         [Header("Backgrounds")]
         [SerializeField] private List<GameObject> roomBackgrounds = new();
+        [SerializeField] private List<GameObject> starterRoomBackgrounds = new();
+        [SerializeField] private List<RoomBackgroundPool> additionalBackgroundPools = new();
         [Header("Occupant Visuals")]
         [SerializeField] private Transform occupantVisualSpawnRoot;
         [SerializeField] private RoomIdleOccupantLayer2D idleOccupantLayer;
+        [SerializeField] private DoorOccupantLayer2D bossOccupantLayer;
         [Header("Center Visuals")]
         [SerializeField] private GameObject centerEmptyVisualRoot;
         [SerializeField] private GameObject centerChestVisualRoot;
@@ -38,6 +51,8 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private DungeonChestVisualController chestVisualController;
         [SerializeField] private DungeonBossVisualController bossVisualController;
         [SerializeField] private CenterInteractable centerInteractable;
+        [Header("Ambient")]
+        [SerializeField] private RoomAmbientRatSpawner ambientRatSpawner;
 
         private readonly Dictionary<RoomDirection, DoorOccupantLayer2D> _doorLayerByDirection = new();
         private readonly Dictionary<RoomDirection, DoorVisualController> _doorVisualByDirection = new();
@@ -54,11 +69,17 @@ namespace SeekerDungeon.Dungeon
         private void Awake()
         {
             EnsureOccupantVisualSpawnRoot();
+            ResolveBossOccupantLayer();
             BuildDoorLayerIndex();
 
             if (centerInteractable == null)
             {
                 centerInteractable = UnityEngine.Object.FindFirstObjectByType<CenterInteractable>();
+            }
+
+            if (ambientRatSpawner == null)
+            {
+                ambientRatSpawner = GetComponentInChildren<RoomAmbientRatSpawner>(true);
             }
         }
 
@@ -70,6 +91,10 @@ namespace SeekerDungeon.Dungeon
             }
 
             ApplyBackgroundForRoom(snapshot.Room);
+            if (ambientRatSpawner != null)
+            {
+                ambientRatSpawner.ApplyRoom(snapshot.Room);
+            }
 
             if (snapshot.Room.Doors != null)
             {
@@ -214,6 +239,18 @@ namespace SeekerDungeon.Dungeon
         public bool TryGetCenterStandPosition(out Vector3 worldPosition)
         {
             worldPosition = default;
+            if (bossVisualController != null &&
+                bossVisualController.TryGetBossStandPosition(out worldPosition))
+            {
+                return true;
+            }
+
+            ResolveBossOccupantLayer();
+            if (bossOccupantLayer != null && bossOccupantLayer.TryGetLocalPlayerStandPosition(out worldPosition))
+            {
+                return true;
+            }
+
             if (centerInteractable == null)
             {
                 centerInteractable = UnityEngine.Object.FindFirstObjectByType<CenterInteractable>();
@@ -228,9 +265,40 @@ namespace SeekerDungeon.Dungeon
             return true;
         }
 
+        public bool TryGetBossStandPlacement(out Vector3 worldPosition, out OccupantFacingDirection facingDirection)
+        {
+            worldPosition = default;
+            facingDirection = OccupantFacingDirection.Right;
+            if (bossVisualController != null &&
+                bossVisualController.TryGetBossStandPlacement(out worldPosition, out facingDirection))
+            {
+                return true;
+            }
+
+            ResolveBossOccupantLayer();
+            if (bossOccupantLayer == null)
+            {
+                return false;
+            }
+
+            return bossOccupantLayer.TryGetLocalPlayerStandPlacement(out worldPosition, out facingDirection);
+        }
+
         public void SetBossOccupants(IReadOnlyList<DungeonOccupantVisual> occupants)
         {
             var count = occupants?.Count ?? 0;
+            if (bossVisualController != null)
+            {
+                bossVisualController.SetBossOccupants(occupants ?? Array.Empty<DungeonOccupantVisual>());
+            }
+
+            ResolveBossOccupantLayer();
+            if (bossOccupantLayer != null)
+            {
+                bossOccupantLayer.SetOccupants(occupants ?? Array.Empty<DungeonOccupantVisual>());
+                return;
+            }
+
             Debug.Log($"[RoomController] Boss occupants={count}");
         }
 
@@ -307,6 +375,16 @@ namespace SeekerDungeon.Dungeon
             if (room.CenterType == RoomCenterType.Boss && bossVisualController != null)
             {
                 room.TryGetMonster(out var monster);
+                if (monster != null)
+                {
+                    Debug.Log(
+                        $"[RoomController] Boss center apply: id={monster.MonsterId} " +
+                        $"hp={monster.CurrentHp}/{monster.MaxHp} dead={monster.IsDead}");
+                }
+                else
+                {
+                    Debug.Log("[RoomController] Boss center apply: monster missing in RoomView.");
+                }
                 bossVisualController.Apply(monster, bossOccupants ?? Array.Empty<DungeonOccupantVisual>());
             }
         }
@@ -357,6 +435,7 @@ namespace SeekerDungeon.Dungeon
             _doorLayerByDirection.Clear();
             _doorVisualByDirection.Clear();
             _doorInteractableByDirection.Clear();
+            ResolveBossOccupantLayer();
 
             foreach (var binding in doorLayers)
             {
@@ -393,11 +472,37 @@ namespace SeekerDungeon.Dungeon
             {
                 idleOccupantLayer.SetVisualSpawnRoot(occupantVisualSpawnRoot);
             }
+
+            if (bossOccupantLayer != null)
+            {
+                bossOccupantLayer.SetVisualSpawnRoot(occupantVisualSpawnRoot);
+            }
+
+            if (bossVisualController != null)
+            {
+                bossVisualController.SetBossOccupantVisualSpawnRoot(occupantVisualSpawnRoot);
+            }
+        }
+
+        private void ResolveBossOccupantLayer()
+        {
+            if (bossOccupantLayer != null)
+            {
+                return;
+            }
+
+            if (centerBossVisualRoot == null)
+            {
+                return;
+            }
+
+            bossOccupantLayer = centerBossVisualRoot.GetComponentInChildren<DoorOccupantLayer2D>(true);
         }
 
         private void ApplyBackgroundForRoom(RoomView room)
         {
-            if (roomBackgrounds == null || roomBackgrounds.Count == 0)
+            var candidatePool = ResolveBackgroundPool(room);
+            if (candidatePool == null || candidatePool.Count == 0)
             {
                 return;
             }
@@ -412,9 +517,9 @@ namespace SeekerDungeon.Dungeon
             _hasBackgroundRoomKey = true;
 
             var validIndices = new List<int>();
-            for (var index = 0; index < roomBackgrounds.Count; index += 1)
+            for (var index = 0; index < candidatePool.Count; index += 1)
             {
-                if (roomBackgrounds[index] != null)
+                if (candidatePool[index] != null)
                 {
                     validIndices.Add(index);
                 }
@@ -426,15 +531,94 @@ namespace SeekerDungeon.Dungeon
             }
 
             var selectedIndex = validIndices[UnityEngine.Random.Range(0, validIndices.Count)];
-            for (var index = 0; index < roomBackgrounds.Count; index += 1)
+            for (var index = 0; index < candidatePool.Count; index += 1)
             {
-                var background = roomBackgrounds[index];
+                var background = candidatePool[index];
                 if (background == null)
                 {
                     continue;
                 }
 
                 background.SetActive(index == selectedIndex);
+            }
+
+            // Ensure backgrounds from other pools are not left visible.
+            SetAllBackgroundsInactiveExcept(candidatePool, selectedIndex);
+        }
+
+        private List<GameObject> ResolveBackgroundPool(RoomView room)
+        {
+            if (room != null &&
+                room.X == LGConfig.START_X &&
+                room.Y == LGConfig.START_Y &&
+                starterRoomBackgrounds != null &&
+                starterRoomBackgrounds.Count > 0)
+            {
+                return starterRoomBackgrounds;
+            }
+
+            if (additionalBackgroundPools != null && additionalBackgroundPools.Count > 0)
+            {
+                for (var poolIndex = 0; poolIndex < additionalBackgroundPools.Count; poolIndex += 1)
+                {
+                    var pool = additionalBackgroundPools[poolIndex];
+                    if (pool == null || pool.Backgrounds == null || pool.Backgrounds.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    if (string.Equals(pool.Id, "starter", StringComparison.OrdinalIgnoreCase) &&
+                        room != null &&
+                        room.X == LGConfig.START_X &&
+                        room.Y == LGConfig.START_Y)
+                    {
+                        return pool.Backgrounds;
+                    }
+                }
+            }
+
+            return roomBackgrounds;
+        }
+
+        private void SetAllBackgroundsInactiveExcept(List<GameObject> activePool, int activeIndex)
+        {
+            SetPoolVisibility(roomBackgrounds, activePool, activeIndex);
+            SetPoolVisibility(starterRoomBackgrounds, activePool, activeIndex);
+
+            if (additionalBackgroundPools == null)
+            {
+                return;
+            }
+
+            for (var poolIndex = 0; poolIndex < additionalBackgroundPools.Count; poolIndex += 1)
+            {
+                var pool = additionalBackgroundPools[poolIndex];
+                if (pool?.Backgrounds == null)
+                {
+                    continue;
+                }
+
+                SetPoolVisibility(pool.Backgrounds, activePool, activeIndex);
+            }
+        }
+
+        private static void SetPoolVisibility(List<GameObject> pool, List<GameObject> activePool, int activeIndex)
+        {
+            if (pool == null)
+            {
+                return;
+            }
+
+            for (var index = 0; index < pool.Count; index += 1)
+            {
+                var background = pool[index];
+                if (background == null)
+                {
+                    continue;
+                }
+
+                var shouldBeActive = ReferenceEquals(pool, activePool) && index == activeIndex;
+                background.SetActive(shouldBeActive);
             }
         }
 

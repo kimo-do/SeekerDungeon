@@ -39,6 +39,11 @@ namespace SeekerDungeon.Solana
             {
                 manager = Object.FindFirstObjectByType<LGManager>();
             }
+
+            if (gameHudUI == null)
+            {
+                gameHudUI = Object.FindFirstObjectByType<LGGameHudUI>();
+            }
         }
 
         private void OnEnable()
@@ -67,7 +72,7 @@ namespace SeekerDungeon.Solana
             // Subscribe to HUD bag button
             if (gameHudUI != null)
             {
-                gameHudUI.OnBagClicked += Show;
+                gameHudUI.OnBagClicked += Toggle;
             }
 
             // Subscribe to inventory updates so the panel refreshes while open
@@ -94,7 +99,7 @@ namespace SeekerDungeon.Solana
 
             if (gameHudUI != null)
             {
-                gameHudUI.OnBagClicked -= Show;
+                gameHudUI.OnBagClicked -= Toggle;
             }
 
             if (manager != null)
@@ -112,6 +117,17 @@ namespace SeekerDungeon.Solana
         public void Hide()
         {
             SetVisible(false);
+        }
+
+        public void Toggle()
+        {
+            if (_isVisible)
+            {
+                Hide();
+                return;
+            }
+
+            Show();
         }
 
         private void SetVisible(bool visible)

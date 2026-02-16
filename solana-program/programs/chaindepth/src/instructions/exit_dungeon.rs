@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 
 use crate::errors::ChainDepthError;
-use crate::events::DungeonExited;
+use crate::events::{DungeonExitItemScored, DungeonExited};
 use crate::instructions::session_auth::authorize_player_action;
 use crate::state::{
     compute_time_bonus, is_scored_loot_item, score_value_for_item, session_instruction_bits,
@@ -138,6 +138,14 @@ pub fn handler(ctx: Context<ExitDungeon>) -> Result<()> {
             extracted_item_units = extracted_item_units
                 .checked_add(item.amount)
                 .ok_or(ChainDepthError::Overflow)?;
+
+            emit!(DungeonExitItemScored {
+                player: player_key,
+                item_id: item.item_id,
+                amount: item.amount,
+                unit_score,
+                stack_score,
+            });
         } else {
             kept_items.push(item.clone());
         }

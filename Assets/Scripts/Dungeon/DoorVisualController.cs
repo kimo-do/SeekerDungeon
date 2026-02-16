@@ -18,6 +18,7 @@ namespace SeekerDungeon.Dungeon
     public sealed class DoorVisualController : MonoBehaviour
     {
         [SerializeField] private List<DoorStateVisualEntry> stateVisuals = new();
+        [SerializeField] private GameObject entranceStairsVisualRoot;
         [SerializeField] private GameObject fallbackVisualRoot;
 
         private readonly Dictionary<RoomWallState, GameObject> _visualByState = new();
@@ -87,6 +88,12 @@ namespace SeekerDungeon.Dungeon
 
                 _visualByState[stateVisual.WallState] = stateVisual.VisualRoot;
             }
+
+            if (entranceStairsVisualRoot != null &&
+                !_visualByState.ContainsKey(RoomWallState.EntranceStairs))
+            {
+                _visualByState[RoomWallState.EntranceStairs] = entranceStairsVisualRoot;
+            }
         }
 
         private void CacheRubbleVfxControllers()
@@ -118,6 +125,12 @@ namespace SeekerDungeon.Dungeon
             if (_visualByState.TryGetValue(wallState, out var visual))
             {
                 return visual;
+            }
+
+            if (wallState == RoomWallState.EntranceStairs &&
+                _visualByState.TryGetValue(RoomWallState.Open, out var openDoorVisual))
+            {
+                return openDoorVisual;
             }
 
             return null;

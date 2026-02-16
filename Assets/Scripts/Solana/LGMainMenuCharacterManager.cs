@@ -33,6 +33,7 @@ namespace SeekerDungeon.Solana
         public bool IsLowBalanceBlocking { get; init; }
         public bool IsDevnetRuntime { get; init; }
         public bool IsRequestingDevnetTopUp { get; init; }
+        public bool IsInActiveDungeonRun { get; init; }
     }
 
     /// <summary>
@@ -187,6 +188,7 @@ namespace SeekerDungeon.Solana
                 walletSessionManager = LGWalletSessionManager.EnsureInstance();
             }
 
+#if UNITY_EDITOR
             _localSeekerIdentityConfig =
                 Resources.Load<LocalSeekerIdentityConfig>(LocalSeekerIdentityConfigResourcePath);
             if (_localSeekerIdentityConfig != null && logDebugMessages)
@@ -194,6 +196,9 @@ namespace SeekerDungeon.Solana
                 Debug.Log(
                     $"[MainMenuCharacter] Loaded local Seeker identity config from Resources/{LocalSeekerIdentityConfigResourcePath}");
             }
+#else
+            _localSeekerIdentityConfig = null;
+#endif
 
             RebuildSelectableSkins();
 
@@ -402,6 +407,8 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
+            var walletKey = Web3.Wallet?.Account?.PublicKey?.Key;
+            DungeonRunResumeStore.MarkInRun(walletKey);
             LoadSceneWithFadeAsync(gameplaySceneName).Forget();
         }
 
@@ -1190,6 +1197,25 @@ namespace SeekerDungeon.Solana
                 ? PendingDisplayName
                 : GetShortWalletAddress();
             var lowBalanceBlocking = IsLowBalanceForCharacterCreate();
+            var playerState = lgManager != null ? lgManager.CurrentPlayerState : null;
+            var hasUnextractedRunBySlot = playerState != null &&
+                                          playerState.CurrentRunStartSlot > playerState.LastExtractionSlot;
+            var isAwayFromEntrance = playerState != null &&
+                                     (playerState.CurrentRoomX != LGConfig.START_X ||
+                                      playerState.CurrentRoomY != LGConfig.START_Y);
+            var hasActiveJobs = playerState?.ActiveJobs != null && playerState.ActiveJobs.Length > 0;
+            var hasNeverExtracted = playerState != null &&
+                                    playerState.CurrentRunStartSlot > 0 &&
+                                    playerState.RunsExtracted == 0;
+            var walletKey = Web3.Wallet?.Account?.PublicKey?.Key;
+            var hasLocalResumeMarker = DungeonRunResumeStore.IsMarkedInRun(walletKey);
+            var hasUnextractedRun =
+                hasUnextractedRunBySlot ||
+                isAwayFromEntrance ||
+                hasActiveJobs ||
+                hasNeverExtracted ||
+                hasLocalResumeMarker;
+
             return new MainMenuCharacterState
             {
                 IsReady = IsReady,
@@ -1210,7 +1236,8 @@ namespace SeekerDungeon.Solana
                 LowBalanceModalMessage = _lowBalanceModalMessage,
                 IsLowBalanceBlocking = lowBalanceBlocking,
                 IsDevnetRuntime = !LGConfig.IsMainnetRuntime,
-                IsRequestingDevnetTopUp = _isRequestingDevnetTopUp
+                IsRequestingDevnetTopUp = _isRequestingDevnetTopUp,
+                IsInActiveDungeonRun = hasUnextractedRun
             };
         }
 

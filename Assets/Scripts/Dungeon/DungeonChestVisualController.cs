@@ -9,12 +9,23 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private bool logDebugMessages;
         [SerializeField] private GameObject closedVisual;
         [SerializeField] private GameObject openVisual;
+        [SerializeField] private float openPopScaleMultiplier = 1.08f;
+        [SerializeField] private float openPopDurationSeconds = 0.2f;
 
         private bool _isOpen;
         private bool _hasRoomKey;
         private int _roomX;
         private int _roomY;
         private bool _optimisticOpenedForRoom;
+        private Vector3 _openVisualBaseScale = Vector3.one;
+
+        private void Awake()
+        {
+            if (openVisual != null)
+            {
+                _openVisualBaseScale = openVisual.transform.localScale;
+            }
+        }
 
         public void Apply(RoomView room)
         {
@@ -74,8 +85,15 @@ namespace SeekerDungeon.Dungeon
             if (animate && open && openVisual != null)
             {
                 var target = openVisual.transform;
-                target.localScale = Vector3.zero;
-                target.DOScale(Vector3.one, 0.35f).SetEase(Ease.OutBack);
+                target.DOKill();
+                target.localScale = _openVisualBaseScale;
+                target
+                    .DOPunchScale(_openVisualBaseScale * (openPopScaleMultiplier - 1f), openPopDurationSeconds, 1, 0f)
+                    .SetEase(Ease.OutQuad);
+            }
+            else if (open && openVisual != null)
+            {
+                openVisual.transform.localScale = _openVisualBaseScale;
             }
         }
     }

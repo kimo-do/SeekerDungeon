@@ -326,6 +326,14 @@ namespace SeekerDungeon.Dungeon
                 _playerController.ApplySkin(occupant.SkinId);
                 _playerController.SetDisplayName(occupant.DisplayName);
                 _playerController.SetDisplayNameVisible(true);
+                if (ItemRegistry.IsWearable(occupant.EquippedItemId))
+                {
+                    _playerController.ShowWieldedItem(occupant.EquippedItemId);
+                }
+                else
+                {
+                    _playerController.HideAllWieldedItems();
+                }
             }
 
             ApplyFacing(facingDirection);

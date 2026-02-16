@@ -1,4 +1,7 @@
+using System;
+using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
+using SeekerDungeon.Dungeon;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -12,6 +15,7 @@ namespace SeekerDungeon.Solana
         private const float SpinnerDegreesPerSecond = 360f;
 
         [SerializeField] private LGMainMenuCharacterManager characterManager;
+        [SerializeField] private ItemRegistry itemRegistry;
 
         private UIDocument _document;
 
@@ -39,6 +43,13 @@ namespace SeekerDungeon.Solana
         private VisualElement _loadingOverlay;
         private VisualElement _loadingSpinner;
         private Label _loadingLabel;
+        private VisualElement _extractionSummaryOverlay;
+        private VisualElement _extractionSummaryItemsContainer;
+        private Label _extractionSummarySubtitleLabel;
+        private Label _extractionSummaryLootPointsLabel;
+        private Label _extractionSummaryTimePointsLabel;
+        private Label _extractionSummaryRunPointsLabel;
+        private Label _extractionSummaryTotalPointsLabel;
         private VisualElement _topLeftActions;
         private VisualElement _topRightActions;
         private VisualElement _bottomCenterLayer;
@@ -51,11 +62,13 @@ namespace SeekerDungeon.Solana
         private Button _sessionSetupActivateButton;
         private Button _lowBalanceModalDismissButton;
         private Button _lowBalanceTopUpButton;
+        private Button _extractionSummaryContinueButton;
         private TouchScreenKeyboard _mobileKeyboard;
         private bool _isApplyingKeyboardText;
         private VisualElement _boundRoot;
         private bool _isHandlersBound;
         private bool _hasRevealedUi;
+        private bool _isShowingExtractionSummary;
         private float _spinnerAngle;
 
         private void Awake()
@@ -79,11 +92,14 @@ namespace SeekerDungeon.Solana
                 characterManager.OnError += HandleError;
                 HandleStateChanged(characterManager.GetCurrentState());
             }
+
+            TryShowPendingExtractionSummary();
         }
 
         private void OnDisable()
         {
             UnbindUiHandlers();
+            _isShowingExtractionSummary = false;
 
             if (characterManager != null)
             {
@@ -117,6 +133,13 @@ namespace SeekerDungeon.Solana
             _loadingOverlay = root.Q<VisualElement>("loading-overlay");
             _loadingSpinner = root.Q<VisualElement>("loading-spinner");
             _loadingLabel = root.Q<Label>("loading-label");
+            _extractionSummaryOverlay = root.Q<VisualElement>("extraction-summary-overlay");
+            _extractionSummaryItemsContainer = root.Q<VisualElement>("extraction-summary-items");
+            _extractionSummarySubtitleLabel = root.Q<Label>("extraction-summary-subtitle");
+            _extractionSummaryLootPointsLabel = root.Q<Label>("extraction-summary-loot-points");
+            _extractionSummaryTimePointsLabel = root.Q<Label>("extraction-summary-time-points");
+            _extractionSummaryRunPointsLabel = root.Q<Label>("extraction-summary-run-points");
+            _extractionSummaryTotalPointsLabel = root.Q<Label>("extraction-summary-total-points");
             _topLeftActions = root.Q<VisualElement>("top-left-actions");
             _topRightActions = root.Q<VisualElement>("top-right-actions");
             _bottomCenterLayer = root.Q<VisualElement>("bottom-center-layer");
@@ -143,6 +166,7 @@ namespace SeekerDungeon.Solana
             _sessionSetupActivateButton = root.Q<Button>("btn-session-setup-activate");
             _lowBalanceModalDismissButton = root.Q<Button>("btn-low-balance-dismiss");
             _lowBalanceTopUpButton = root.Q<Button>("btn-low-balance-topup");
+            _extractionSummaryContinueButton = root.Q<Button>("btn-extraction-summary-continue");
 
             if (_previousSkinButton != null)
             {
@@ -187,6 +211,11 @@ namespace SeekerDungeon.Solana
             if (_lowBalanceTopUpButton != null)
             {
                 _lowBalanceTopUpButton.clicked += HandleLowBalanceTopUpClicked;
+            }
+
+            if (_extractionSummaryContinueButton != null)
+            {
+                _extractionSummaryContinueButton.clicked += HandleExtractionSummaryContinueClicked;
             }
 
             if (_displayNameInput != null)
@@ -244,6 +273,11 @@ namespace SeekerDungeon.Solana
             if (_lowBalanceTopUpButton != null)
             {
                 _lowBalanceTopUpButton.clicked -= HandleLowBalanceTopUpClicked;
+            }
+
+            if (_extractionSummaryContinueButton != null)
+            {
+                _extractionSummaryContinueButton.clicked -= HandleExtractionSummaryContinueClicked;
             }
 
             if (_displayNameInput != null)
@@ -585,7 +619,9 @@ namespace SeekerDungeon.Solana
 
             if (_enterDungeonButton != null)
             {
-                _enterDungeonButton.text = "Enter the Dungeon";
+                _enterDungeonButton.text = state.IsInActiveDungeonRun
+                    ? "Resume Dungeon"
+                    : "Enter the Dungeon";
             }
 
             _previousSkinButton?.SetEnabled(canEditProfile);
@@ -608,6 +644,194 @@ namespace SeekerDungeon.Solana
                 state.HasProfile);
             _lowBalanceModalDismissButton?.SetEnabled(!state.IsRequestingDevnetTopUp);
             _lowBalanceTopUpButton?.SetEnabled(!state.IsRequestingDevnetTopUp && !state.IsBusy);
+
+            TryShowPendingExtractionSummary();
+        }
+
+        private void TryShowPendingExtractionSummary()
+        {
+            if (_isShowingExtractionSummary)
+            {
+                return;
+            }
+
+            if (!DungeonExtractionSummaryStore.HasPendingSummary)
+            {
+                return;
+            }
+
+            var summary = DungeonExtractionSummaryStore.ConsumePending();
+            if (summary == null)
+            {
+                return;
+            }
+
+            ShowExtractionSummaryAsync(summary).Forget();
+        }
+
+        private async UniTaskVoid ShowExtractionSummaryAsync(DungeonExtractionSummary summary)
+        {
+            if (_extractionSummaryOverlay == null)
+            {
+                return;
+            }
+
+            _isShowingExtractionSummary = true;
+            _extractionSummaryOverlay.style.display = DisplayStyle.Flex;
+
+            if (_extractionSummaryContinueButton != null)
+            {
+                _extractionSummaryContinueButton.style.display = DisplayStyle.None;
+            }
+
+            SetLabelText(_extractionSummarySubtitleLabel, "Cashing in recovered loot...");
+            SetLabelText(_extractionSummaryLootPointsLabel, "+0");
+            SetLabelText(_extractionSummaryTimePointsLabel, "+0");
+            SetLabelText(_extractionSummaryRunPointsLabel, "+0");
+            SetLabelText(_extractionSummaryTotalPointsLabel, "0");
+
+            if (_extractionSummaryItemsContainer != null)
+            {
+                _extractionSummaryItemsContainer.Clear();
+            }
+
+            var rowPointsLabels = new List<Label>();
+            var itemStackScores = new List<ulong>();
+            var rowVisuals = new List<VisualElement>();
+            for (var itemIndex = 0; itemIndex < summary.Items.Count; itemIndex += 1)
+            {
+                var item = summary.Items[itemIndex];
+                if (item == null)
+                {
+                    continue;
+                }
+
+                var row = new VisualElement();
+                row.AddToClassList("extraction-summary-item-row");
+                row.style.opacity = 0f;
+
+                var icon = new VisualElement();
+                icon.AddToClassList("extraction-summary-item-icon");
+                if (itemRegistry != null)
+                {
+                    var iconSprite = itemRegistry.GetIcon(item.ItemId);
+                    if (iconSprite != null)
+                    {
+                        icon.style.backgroundImage = new StyleBackground(iconSprite);
+                    }
+                }
+                row.Add(icon);
+
+                var nameLabel = new Label(itemRegistry != null ? itemRegistry.GetDisplayName(item.ItemId) : item.ItemId.ToString());
+                nameLabel.AddToClassList("extraction-summary-item-name");
+                row.Add(nameLabel);
+
+                var amountLabel = new Label($"x{item.Amount}");
+                amountLabel.AddToClassList("extraction-summary-item-amount");
+                row.Add(amountLabel);
+
+                var pointsLabel = new Label("+0");
+                pointsLabel.AddToClassList("extraction-summary-item-points");
+                row.Add(pointsLabel);
+
+                _extractionSummaryItemsContainer?.Add(row);
+                rowPointsLabels.Add(pointsLabel);
+                itemStackScores.Add(item.StackScore);
+                rowVisuals.Add(row);
+            }
+
+            if (rowVisuals.Count == 0 && _extractionSummaryItemsContainer != null)
+            {
+                var emptyRow = new VisualElement();
+                emptyRow.AddToClassList("extraction-summary-item-row");
+
+                var emptyLabel = new Label("No scored loot extracted this run.");
+                emptyLabel.AddToClassList("extraction-summary-item-name");
+                emptyLabel.style.flexGrow = 1f;
+                emptyLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
+                emptyLabel.style.opacity = 0.86f;
+
+                emptyRow.Add(emptyLabel);
+                _extractionSummaryItemsContainer.Add(emptyRow);
+            }
+
+            ulong runningLootScore = 0;
+            for (var rowIndex = 0; rowIndex < rowPointsLabels.Count; rowIndex += 1)
+            {
+                var rowVisual = rowVisuals[rowIndex];
+                if (rowVisual != null)
+                {
+                    rowVisual.style.opacity = 1f;
+                }
+
+                await AnimateNumberLabelAsync(rowPointsLabels[rowIndex], 0, itemStackScores[rowIndex], "+");
+                runningLootScore += itemStackScores[rowIndex];
+                SetLabelText(_extractionSummaryLootPointsLabel, $"+{runningLootScore}");
+                await UniTask.Delay(TimeSpan.FromMilliseconds(90));
+            }
+
+            await UniTask.Delay(TimeSpan.FromMilliseconds(120));
+            await AnimateNumberLabelAsync(_extractionSummaryTimePointsLabel, 0, summary.TimeScore, "+");
+            await UniTask.Delay(TimeSpan.FromMilliseconds(120));
+            await AnimateNumberLabelAsync(_extractionSummaryRunPointsLabel, 0, summary.RunScore, "+");
+            await UniTask.Delay(TimeSpan.FromMilliseconds(120));
+            await AnimateNumberLabelAsync(_extractionSummaryTotalPointsLabel, 0, summary.TotalScoreAfterRun, string.Empty);
+
+            SetLabelText(
+                _extractionSummarySubtitleLabel,
+                summary.RunScore > 0
+                    ? "Run complete. Your score has been updated."
+                    : "Run complete. No score gained this run.");
+            if (_extractionSummaryContinueButton != null)
+            {
+                _extractionSummaryContinueButton.style.display = DisplayStyle.Flex;
+                _extractionSummaryContinueButton.Focus();
+            }
+        }
+
+        private async UniTask AnimateNumberLabelAsync(Label label, ulong from, ulong to, string prefix)
+        {
+            if (label == null)
+            {
+                return;
+            }
+
+            const int steps = 16;
+            if (to <= from || steps <= 1)
+            {
+                SetLabelText(label, $"{prefix}{to}");
+                return;
+            }
+
+            for (var step = 1; step <= steps; step += 1)
+            {
+                var progress = step / (float)steps;
+                var value = from + (ulong)Mathf.RoundToInt((to - from) * progress);
+                SetLabelText(label, $"{prefix}{value}");
+                await UniTask.Delay(TimeSpan.FromMilliseconds(18));
+            }
+
+            SetLabelText(label, $"{prefix}{to}");
+        }
+
+        private void HandleExtractionSummaryContinueClicked()
+        {
+            if (_extractionSummaryOverlay != null)
+            {
+                _extractionSummaryOverlay.style.display = DisplayStyle.None;
+            }
+
+            _isShowingExtractionSummary = false;
+        }
+
+        private static void SetLabelText(Label label, string text)
+        {
+            if (label == null)
+            {
+                return;
+            }
+
+            label.text = text ?? string.Empty;
         }
 
         private void ApplySkinLabelSizing(string labelText)

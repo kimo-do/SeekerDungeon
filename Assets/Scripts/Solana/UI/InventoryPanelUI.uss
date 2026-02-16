@@ -94,14 +94,14 @@
     flex-wrap: wrap;
     justify-content: flex-start;
     align-items: flex-start;
-    padding: 4px;
+    padding: 6px;
 }
 
 /* ─── Slot ─── */
 
 .inventory-panel-slot {
-    width: 140px;
-    height: 160px;
+    width: 168px;
+    height: 176px;
     margin: 6px;
     background-color: rgba(30, 30, 40, 0.85);
     border-top-left-radius: 12px;
@@ -114,32 +114,44 @@
     border-left-width: 2px;
     border-color: rgba(100, 110, 130, 0.5);
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
     align-items: center;
-    padding: 6px;
+    padding-top: 8px;
+    padding-right: 8px;
+    padding-bottom: 8px;
+    padding-left: 8px;
 }
 
 .inventory-panel-slot-icon {
-    width: 64px;
-    height: 64px;
-    margin-bottom: 4px;
+    width: 72px;
+    height: 72px;
+    margin-bottom: 6px;
+    -unity-background-scale-mode: scale-to-fit;
+    background-position: center;
+    background-repeat: no-repeat;
 }
 
 .inventory-panel-slot-name {
+    width: 100%;
+    max-height: 48px;
     font-size: 20px;
     -unity-font-style: bold;
     color: rgb(220, 230, 245);
-    -unity-text-align: middle-center;
-    margin-bottom: 2px;
+    -unity-text-align: upper-center;
+    white-space: normal;
+    overflow: hidden;
+    margin-bottom: 4px;
 }
 
 .inventory-panel-slot-amount {
+    width: 100%;
     font-size: 18px;
     color: rgb(180, 190, 210);
     -unity-text-align: middle-center;
 }
 
 .inventory-panel-slot-durability {
+    width: 100%;
     font-size: 16px;
     color: rgb(140, 200, 140);
     -unity-text-align: middle-center;

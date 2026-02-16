@@ -25,6 +25,10 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private float slotSecondsEstimate = 0.4f;
         [SerializeField] private ulong readyBufferSlots = 1UL;
         [SerializeField] private float txAttemptCooldownSeconds = 2f;
+        [Header("Boss Auto Tick")]
+        [SerializeField] private bool autoTickBossFight = true;
+        [SerializeField] private float bossTickIntervalSeconds = 2.2f;
+        [SerializeField] private float bossTickRetryCooldownSeconds = 1.2f;
 
         [SerializeField] private float completeJobFailCooldownSeconds = 30f;
         [SerializeField] private int maxCompleteJobRetries = 3;
@@ -40,6 +44,9 @@ namespace SeekerDungeon.Dungeon
         private readonly Dictionary<byte, int> _completeJobFailCount = new();
         private CancellationTokenSource _loopCancellationTokenSource;
         private float _nextPlayerRefreshAt;
+        private float _nextBossTickAt;
+        private float _nextBossFighterCheckAt;
+        private bool _cachedIsLocalBossFighter;
 
         private void Awake()
         {
@@ -141,6 +148,13 @@ namespace SeekerDungeon.Dungeon
                 return idlePollSeconds;
             }
 
+            // Boss auto-tick loop for smoother HP/death updates without repeated clicks.
+            var bossTickDelay = await ProcessBossAutoTickAsync(room, cancellationToken);
+            if (bossTickDelay >= 0f)
+            {
+                return bossTickDelay;
+            }
+
             // ── Find active jobs by checking helper stakes (more reliable than player.ActiveJobs) ──
             // player.ActiveJobs can be empty due to deserialization/realloc issues, but helper stakes
             // are the on-chain source of truth.
@@ -230,6 +244,96 @@ namespace SeekerDungeon.Dungeon
             }
 
             return minDelaySeconds;
+        }
+
+        private async UniTask<float> ProcessBossAutoTickAsync(
+            Chaindepth.Accounts.RoomAccount room,
+            CancellationToken cancellationToken)
+        {
+            if (!autoTickBossFight || lgManager == null || room == null)
+            {
+                return -1f;
+            }
+
+            if (room.CenterType != LGConfig.CENTER_BOSS || room.BossDefeated)
+            {
+                _cachedIsLocalBossFighter = false;
+                return -1f;
+            }
+
+            var isLocalFighter = dungeonManager != null && dungeonManager.IsLocalPlayerFightingBoss;
+            if (!isLocalFighter)
+            {
+                var nowForFighterCheck = Time.unscaledTime;
+                if (nowForFighterCheck >= _nextBossFighterCheckAt)
+                {
+                    _cachedIsLocalBossFighter = await ResolveLocalBossFighterFromPdaAsync(room);
+                    _nextBossFighterCheckAt = nowForFighterCheck + 2f;
+                }
+
+                if (!_cachedIsLocalBossFighter)
+                {
+                    return -1f;
+                }
+            }
+
+            var now = Time.unscaledTime;
+            if (now < _nextBossTickAt)
+            {
+                return Mathf.Max(minRecheckSeconds, _nextBossTickAt - now);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            var tickResult = await lgManager.TickBossFight();
+            if (!tickResult.Success)
+            {
+                _nextBossTickAt = now + Mathf.Max(0.2f, bossTickRetryCooldownSeconds);
+                GameplayActionLog.AutoComplete("CenterBoss", "TickBossFight", false, tickResult.Error);
+                return Mathf.Max(minRecheckSeconds, bossTickRetryCooldownSeconds);
+            }
+
+            GameplayActionLog.AutoComplete("CenterBoss", "TickBossFight", true, tickResult.Signature);
+            _nextBossTickAt = now + Mathf.Max(0.2f, bossTickIntervalSeconds);
+
+            if (dungeonManager != null)
+            {
+                await dungeonManager.RefreshCurrentRoomSnapshotAsync();
+            }
+
+            return Mathf.Max(minRecheckSeconds, bossTickIntervalSeconds);
+        }
+
+        private async UniTask<bool> ResolveLocalBossFighterFromPdaAsync(Chaindepth.Accounts.RoomAccount room)
+        {
+            if (lgManager?.CurrentGlobalState == null || room == null)
+            {
+                return false;
+            }
+
+            var playerPubkey = Web3.Wallet?.Account?.PublicKey;
+            if (playerPubkey == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                var roomPda = lgManager.DeriveRoomPda(
+                    lgManager.CurrentGlobalState.SeasonSeed,
+                    room.X,
+                    room.Y);
+                if (roomPda == null)
+                {
+                    return false;
+                }
+
+                return await lgManager.HasBossFightInCurrentRoom(roomPda, playerPubkey);
+            }
+            catch (Exception error)
+            {
+                Log($"Boss fighter PDA check failed: {error.Message}");
+                return false;
+            }
         }
 
         private async UniTask<Chaindepth.Accounts.PlayerAccount> GetPlayerStateAsync()

@@ -55,6 +55,35 @@
                 <ui:Button name="btn-session-setup-activate" text="Start Session" class="action-button modal-action-button modal-longbtn session-setup-button"/>
             </ui:VisualElement>
         </ui:VisualElement>
+        <ui:VisualElement name="extraction-summary-overlay" class="extraction-summary-overlay" style="display: none;">
+            <ui:VisualElement name="extraction-summary-banner" class="extraction-summary-banner" style="width: 938px; left: 542px; height: 768px; top: 724px; -unity-material: url(&quot;&quot;);"/>
+            <ui:VisualElement name="extraction-summary-card" class="extraction-summary-card">
+                <ui:Label name="extraction-summary-title" text="YOU MADE IT OUT ALIVE!" class="extraction-summary-title" style="padding-top: 25px; margin-top: 11px; padding-bottom: 35px;"/>
+                <ui:Label name="extraction-summary-subtitle" text="Cashing in recovered loot..." class="extraction-summary-subtitle" style="font-size: 39px; -unity-font-style: normal;"/>
+                <ui:ScrollView name="extraction-summary-items-scroll" mode="Vertical" class="extraction-summary-items-scroll">
+                    <ui:VisualElement name="extraction-summary-items" class="extraction-summary-items"/>
+                </ui:ScrollView>
+                <ui:VisualElement name="extraction-summary-totals" class="extraction-summary-totals">
+                    <ui:VisualElement class="extraction-summary-total-row">
+                        <ui:Label text="Loot Score" class="extraction-summary-total-label"/>
+                        <ui:Label name="extraction-summary-loot-points" text="+0" class="extraction-summary-total-value"/>
+                    </ui:VisualElement>
+                    <ui:VisualElement class="extraction-summary-total-row">
+                        <ui:Label text="Time Bonus" class="extraction-summary-total-label"/>
+                        <ui:Label name="extraction-summary-time-points" text="+0" class="extraction-summary-total-value"/>
+                    </ui:VisualElement>
+                    <ui:VisualElement class="extraction-summary-total-row extraction-summary-total-row-strong">
+                        <ui:Label text="Run Score" class="extraction-summary-total-label extraction-summary-total-label-strong"/>
+                        <ui:Label name="extraction-summary-run-points" text="+0" class="extraction-summary-total-value extraction-summary-total-value-strong"/>
+                    </ui:VisualElement>
+                    <ui:VisualElement class="extraction-summary-grand-total-row">
+                        <ui:Label text="TOTAL SCORE" class="extraction-summary-grand-total-label"/>
+                        <ui:Label name="extraction-summary-total-points" text="0" class="extraction-summary-grand-total-value"/>
+                    </ui:VisualElement>
+                </ui:VisualElement>
+                <ui:Button name="btn-extraction-summary-continue" text="Continue" class="action-button modal-action-button modal-longbtn extraction-summary-continue-button" style="display: none;"/>
+            </ui:VisualElement>
+        </ui:VisualElement>
         <ui:VisualElement name="low-balance-modal-overlay" class="modal-overlay" style="display: none; -unity-material: url(&quot;project://database/Assets/Sprites/Materials/BgMat.mat?fileID=2100000&amp;guid=859fd8fa6f851ee4bbc894344994ba9a&amp;type=2#BgMat&quot;); background-color: rgba(8, 10, 16, 0.83);">
             <ui:VisualElement name="low-balance-modal-card" class="modal-card" style="-unity-material: url(&quot;&quot;);">
                 <ui:Label name="low-balance-modal-title" text="LOW BALANCE" class="modal-title"/>

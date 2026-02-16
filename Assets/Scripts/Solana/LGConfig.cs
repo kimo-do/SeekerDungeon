@@ -180,7 +180,29 @@ namespace SeekerDungeon.Solana
                 return fallback;
             }
 
-            return value.Trim();
+            var normalized = value.Trim();
+            if (IsLikelySecretBearingUrl(normalized) && !Application.isEditor && !Debug.isDebugBuild)
+            {
+                Debug.LogWarning(
+                    "[LGConfig] Secret-bearing RPC URL detected in runtime config. Falling back to a public endpoint.");
+                return fallback;
+            }
+
+            return normalized;
+        }
+
+        private static bool IsLikelySecretBearingUrl(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return false;
+            }
+
+            return
+                url.IndexOf("api-key=", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                url.IndexOf("apikey=", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                url.IndexOf("x-api-key=", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                url.IndexOf("token=", System.StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static bool LooksLikeClusterMismatch(string primary, string fallback)

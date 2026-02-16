@@ -16,7 +16,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &4071165686258491569
 Transform:
   m_ObjectHideFlags: 0
@@ -45,6 +45,52 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4c837f0c1dcecd245b90a1554a5e80a9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Dungeon.DungeonBossVisualController
+  defaultVisualRoot: {fileID: 0}
+  variantBindings:
+  - monsterId: 1
+    visualRoot: {fileID: 2409909769467820946}
+    deathPopTarget: {fileID: 0}
+    standLayer: {fileID: 2211774365450630317}
+    healthBarAnchor: {fileID: 3969823510392796771}
+  - monsterId: 2
+    visualRoot: {fileID: 2409909769467820946}
+    deathPopTarget: {fileID: 0}
+    standLayer: {fileID: 2211774365450630317}
+    healthBarAnchor: {fileID: 3969823510392796771}
+  - monsterId: 3
+    visualRoot: {fileID: 2409909769467820946}
+    deathPopTarget: {fileID: 0}
+    standLayer: {fileID: 2211774365450630317}
+    healthBarAnchor: {fileID: 3969823510392796771}
+  - monsterId: 4
+    visualRoot: {fileID: 2409909769467820946}
+    deathPopTarget: {fileID: 0}
+    standLayer: {fileID: 2211774365450630317}
+    healthBarAnchor: {fileID: 3969823510392796771}
+  healthBarView: {fileID: 3104601031813022557, guid: 58b30945d32c86743a799f5599b10954, type: 3}
+  healthBarPrefab: {fileID: 3104601031813022557, guid: 58b30945d32c86743a799f5599b10954, type: 3}
+  healthBarSpawnAnchor: {fileID: 3969823510392796771}
+  deathPopScaleMultiplier: 1.12
+  deathPopDuration: 0.16
+  deathAnimatorParameter: dead
+  deadAnimationStateName: dead
+  deadAnimationStateFallbackNames:
+  - Dead
+  - death
+  - Death
+  - is_dead
+  - IsDead
+  - deadchest
+  - DeadChest
+  deathAnimatorParameterFallbackNames:
+  - Dead
+  - isDead
+  - IsDead
+  - death
+  - Death
+  completeDeadAnimationInstantlyOnFirstApply: 1
+  forceDeadAnimationStateWheneverDead: 1
+  deadMaterialOverride: {fileID: 2100000, guid: a93ae552c46019f48a0d3b4bd839b641, type: 2}
   logDebugMessages: 0
 --- !u!1 &1594370321450786081
 GameObject:
@@ -172,6 +218,8 @@ MonoBehaviour:
   logDebugMessages: 0
   closedVisual: {fileID: 9197238709631379869}
   openVisual: {fileID: 2874530517391162020}
+  openPopScaleMultiplier: 1.08
+  openPopDurationSeconds: 0.2
 --- !u!1 &2874530517391162020
 GameObject:
   m_ObjectHideFlags: 0
@@ -608,18 +656,6 @@ PrefabInstance:
     m_TransformParent: {fileID: 4071165686258491569}
     m_Modifications:
     - target: {fileID: 3824938402948278899, guid: d7930420ed84c5748843fdf4787ff8ee, type: 3}
-      propertyPath: m_LocalScale.x
-      value: 0.25
-      objectReference: {fileID: 0}
-    - target: {fileID: 3824938402948278899, guid: d7930420ed84c5748843fdf4787ff8ee, type: 3}
-      propertyPath: m_LocalScale.y
-      value: 0.25
-      objectReference: {fileID: 0}
-    - target: {fileID: 3824938402948278899, guid: d7930420ed84c5748843fdf4787ff8ee, type: 3}
-      propertyPath: m_LocalScale.z
-      value: 0.5
-      objectReference: {fileID: 0}
-    - target: {fileID: 3824938402948278899, guid: d7930420ed84c5748843fdf4787ff8ee, type: 3}
       propertyPath: m_LocalPosition.x
       value: -0.214
       objectReference: {fileID: 0}
@@ -661,55 +697,34 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5079432519168770526, guid: d7930420ed84c5748843fdf4787ff8ee, type: 3}
       propertyPath: m_Name
-      value: chest
+      value: ChestMonster
       objectReference: {fileID: 0}
-    - target: {fileID: 5079432519168770526, guid: d7930420ed84c5748843fdf4787ff8ee, type: 3}
-      propertyPath: m_IsActive
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 7136320426832519568, guid: d7930420ed84c5748843fdf4787ff8ee, type: 3}
-      propertyPath: m_Color.b
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 7136320426832519568, guid: d7930420ed84c5748843fdf4787ff8ee, type: 3}
-      propertyPath: m_Color.g
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 7136320426832519568, guid: d7930420ed84c5748843fdf4787ff8ee, type: 3}
-      propertyPath: m_Color.r
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 7136320426832519568, guid: d7930420ed84c5748843fdf4787ff8ee, type: 3}
-      propertyPath: 'm_Materials.Array.data[0]'
-      value: 
-      objectReference: {fileID: 2100000, guid: 0d2475f0f2cb4554e9213596b2dc9a53, type: 2}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents:
-    - targetCorrespondingSourceObject: {fileID: 5079432519168770526, guid: d7930420ed84c5748843fdf4787ff8ee, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 8471759871658447131}
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: d7930420ed84c5748843fdf4787ff8ee, type: 3}
+--- !u!114 &2211774365450630317 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 8772363143478234849, guid: d7930420ed84c5748843fdf4787ff8ee, type: 3}
+  m_PrefabInstance: {fileID: 7425447170234399308}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2409909769467820946}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 433537e92b3041b46a17db7495949b14, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Dungeon.DoorOccupantLayer2D
 --- !u!1 &2409909769467820946 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 5079432519168770526, guid: d7930420ed84c5748843fdf4787ff8ee, type: 3}
   m_PrefabInstance: {fileID: 7425447170234399308}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &8471759871658447131
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
+--- !u!4 &3969823510392796771 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 5772446693277879343, guid: d7930420ed84c5748843fdf4787ff8ee, type: 3}
+  m_PrefabInstance: {fileID: 7425447170234399308}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2409909769467820946}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 482c7600b08aa5244be5eb0d388edea3, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Dungeon.VisualInteractable
-  minFade: 0
-  interactable: 0
 --- !u!4 &5915642944336646207 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 3824938402948278899, guid: d7930420ed84c5748843fdf4787ff8ee, type: 3}

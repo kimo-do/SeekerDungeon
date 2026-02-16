@@ -5,6 +5,7 @@
 - [ ] Tune forced key chest cadence after playtest telemetry.
 - [ ] Tune extraction item-value table from telemetry.
 - [ ] Tune extraction time-bonus constants/cap after live run data.
-- [ ] Add extraction/score telemetry dashboards and balance alerts.
+- [x] Add extraction/score telemetry dashboards and balance alerts.
+- [x] Add item-level extraction telemetry (`DungeonExitItemScored`) and ring-coverage checks for safer balance decisions.
 - [ ] Publish upgraded program + reset/migrate season state before enabling locked doors on shared devnet/mainnet.
 - player combat, show kills

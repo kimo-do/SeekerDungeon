@@ -54,7 +54,7 @@ namespace SeekerDungeon.Solana
         [Header("RPC Settings")]
         [SerializeField] private string rpcUrl = LGConfig.RPC_URL;
         [SerializeField] private string fallbackRpcUrl = LGConfig.RPC_FALLBACK_URL;
-        private bool enableStreamingRpc = false;
+        [SerializeField] private bool enableStreamingRpc = false;
 
         // Cached state (using generated account types)
         public GlobalAccount CurrentGlobalState { get; private set; }
@@ -1594,6 +1594,11 @@ namespace SeekerDungeon.Solana
 
             try
             {
+                // Force fresh pre-exit snapshots so extraction summary does not rely on stale cache.
+                var playerBefore = await FetchPlayerState();
+                var totalScoreBefore = playerBefore?.TotalScore ?? CurrentPlayerState?.TotalScore ?? 0UL;
+                var inventoryBefore = CloneInventorySnapshot(await FetchInventory());
+
                 var result = await ExecuteGameplayActionAsync(
                     "ExitDungeon",
                     (context) =>
@@ -1625,10 +1630,69 @@ namespace SeekerDungeon.Solana
                             },
                             _programId
                         );
-                    });
+                    },
+                    ensureSessionIfPossible: false,
+                    useSessionSignerIfPossible: false);
+
+                if (!result.Success &&
+                    !string.IsNullOrWhiteSpace(result.Error) &&
+                    (result.Error.IndexOf("retry TX failed", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     result.Error.IndexOf("session restart failed", StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    Log("ExitDungeon first attempt failed after session recovery. Retrying once after short delay.");
+                    await UniTask.Delay(220);
+                    result = await ExecuteGameplayActionAsync(
+                        "ExitDungeon",
+                        (context) =>
+                        {
+                            var playerPda = DerivePlayerPda(context.Player);
+                            var roomPda = DeriveRoomPda(
+                                CurrentGlobalState.SeasonSeed,
+                                CurrentPlayerState.CurrentRoomX,
+                                CurrentPlayerState.CurrentRoomY);
+                            var inventoryPda = DeriveInventoryPda(context.Player);
+                            var roomPresencePda = DeriveRoomPresencePda(
+                                CurrentGlobalState.SeasonSeed,
+                                CurrentPlayerState.CurrentRoomX,
+                                CurrentPlayerState.CurrentRoomY,
+                                context.Player);
+
+                            return ChaindepthProgram.ExitDungeon(
+                                new ExitDungeonAccounts
+                                {
+                                    Authority = context.Authority,
+                                    Player = context.Player,
+                                    Global = _globalPda,
+                                    PlayerAccount = playerPda,
+                                    Room = roomPda,
+                                    Inventory = inventoryPda,
+                                    RoomPresence = roomPresencePda,
+                                    SessionAuthority = context.SessionAuthority,
+                                    SystemProgram = SystemProgram.ProgramIdKey
+                                },
+                                _programId
+                            );
+                        },
+                        ensureSessionIfPossible: false,
+                        useSessionSignerIfPossible: false);
+                }
 
                 if (result.Success)
                 {
+                    await FetchPlayerState();
+                    await FetchInventory();
+                    var walletKey = Web3.Wallet?.Account?.PublicKey?.Key;
+                    DungeonRunResumeStore.ClearRun(walletKey);
+                    var extractionSummary = BuildExtractionSummary(
+                        inventoryBefore,
+                        CurrentInventoryState,
+                        totalScoreBefore,
+                        CurrentPlayerState?.TotalScore ?? totalScoreBefore);
+                    DungeonExtractionSummaryStore.SetPending(extractionSummary);
+                    Log(
+                        $"Extraction summary prepared: items={extractionSummary.Items.Count} " +
+                        $"loot={extractionSummary.LootScore} time={extractionSummary.TimeScore} " +
+                        $"run={extractionSummary.RunScore} total={extractionSummary.TotalScoreAfterRun}");
                     Log($"Dungeon exit successful. TX: {result.Signature}");
                 }
 
@@ -2145,6 +2209,10 @@ namespace SeekerDungeon.Solana
 
             // Snapshot inventory before loot so we can diff afterwards
             var inventoryBefore = CloneInventorySnapshot(CurrentInventoryState);
+            if (inventoryBefore == null)
+            {
+                inventoryBefore = CloneInventorySnapshot(await FetchInventory());
+            }
 
             try
             {
@@ -2185,6 +2253,7 @@ namespace SeekerDungeon.Solana
                 {
                     Log($"Chest looted! TX: {result.Signature}");
                     await RefreshAllState();
+                    await EnsureInventoryRefreshedForLootDiff(inventoryBefore);
 
                     // Compute loot diff and fire event
                     var lootResult = LGDomainMapper.ComputeLootDiff(inventoryBefore, CurrentInventoryState);
@@ -2551,6 +2620,10 @@ namespace SeekerDungeon.Solana
 
             // Snapshot inventory before loot so we can diff afterwards
             var inventoryBefore = CloneInventorySnapshot(CurrentInventoryState);
+            if (inventoryBefore == null)
+            {
+                inventoryBefore = CloneInventorySnapshot(await FetchInventory());
+            }
 
             try
             {
@@ -2601,6 +2674,7 @@ namespace SeekerDungeon.Solana
                 {
                     Log($"Boss looted! TX: {result.Signature}");
                     await RefreshAllState();
+                    await EnsureInventoryRefreshedForLootDiff(inventoryBefore);
 
                     // Compute loot diff and fire event
                     var lootResult = LGDomainMapper.ComputeLootDiff(inventoryBefore, CurrentInventoryState);
@@ -2608,6 +2682,10 @@ namespace SeekerDungeon.Solana
                     {
                         Log($"Boss loot result: {lootResult.Items.Count} item(s) gained");
                         OnChestLootResult?.Invoke(lootResult);
+                    }
+                    else
+                    {
+                        Log("Boss loot result: no new items detected (diff empty)");
                     }
                 }
 
@@ -2782,10 +2860,24 @@ namespace SeekerDungeon.Solana
             return context;
         }
 
+        private GameplaySigningContext BuildWalletOnlySigningContext()
+        {
+            var walletAccount = Web3.Wallet?.Account;
+            return new GameplaySigningContext
+            {
+                SignerAccount = walletAccount,
+                Authority = walletAccount?.PublicKey,
+                Player = walletAccount?.PublicKey,
+                SessionAuthority = null,
+                UsesSessionSigner = false
+            };
+        }
+
         private async UniTask<TxResult> ExecuteGameplayActionAsync(
             string actionName,
             Func<GameplaySigningContext, TransactionInstruction> buildInstruction,
-            bool ensureSessionIfPossible = true)
+            bool ensureSessionIfPossible = true,
+            bool useSessionSignerIfPossible = true)
         {
             if (Web3.Wallet?.Account == null)
             {
@@ -2805,7 +2897,9 @@ namespace SeekerDungeon.Solana
                 }
             }
 
-            var signingContext = BuildGameplaySigningContext(walletSessionManager);
+            var signingContext = useSessionSignerIfPossible
+                ? BuildGameplaySigningContext(walletSessionManager)
+                : BuildWalletOnlySigningContext();
             Log($"{actionName}: signingContext usesSession={signingContext.UsesSessionSigner} authority={signingContext.Authority?.Key?.Substring(0, 8) ?? "<null>"} player={signingContext.Player?.Key?.Substring(0, 8) ?? "<null>"}");
             if (signingContext.SignerAccount == null || signingContext.Authority == null || signingContext.Player == null)
             {
@@ -3214,6 +3308,114 @@ namespace SeekerDungeon.Solana
                 Items = clonedItems,
                 Bump = source.Bump
             };
+        }
+
+        private async UniTask EnsureInventoryRefreshedForLootDiff(InventoryAccount inventoryBefore)
+        {
+            const int maxAttempts = 6;
+            const int delayMs = 180;
+
+            for (var attempt = 0; attempt < maxAttempts; attempt += 1)
+            {
+                await FetchInventory();
+                var lootDiff = LGDomainMapper.ComputeLootDiff(inventoryBefore, CurrentInventoryState);
+                if (lootDiff.Items.Count > 0)
+                {
+                    return;
+                }
+
+                await UniTask.Delay(delayMs);
+            }
+        }
+
+        private static DungeonExtractionSummary BuildExtractionSummary(
+            InventoryAccount inventoryBefore,
+            InventoryAccount inventoryAfter,
+            ulong totalScoreBefore,
+            ulong totalScoreAfter)
+        {
+            var amountBeforeByItemId = BuildAmountByItemId(inventoryBefore);
+            var amountAfterByItemId = BuildAmountByItemId(inventoryAfter);
+
+            var extractedItems = new List<DungeonExtractionItemSummary>();
+            ulong lootScore = 0;
+
+            foreach (var pair in amountBeforeByItemId)
+            {
+                var itemIdRaw = pair.Key;
+                if (!ExtractionScoreTable.IsScoredLoot(itemIdRaw))
+                {
+                    continue;
+                }
+
+                var beforeAmount = pair.Value;
+                amountAfterByItemId.TryGetValue(itemIdRaw, out var afterAmount);
+                if (beforeAmount <= afterAmount)
+                {
+                    continue;
+                }
+
+                var extractedAmount = beforeAmount - afterAmount;
+                var unitScore = ExtractionScoreTable.ScoreValueForItem(itemIdRaw);
+                var stackScore = unitScore * extractedAmount;
+                lootScore += stackScore;
+
+                extractedItems.Add(new DungeonExtractionItemSummary
+                {
+                    ItemId = LGDomainMapper.ToItemId(itemIdRaw),
+                    Amount = extractedAmount,
+                    UnitScore = unitScore,
+                    StackScore = stackScore
+                });
+            }
+
+            extractedItems.Sort((left, right) => right.StackScore.CompareTo(left.StackScore));
+
+            var runScore = totalScoreAfter >= totalScoreBefore
+                ? totalScoreAfter - totalScoreBefore
+                : 0UL;
+            var timeScore = runScore >= lootScore
+                ? runScore - lootScore
+                : 0UL;
+
+            return new DungeonExtractionSummary
+            {
+                Items = extractedItems,
+                LootScore = lootScore,
+                TimeScore = timeScore,
+                RunScore = runScore,
+                TotalScoreAfterRun = totalScoreAfter
+            };
+        }
+
+        private static Dictionary<ushort, uint> BuildAmountByItemId(InventoryAccount inventory)
+        {
+            var amounts = new Dictionary<ushort, uint>();
+            if (inventory?.Items == null)
+            {
+                return amounts;
+            }
+
+            for (var itemIndex = 0; itemIndex < inventory.Items.Length; itemIndex += 1)
+            {
+                var item = inventory.Items[itemIndex];
+                if (item == null || item.Amount == 0)
+                {
+                    continue;
+                }
+
+                var itemId = item.ItemId;
+                if (amounts.TryGetValue(itemId, out var existingAmount))
+                {
+                    amounts[itemId] = existingAmount + item.Amount;
+                }
+                else
+                {
+                    amounts[itemId] = item.Amount;
+                }
+            }
+
+            return amounts;
         }
 
         private struct RawHttpProbeResult

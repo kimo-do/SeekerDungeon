@@ -37,6 +37,7 @@ namespace SeekerDungeon.Solana
         [SerializeField] private float skinPopReturnDuration = 0.12f;
         [Header("Wieldable Items")]
         [SerializeField] private List<WieldableItemEntry> wieldableItems = new();
+        [SerializeField] private bool logWieldDebugMessages;
 
         public PlayerSkinId CurrentSkin { get; private set; } = PlayerSkinId.Goblin;
         public Transform CharacterNameAnchorTransform => characterNameAnchor != null ? characterNameAnchor : transform;
@@ -210,6 +211,11 @@ namespace SeekerDungeon.Solana
             if (toShow != null)
             {
                 toShow.SetActive(true);
+            }
+
+            if (logWieldDebugMessages && bestMatch == null)
+            {
+                Debug.LogWarning($"[LGPlayerController] No exact wielded visual match for {itemId}; using fallback.");
             }
         }
 

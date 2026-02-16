@@ -59,6 +59,11 @@ namespace SeekerDungeon.Dungeon
             {
                 dungeonManager = UnityEngine.Object.FindFirstObjectByType<DungeonManager>();
             }
+
+            if (gameHudUI == null)
+            {
+                gameHudUI = UnityEngine.Object.FindFirstObjectByType<SeekerDungeon.Solana.LGGameHudUI>();
+            }
         }
 
         private void OnEnable()
@@ -84,7 +89,8 @@ namespace SeekerDungeon.Dungeon
 
             // Don't revert wielded items while an optimistic job is pending;
             // stale RPC reads would incorrectly clear them.
-            if (dungeonManager != null && dungeonManager.HasOptimisticJob)
+            if (dungeonManager != null &&
+                (dungeonManager.HasOptimisticJob || dungeonManager.HasOptimisticBossFight))
                 return;
 
             // If the player has no active jobs in the current room, hide wielded items
@@ -103,7 +109,7 @@ namespace SeekerDungeon.Dungeon
                 }
             }
 
-            if (!hasAnyJobHere)
+            if (!hasAnyJobHere && (dungeonManager == null || !dungeonManager.IsLocalPlayerFightingBoss))
             {
                 _localPlayerController.HideAllWieldedItems();
             }
@@ -208,6 +214,21 @@ namespace SeekerDungeon.Dungeon
                                     ? "EntranceStairs"
                                     : "Solid",
                         _lgManager?.HasActiveJobInCurrentRoom((byte)door.Direction) ?? false);
+
+                    if (wasEntranceStairsBeforeInteraction)
+                    {
+                        var shouldExitDungeon = gameHudUI == null ||
+                                                await gameHudUI.ShowExitDungeonConfirmationAsync();
+                        if (!shouldExitDungeon)
+                        {
+                            _nextInteractTime = Time.unscaledTime + interactCooldownSeconds;
+                            return;
+                        }
+
+                        await HandleDungeonExitAsync((byte)door.Direction);
+                        _nextInteractTime = Time.unscaledTime + interactCooldownSeconds;
+                        return;
+                    }
 
                     // ── Optimistic UI: immediately show job visuals if clicking rubble ──
                     // This makes the game feel responsive while we wait for the transaction.
@@ -356,6 +377,9 @@ namespace SeekerDungeon.Dungeon
                     var roomState = _lgManager.CurrentRoomState;
                     var wasChestCenterBeforeInteraction = roomState != null &&
                                                          roomState.CenterType == LGConfig.CENTER_CHEST;
+                    var wasAliveBossCenterBeforeInteraction = roomState != null &&
+                                                              roomState.CenterType == LGConfig.CENTER_BOSS &&
+                                                              !roomState.BossDefeated;
                     var isLootableCenter = roomState != null &&
                         (roomState.CenterType == LGConfig.CENTER_CHEST ||
                          (roomState.CenterType == LGConfig.CENTER_BOSS && roomState.BossDefeated));
@@ -383,9 +407,56 @@ namespace SeekerDungeon.Dungeon
                         GameplayActionLog.CenterTxResult(
                             centerResult.Success,
                             centerResult.Success ? centerResult.Signature : centerResult.Error);
-                        if (centerResult.Success && localPlayerJobMover != null)
+                        if (centerResult.Success)
                         {
-                            localPlayerJobMover.MoveTo(center.InteractWorldPosition);
+                            if (wasAliveBossCenterBeforeInteraction && roomController != null)
+                            {
+                                if (dungeonManager != null)
+                                {
+                                    dungeonManager.SetOptimisticBossFight();
+                                }
+
+                                ResolveLocalPlayerController();
+                                if (_localPlayerController != null)
+                                {
+                                    var equippedId = _lgManager.CurrentPlayerState != null
+                                        ? LGDomainMapper.ToItemId(_lgManager.CurrentPlayerState.EquippedItemId)
+                                        : ItemId.None;
+                                    if (ItemRegistry.IsWearable(equippedId))
+                                    {
+                                        _localPlayerController.ShowWieldedItem(equippedId);
+                                    }
+                                }
+
+                                ResolveLocalPlayerJobMover();
+                                if (localPlayerJobMover != null &&
+                                    roomController.TryGetBossStandPlacement(out var bossStandPosition, out _))
+                                {
+                                    localPlayerJobMover.MoveTo(bossStandPosition);
+                                }
+                                else if (localPlayerJobMover != null)
+                                {
+                                    Debug.LogWarning("[DungeonInput] Boss stand slot layer not configured; using center fallback position.");
+                                    localPlayerJobMover.MoveTo(center.InteractWorldPosition);
+                                }
+                                else
+                                {
+                                    GameplayActionLog.Info("Center boss success but LocalPlayerJobMover is missing.");
+                                }
+
+                                // Ensure boss-fight placement/animation is reflected immediately
+                                // instead of waiting for background polling to catch up.
+                                if (dungeonManager != null)
+                                {
+                                    await dungeonManager.RefreshCurrentRoomSnapshotAsync();
+                                }
+                            }
+                            // Do not move the local player for chest/boss-loot center actions.
+                            // Movement is only needed when joining/ticking an alive boss fight.
+                        }
+                        else if (!centerResult.Success && wasAliveBossCenterBeforeInteraction && dungeonManager != null)
+                        {
+                            dungeonManager.ClearOptimisticBossFight();
                         }
 
                         // Play chest open animation on the visual controller
@@ -395,6 +466,11 @@ namespace SeekerDungeon.Dungeon
                         var alreadyLootedError = !centerResult.Success &&
                                                  !string.IsNullOrWhiteSpace(centerResult.Error) &&
                                                  centerResult.Error.IndexOf("AlreadyLooted", System.StringComparison.OrdinalIgnoreCase) >= 0;
+
+                        if (roomController == null)
+                        {
+                            roomController = UnityEngine.Object.FindFirstObjectByType<RoomController>();
+                        }
 
                         if (roomController != null &&
                             ((centerResult.Success && (wasChestCenterBeforeInteraction || isChestCenterAfterInteraction)) ||
@@ -546,6 +622,37 @@ namespace SeekerDungeon.Dungeon
             }
 
             await SceneLoadController.GetOrCreate().LoadSceneAsync(exitSceneName, LoadSceneMode.Single);
+        }
+
+        private async UniTask HandleDungeonExitAsync(byte direction)
+        {
+            var sceneLoadController = SceneLoadController.GetOrCreate();
+            if (sceneLoadController != null)
+            {
+                sceneLoadController.SetTransitionText("Ending run...");
+                await sceneLoadController.FadeToBlackAsync();
+            }
+
+            var exitResult = await _lgManager.InteractWithDoor(direction);
+            GameplayActionLog.DoorTxResult(
+                ((RoomDirection)direction).ToString(),
+                exitResult.Success,
+                exitResult.Success ? exitResult.Signature : exitResult.Error);
+
+            if (!exitResult.Success)
+            {
+                Debug.LogWarning($"[DungeonInput] Exit dungeon failed: {exitResult.Error}");
+                if (sceneLoadController != null)
+                {
+                    sceneLoadController.ClearTransitionText();
+                    await sceneLoadController.FadeFromBlackAsync();
+                }
+
+                return;
+            }
+
+            await _lgManager.RefreshAllState();
+            await LoadExitSceneAsync();
         }
 
         private static bool TryGetPointerDownPosition(out Vector2 position, out int pointerId)

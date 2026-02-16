@@ -4,8 +4,8 @@ use crate::errors::ChainDepthError;
 use crate::events::BossFightJoined;
 use crate::instructions::session_auth::authorize_player_action;
 use crate::state::{
-    session_instruction_bits, BossFightAccount, GlobalAccount, PlayerAccount, PlayerProfile,
-    RoomAccount, RoomPresence, SessionAuthority, CENTER_BOSS,
+    item_ids, session_instruction_bits, BossFightAccount, GlobalAccount, PlayerAccount,
+    PlayerProfile, RoomAccount, RoomPresence, SessionAuthority, CENTER_BOSS,
 };
 
 #[derive(Accounts)]
@@ -172,9 +172,21 @@ pub(crate) fn apply_boss_damage(room: &mut Account<RoomAccount>, current_slot: u
 
 fn weapon_dps(item_id: u16) -> u64 {
     match item_id {
-        2 => 5,      // tool
-        1001 => 12,  // reserved weapon ids
-        1002 => 20,
-        _ => 1,      // bare hands
+        // Legacy tool id retained for old inventories.
+        2 => 5,
+
+        // Wearable weapon ids (100-199)
+        item_ids::BRONZE_PICKAXE => 4,
+        item_ids::IRON_PICKAXE => 6,
+        item_ids::BRONZE_SWORD => 7,
+        item_ids::IRON_SWORD => 10,
+        item_ids::DIAMOND_SWORD => 16,
+        item_ids::NOKIA_3310 => 22,
+        item_ids::WOODEN_PIPE => 5,
+        item_ids::IRON_SCIMITAR => 12,
+        item_ids::WOODEN_TANKARD => 3,
+
+        // Bare hands / unknown item.
+        _ => 1,
     }
 }

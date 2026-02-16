@@ -132,12 +132,11 @@ namespace SeekerDungeon.Solana
         [SerializeField] private bool autoBeginSessionAfterConnect;
         [SerializeField] private int sessionDurationMinutes = 60;
         [SerializeField] private ulong defaultSessionMaxTokenSpend = 200_000_000UL;
-        // NOTE: funding is now always bundled unconditionally in
-        // BeginGameplaySessionAsync (see HardMinLamports). These fields are
-        // kept for inspector visibility but no longer gate the funding logic.
+        // Session signer should stay lightly funded for tx fees, but we avoid
+        // unconditional large top-ups so user SOL is not stranded in temp keys.
         [SerializeField] private bool allowWalletAdapterSessionOnAndroid = true;
-        private const ulong SessionSignerMinLamports = 10_000_000UL;   // 0.01 SOL
-        private const ulong SessionSignerTopUpLamports = 20_000_000UL; // 0.02 SOL (treasury reimburses room rent)
+        private const ulong SessionSignerMinLamports = 10_000_000UL;   // 0.01 SOL target buffer
+        private const ulong SweepFeeReserveLamports = 50_000UL;        // leave tiny fee headroom
         [SerializeField] private int defaultAllowlistMask =
             (int)(
                 SessionInstructionAllowlist.MovePlayer |
@@ -360,13 +359,19 @@ namespace SeekerDungeon.Solana
 
         public void Disconnect()
         {
+            var connectedWallet = ConnectedWalletPublicKey;
+            if (connectedWallet != null)
+            {
+                SweepAndClearSessionOnDisconnectAsync(connectedWallet).Forget();
+            }
+
             if (Web3.Instance != null)
             {
                 Web3.Instance.Logout();
             }
 
             ClearWalletConnectIntent();
-            ClearSessionState();
+            ClearSessionState(preserveSigner: connectedWallet != null);
             _hasLoggedUnsupportedSessionMode = false;
             ActiveWalletMode = WalletLoginMode.Auto;
             EmitStatus("Wallet disconnected.");
@@ -451,6 +456,19 @@ namespace SeekerDungeon.Solana
                 return false;
             }
 
+            // If we still think an onchain session is active, end + sweep first so
+            // balances are not left behind across session restarts.
+            if (_hasActiveOnchainSession)
+            {
+                EmitStatus($"[{attemptTag}] Active session detected. Ending previous session before begin.");
+                var ended = await EndGameplaySessionAsync();
+                if (!ended)
+                {
+                    EmitError($"[{attemptTag}] Could not end previous session before restart.");
+                    return false;
+                }
+            }
+
             var player = ConnectedWalletPublicKey;
             var playerPda = DerivePlayerPda(player);
             var playerTokenAccount = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(
@@ -462,7 +480,7 @@ namespace SeekerDungeon.Solana
             var playerTokenAccountReady = await EnsurePlayerTokenAccountExistsAsync(player, playerTokenAccount, attemptTag);
             if (!playerTokenAccountReady)
             {
-                ClearSessionState();
+                ClearSessionState(preserveSigner: true);
                 return false;
             }
 
@@ -479,15 +497,19 @@ namespace SeekerDungeon.Solana
                 return false;
             }
 
-            _sessionSignerAccount = new Account();
-            _sessionAuthorityPda = DeriveSessionAuthorityPda(player, _sessionSignerAccount.PublicKey);
+            EnsureSessionSignerForPlayer(player);
+            if (_sessionSignerAccount == null || _sessionAuthorityPda == null)
+            {
+                EmitError($"[{attemptTag}] Failed to initialize/reuse session signer.");
+                return false;
+            }
 
             var rpc = GetRpcClient();
             var slotResult = await rpc.GetSlotAsync(commitment);
             if (!slotResult.WasSuccessful || slotResult.Result == null)
             {
                 EmitError($"[{attemptTag}] Failed to fetch slot: {slotResult.Reason}");
-                ClearSessionState();
+                ClearSessionState(preserveSigner: true);
                 return false;
             }
 
@@ -515,26 +537,28 @@ namespace SeekerDungeon.Solana
             );
 
             var instructions = new List<TransactionInstruction>();
-            // ALWAYS bundle the SOL top-up into the begin_session transaction.
-            // The session signer MUST have SOL to pay gameplay tx fees
-            // (MovePlayer, JoinJob etc. use init_if_needed with
-            // payer = session authority). RoomAccount alone needs ~0.031 SOL
-            // in rent, so this must be unconditional and generous.
-            EmitStatus($"[{attemptTag}] SessionSignerTopUpLamports={SessionSignerTopUpLamports} SessionSignerMinLamports={SessionSignerMinLamports}");
+            var sessionSignerBalance = await GetSessionSignerBalanceLamportsAsync(_sessionSignerAccount.PublicKey, attemptTag);
+            if (!sessionSignerBalance.HasValue)
             {
-                // After treasury refactor, room rent is reimbursed by GlobalAccount PDA.
-                // Session signer only fronts rent temporarily (~0.003 SOL per room)
-                // plus tx fees (~0.000005 SOL each). 0.02 SOL is ample.
-                const ulong HardMinLamports = 20_000_000UL; // 0.02 SOL
-                var sessionTopUpAmount = Math.Max(
-                    Math.Max(SessionSignerTopUpLamports, SessionSignerMinLamports),
-                    HardMinLamports);
+                EmitError($"[{attemptTag}] Failed to fetch session signer balance before begin_session.");
+                ClearSessionState(preserveSigner: true);
+                return false;
+            }
+
+            var topUpAmount = sessionSignerBalance.Value < SessionSignerMinLamports
+                ? SessionSignerMinLamports - sessionSignerBalance.Value
+                : 0UL;
+            if (topUpAmount > 0UL)
+            {
                 instructions.Add(SystemProgram.Transfer(
                     player,
                     _sessionSignerAccount.PublicKey,
-                    sessionTopUpAmount));
-                EmitStatus(
-                    $"[{attemptTag}] Bundling session signer top-up ({sessionTopUpAmount / 1_000_000_000d:F6} SOL).");
+                    topUpAmount));
+                EmitStatus($"[{attemptTag}] Bundling minimal session signer top-up ({topUpAmount / 1_000_000_000d:F6} SOL).");
+            }
+            else
+            {
+                EmitStatus($"[{attemptTag}] Session signer already funded ({sessionSignerBalance.Value / 1_000_000_000d:F6} SOL). No top-up needed.");
             }
 
             instructions.Add(instruction);
@@ -551,12 +575,12 @@ namespace SeekerDungeon.Solana
             if (string.IsNullOrEmpty(signature))
             {
                 EmitError($"[{attemptTag}] begin_session transaction failed (signature was null/empty).");
-                ClearSessionState();
+                ClearSessionState(preserveSigner: true);
                 return false;
             }
 
             _hasActiveOnchainSession = true;
-            _isSessionSignerFunded = true; // SOL top-up is always bundled above
+            _isSessionSignerFunded = true;
             OnSessionStateChanged?.Invoke(true);
             EmitStatus($"[{attemptTag}] Session started. Session key={_sessionSignerAccount.PublicKey} tx={signature} funded={_isSessionSignerFunded}");
 
@@ -701,13 +725,20 @@ namespace SeekerDungeon.Solana
                 return false;
             }
 
+            var player = ConnectedWalletPublicKey;
+
             if (!_hasActiveOnchainSession || _sessionSignerAccount == null)
             {
+                if (_sessionSignerAccount != null && player != null)
+                {
+                    await SweepSessionSignerLamportsAsync(player, "end-session-no-active");
+                    ClearSessionState(preserveSigner: true);
+                }
+
                 EmitStatus("No active onchain session to end.");
                 return true;
             }
 
-            var player = ConnectedWalletPublicKey;
             var playerTokenAccount = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(
                 player,
                 new PublicKey(LGConfig.ActiveSkrMint)
@@ -735,7 +766,8 @@ namespace SeekerDungeon.Solana
                 return false;
             }
 
-            ClearSessionState();
+            await SweepSessionSignerLamportsAsync(player, "end-session");
+            ClearSessionState(preserveSigner: true);
             OnSessionStateChanged?.Invoke(false);
             EmitStatus($"Session ended. tx={signature}");
             return true;
@@ -783,12 +815,12 @@ namespace SeekerDungeon.Solana
 
             if (emitPromptStatus)
             {
-                var needed = Math.Max(SessionSignerTopUpLamports, SessionSignerMinLamports - currentLamports);
+                var needed = SessionSignerMinLamports - currentLamports;
                 EmitStatus(
                     $"Funding session wallet ({needed / 1_000_000_000d:F6} SOL). Approve in wallet...");
             }
 
-            var topUpAmount = Math.Max(SessionSignerTopUpLamports, SessionSignerMinLamports - currentLamports);
+            var topUpAmount = SessionSignerMinLamports - currentLamports;
             var transferResult = await wallet.Transfer(
                 _sessionSignerAccount.PublicKey,
                 topUpAmount,
@@ -1891,15 +1923,104 @@ namespace SeekerDungeon.Solana
             return success ? pda : null;
         }
 
+        private void EnsureSessionSignerForPlayer(PublicKey player)
+        {
+            if (player == null)
+            {
+                _sessionSignerAccount = null;
+                _sessionAuthorityPda = null;
+                return;
+            }
+
+            if (_sessionSignerAccount == null)
+            {
+                _sessionSignerAccount = new Account();
+            }
+
+            _sessionAuthorityPda = DeriveSessionAuthorityPda(player, _sessionSignerAccount.PublicKey);
+        }
+
+        private async UniTask<ulong?> GetSessionSignerBalanceLamportsAsync(PublicKey signer, string traceTag = null)
+        {
+            if (signer == null)
+            {
+                return null;
+            }
+
+            var rpc = GetRpcClient();
+            if (rpc == null)
+            {
+                EmitError($"{BuildTracePrefix(traceTag)}RPC unavailable while fetching session signer balance.");
+                return null;
+            }
+
+            var result = await rpc.GetBalanceAsync(signer, commitment);
+            if (!result.WasSuccessful || result.Result == null)
+            {
+                EmitError($"{BuildTracePrefix(traceTag)}Failed to fetch session signer balance: {result.Reason}");
+                return null;
+            }
+
+            return result.Result.Value;
+        }
+
+        private async UniTask<bool> SweepSessionSignerLamportsAsync(PublicKey destination, string traceTag = null)
+        {
+            if (_sessionSignerAccount == null || destination == null)
+            {
+                return false;
+            }
+
+            var balanceLamports = await GetSessionSignerBalanceLamportsAsync(_sessionSignerAccount.PublicKey, traceTag);
+            if (!balanceLamports.HasValue)
+            {
+                return false;
+            }
+
+            // Nothing meaningful to sweep.
+            if (balanceLamports.Value <= SweepFeeReserveLamports)
+            {
+                return true;
+            }
+
+            var sweepAmount = balanceLamports.Value - SweepFeeReserveLamports;
+            var transferIx = SystemProgram.Transfer(
+                _sessionSignerAccount.PublicKey,
+                destination,
+                sweepAmount);
+
+            var sweepSig = await SendInstructionSignedByLocalAccounts(
+                transferIx,
+                new List<Account> { _sessionSignerAccount },
+                traceTag);
+            if (string.IsNullOrWhiteSpace(sweepSig))
+            {
+                EmitError($"{BuildTracePrefix(traceTag)}Failed to sweep session signer SOL back to player.");
+                return false;
+            }
+
+            EmitStatus($"{BuildTracePrefix(traceTag)}Swept {(sweepAmount / 1_000_000_000d):F6} SOL from session signer back to player. tx={sweepSig}");
+            return true;
+        }
+
+        private async UniTaskVoid SweepAndClearSessionOnDisconnectAsync(PublicKey destination)
+        {
+            await SweepSessionSignerLamportsAsync(destination, "disconnect");
+            ClearSessionState(preserveSigner: false);
+        }
+
         private void HandleWalletStateChanged()
         {
             OnWalletConnectionChanged?.Invoke(IsWalletConnected);
         }
 
-        private void ClearSessionState()
+        private void ClearSessionState(bool preserveSigner)
         {
-            _sessionSignerAccount = null;
-            _sessionAuthorityPda = null;
+            if (!preserveSigner)
+            {
+                _sessionSignerAccount = null;
+                _sessionAuthorityPda = null;
+            }
             _hasActiveOnchainSession = false;
             _isSessionSignerFunded = false;
         }

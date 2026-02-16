@@ -427,13 +427,10 @@ MonoBehaviour:
   maxZoom: 6
   mouseWheelZoomStep: 0.45
   pinchZoomSensitivity: 0.012
-  dragPanSensitivity: 1
   zoomLerpSpeed: 12
-  panLerpSpeed: 20
+  dragPanSensitivity: 1
   panBoundsX: {x: -3, y: 3}
   panBoundsY: {x: -3, y: 3}
-  snapToLocalPlayerOnStart: 1
-  localPlayerSnapFrameAttempts: 30
 --- !u!114 &519420034
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -621,6 +618,7 @@ MonoBehaviour:
   dungeonManager: {fileID: 1746675755}
   lootSequenceController: {fileID: 1746675757}
   gameHudUI: {fileID: 883051407}
+  exitSceneName: MenuScene
 --- !u!4 &800073849
 Transform:
   m_ObjectHideFlags: 0
@@ -628,6 +626,90 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 800073847}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &830732547
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 830732551}
+  - component: {fileID: 830732550}
+  - component: {fileID: 830732549}
+  - component: {fileID: 830732548}
+  m_Layer: 5
+  m_Name: InventoryUI
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &830732548
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 830732547}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3c6b793684ad5a341ae67ca01e98929f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Solana.InventoryPanelUI
+  manager: {fileID: 0}
+  itemRegistry: {fileID: 11400000, guid: 6619befcc5582e7418f412c71e74028f, type: 2}
+  gameHudUI: {fileID: 883051407}
+--- !u!114 &830732549
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 830732547}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0bfce3a516c525e4ea79fa5d51a6c089, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.UI.SafeAreaApplier
+--- !u!114 &830732550
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 830732547}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 19102, guid: 0000000000000000e000000000000000, type: 0}
+  m_Name: 
+  m_EditorClassIdentifier: UnityEngine.dll::UnityEngine.UIElements.UIDocument
+  m_PanelSettings: {fileID: 11400000, guid: 87d88261219a59b4189e3a69bf98dd59, type: 2}
+  m_ParentUI: {fileID: 0}
+  sourceAsset: {fileID: 9197481963319205126, guid: 10f09b8e3ca3b4949b0a6140163b5acb, type: 3}
+  m_SortingOrder: 0
+  m_Position: 0
+  m_WorldSpaceSizeMode: 1
+  m_WorldSpaceWidth: 1920
+  m_WorldSpaceHeight: 1080
+  m_PivotReferenceSize: 0
+  m_Pivot: 0
+  m_WorldSpaceCollider: {fileID: 0}
+--- !u!4 &830732551
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 830732547}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
@@ -681,6 +763,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Dungeon.DungeonJobAutoCompleter
   lgManager: {fileID: 0}
+  dungeonManager: {fileID: 0}
   autoRun: 1
   idlePollSeconds: 6
   minRecheckSeconds: 0.75
@@ -691,6 +774,10 @@ MonoBehaviour:
   txAttemptCooldownSeconds: 2
   completeJobFailCooldownSeconds: 30
   maxCompleteJobRetries: 3
+  confirmTxPollSeconds: 1.5
+  confirmTxMaxPolls: 10
+  maxClaimRetries: 3
+  claimRetryDelaySeconds: 2
   logDebugMessages: 1
 --- !u!1 &883051406
 GameObject:
@@ -726,10 +813,12 @@ MonoBehaviour:
   manager: {fileID: 0}
   walletSessionManager: {fileID: 0}
   itemRegistry: {fileID: 11400000, guid: 6619befcc5582e7418f412c71e74028f, type: 2}
+  inventoryPanelUI: {fileID: 0}
   backSceneName: MenuScene
   loadingSceneName: Loading
   hudRefreshSeconds: 3
   logDebugMessages: 0
+  hotbarGlowSprite: {fileID: 0}
 --- !u!114 &883051408
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -911,13 +1000,10 @@ MonoBehaviour:
   maxZoom: 6
   mouseWheelZoomStep: 0.45
   pinchZoomSensitivity: 0.012
-  dragPanSensitivity: 1
   zoomLerpSpeed: 12
-  panLerpSpeed: 20
+  dragPanSensitivity: 1
   panBoundsX: {x: -3, y: 3}
   panBoundsY: {x: -3, y: 3}
-  snapToLocalPlayerOnStart: 1
-  localPlayerSnapFrameAttempts: 30
 --- !u!4 &901586683
 Transform:
   m_ObjectHideFlags: 0
@@ -1101,6 +1187,7 @@ MonoBehaviour:
   localPlayerPrefab: {fileID: 1843884093472186079, guid: 801d1000ca6b4874a85a4ca31780a2ec, type: 3}
   localPlayerSpawnPoint: {fileID: 0}
   cameraZoomController: {fileID: 0}
+  jobAutoCompleter: {fileID: 0}
 --- !u!4 &1746675756
 Transform:
   m_ObjectHideFlags: 0
@@ -1238,5 +1325,6 @@ SceneRoots:
   - {fileID: 562919668}
   - {fileID: 248438589}
   - {fileID: 883051409}
+  - {fileID: 830732551}
   - {fileID: 188704020}
   - {fileID: 1471669598}

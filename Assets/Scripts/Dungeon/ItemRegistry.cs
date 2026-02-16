@@ -136,5 +136,65 @@ namespace SeekerDungeon.Dungeon
             if (raw >= 300 && raw <= 399) return ItemCategory.Consumable;
             return ItemCategory.Valuable;
         }
+
+        /// <summary>
+        /// Returns weapon damage/DPS value for equippable weapons.
+        /// Null when the item is not a weapon with a combat value.
+        /// </summary>
+        public static int? GetWeaponDamage(ItemId id)
+        {
+            return id switch
+            {
+                ItemId.LegacyTool => 5,
+                ItemId.BronzePickaxe => 4,
+                ItemId.IronPickaxe => 6,
+                ItemId.BronzeSword => 7,
+                ItemId.IronSword => 10,
+                ItemId.DiamondSword => 16,
+                ItemId.Nokia3310 => 22,
+                ItemId.WoodenPipe => 5,
+                ItemId.IronScimitar => 12,
+                ItemId.WoodenTankard => 3,
+                _ => null
+            };
+        }
+
+        /// <summary>
+        /// Returns extraction score value for loot items (200-299).
+        /// Null for items that are not scored loot.
+        /// </summary>
+        public static ulong? GetExtractionValue(ItemId id)
+        {
+            var raw = (ushort)id;
+            if (raw < 200 || raw > 299)
+            {
+                return null;
+            }
+
+            return raw switch
+            {
+                200 => 1,
+                201 => 3,
+                202 => 8,
+                203 => 12,
+                204 => 10,
+                205 => 9,
+                206 => 9,
+                207 => 20,
+                208 => 2,
+                209 => 15,
+                210 => 11,
+                211 => 4,
+                212 => 7,
+                213 => 14,
+                214 => 0,
+                215 => 13,
+                216 => 3,
+                217 => 8,
+                218 => 18,
+                219 => 16,
+                _ => 0
+            };
+        }
     }
 }

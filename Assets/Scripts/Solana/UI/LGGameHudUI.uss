@@ -10,19 +10,23 @@
 }
 
 .hud-back-button {
-    min-width: 180px;
-    height: 74px;
-    font-size: 30px;
+    width: 176px;
+    min-width: 176px;
+    max-width: 176px;
+    height: 102px;
+    font-size: 28px;
     -unity-font-style: bold;
     color: rgb(245, 250, 255);
     background-color: rgba(0, 0, 0, 0);
-    background-image: url("project://database/Assets/Sprites/minimalbutton.png?fileID=2800000&guid=bbc64981d8401bd42a16c3c5b5039c7c&type=3#minimalbutton");
+    background-image: url("project://database/Assets/Sprites/smal button.png?fileID=2144307803584910330&guid=87f39fcdcbc733043b4c2b47654fff69&type=3#smal button_0");
     -unity-background-scale-mode: scale-to-fit;
     border-top-width: 0;
     border-right-width: 0;
     border-bottom-width: 0;
     border-left-width: 0;
-    padding-bottom: 6px;
+    padding-bottom: 26px;
+    white-space: nowrap;
+    -unity-text-align: middle-center;
 }
 
 .hud-back-button:active {
@@ -35,7 +39,7 @@
     top: 24px;
     right: 24px;
     flex-direction: column;
-    align-items: flex-start;
+    align-items: flex-end;
 }
 
 .wallet-network-label {
@@ -66,7 +70,9 @@
 
 .wallet-pill-stack {
     margin-top: 4px;
+    margin-right: 0;
     align-items: stretch;
+    align-self: flex-end;
 }
 
 .wallet-pill {
@@ -164,25 +170,21 @@
 }
 
 .hud-inventory-button {
-    width: 168px;
-    height: 112px;
+    width: 120px;
+    height: 120px;
     margin-right: 14px;
-    font-size: 24px;
-    -unity-font-style: bold;
-    color: rgb(245, 250, 255);
-    background-color: rgb(82, 60, 42);
-    border-top-left-radius: 12px;
-    border-top-right-radius: 12px;
-    border-bottom-left-radius: 12px;
-    border-bottom-right-radius: 12px;
-    border-top-width: 2px;
-    border-right-width: 2px;
-    border-bottom-width: 2px;
-    border-left-width: 2px;
-    border-top-color: rgb(160, 130, 95);
-    border-left-color: rgb(140, 110, 80);
-    border-right-color: rgb(50, 35, 22);
-    border-bottom-color: rgb(40, 28, 18);
+    min-width: 120px;
+    min-height: 120px;
+    background-image: url("project://database/Assets/Sprites/dungeon_inventory_bag.png?fileID=21300000&guid=8cda404117c82284da66f66a9e19b250&type=3#dungeon_inventory_bag_0");
+    -unity-background-scale-mode: scale-to-fit;
+    background-color: rgba(0, 0, 0, 0);
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+    color: rgba(0, 0, 0, 0);
+    -unity-text-outline-width: 0;
+    padding: 0;
 }
 
 .hud-inventory-button:active {
@@ -217,6 +219,32 @@
     align-items: center;
 }
 
+.hud-inventory-slot-equipped {
+    border-top-width: 3px;
+    border-right-width: 3px;
+    border-bottom-width: 3px;
+    border-left-width: 3px;
+    border-top-color: rgba(255, 227, 141, 0.98);
+    border-right-color: rgba(255, 227, 141, 0.98);
+    border-bottom-color: rgba(176, 120, 40, 0.95);
+    border-left-color: rgba(255, 227, 141, 0.98);
+}
+
+.hud-inventory-slot-equipped .hud-inventory-slot-glow {
+    opacity: 0.78;
+}
+
+.hud-inventory-slot-glow {
+    position: absolute;
+    left: -8px;
+    right: -8px;
+    top: -8px;
+    bottom: -8px;
+    opacity: 0.56;
+    -unity-background-scale-mode: scale-to-fit;
+    pointer-events: none;
+}
+
 .hud-inventory-slot-icon {
     width: 78px;
     height: 78px;
@@ -231,4 +259,176 @@
     color: rgb(255, 255, 255);
     -unity-text-outline-width: 1px;
     -unity-text-outline-color: rgb(0, 0, 0);
+}
+
+.hud-item-tooltip {
+    position: absolute;
+    min-width: 280px;
+    max-width: 340px;
+    padding: 13px;
+    background-color: rgba(7, 12, 22, 0.96);
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(146, 166, 198, 0.8);
+    border-right-color: rgba(146, 166, 198, 0.8);
+    border-bottom-color: rgba(66, 83, 111, 0.85);
+    border-left-color: rgba(146, 166, 198, 0.8);
+    z-index: 60;
+}
+
+.hud-item-tooltip-name {
+    font-size: 25px;
+    color: rgb(255, 236, 172);
+    -unity-font-style: bold;
+    margin-bottom: 10px;
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.72);
+}
+
+.hud-item-tooltip-stat {
+    font-size: 18px;
+    color: rgb(215, 226, 245);
+    margin-bottom: 2px;
+}
+
+.hud-item-tooltip-equip {
+    margin-top: 10px;
+    min-height: 64px;
+    font-size: 24px;
+    -unity-font-style: bold;
+    color: rgb(255, 244, 206);
+    background-color: rgba(0, 0, 0, 0);
+    background-image: url("project://database/Assets/Sprites/woodbutton.png?fileID=-1054417240516975492&guid=9c4733cd9cac21c4983a769677ba617d&type=3#woodbutton_0");
+    -unity-background-scale-mode: scale-to-fit;
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+    padding-bottom: 4px;
+}
+
+.hud-item-tooltip-equip:disabled {
+    opacity: 0.45;
+}
+
+.hud-modal-overlay {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(8, 10, 16, 0.54);
+}
+
+.hud-modal-card {
+    width: 86%;
+    max-width: 760px;
+    min-width: 320px;
+    padding-top: 52px;
+    padding-right: 26px;
+    padding-bottom: 44px;
+    padding-left: 26px;
+    align-items: center;
+    background-color: rgba(15, 22, 35, 0.72);
+    background-image: url("project://database/Assets/Sprites/squire_ui_modal.png?fileID=-4845399846067421652&guid=66045a6caca1a264f8bd1a0ef307c99f&type=3#squire_ui_modal_0");
+    -unity-background-scale-mode: sliced;
+    border-top-left-radius: 16px;
+    border-top-right-radius: 16px;
+    border-bottom-left-radius: 16px;
+    border-bottom-right-radius: 16px;
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+    position: relative;
+}
+
+.hud-modal-close-button {
+    position: absolute;
+    top: 14px;
+    right: 12px;
+    width: 64px;
+    height: 64px;
+    font-size: 34px;
+    -unity-font-style: bold;
+    color: rgb(232, 239, 252);
+    background-color: rgba(0, 0, 0, 0);
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.8);
+}
+
+.hud-modal-title {
+    font-size: 50px;
+    -unity-font-style: bold;
+    color: rgb(255, 229, 140);
+    -unity-text-align: middle-center;
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(54, 38, 0, 0.95);
+    margin-bottom: 12px;
+}
+
+.hud-modal-message {
+    font-size: 32px;
+    -unity-font: url("project://database/Assets/OpenSans-Regular.ttf?fileID=12800000&guid=ee6ccd83bdd903d49a629979dd198946&type=3#OpenSans-Regular");
+    -unity-font-definition: none;
+    -unity-font-style: normal;
+    color: rgb(235, 242, 255);
+    -unity-text-align: upper-center;
+    white-space: normal;
+    padding-left: 18px;
+    padding-right: 18px;
+    width: 100%;
+    max-width: 640px;
+    margin-bottom: 18px;
+}
+
+.hud-modal-action-row {
+    width: 92%;
+    max-width: 680px;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    row-gap: 12px;
+}
+
+.hud-modal-button {
+    width: 520px;
+    max-width: 100%;
+    min-width: 440px;
+    min-height: 112px;
+    height: 112px;
+    font-size: 30px;
+    padding-bottom: 6px;
+    background-color: rgba(0, 0, 0, 0);
+    background-image: url("project://database/Assets/Sprites/woodbutton.png?fileID=-1054417240516975492&guid=9c4733cd9cac21c4983a769677ba617d&type=3#woodbutton_0");
+    -unity-background-scale-mode: scale-to-fit;
+    color: rgb(255, 244, 206);
+    -unity-text-outline-width: 2px;
+    text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.57);
+    -unity-font-style: bold;
+    -unity-text-outline-color: rgb(0, 0, 0);
+    -unity-font: url("project://database/Assets/OpenSans-ExtraBold.ttf?fileID=12800000&guid=da0db03c9400bc44483a0b8207aa5b55&type=3#OpenSans-ExtraBold");
+    -unity-font-definition: none;
+    -unity-text-align: middle-center;
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+}
+
+.hud-modal-button-primary {
+    background-color: rgba(0, 0, 0, 0);
+    color: rgb(255, 236, 172);
 }

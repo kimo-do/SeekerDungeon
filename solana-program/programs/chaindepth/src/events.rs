@@ -105,6 +105,16 @@ pub struct DungeonExited {
     pub run_duration_slots: u64,
 }
 
+/// Emitted for each scored inventory stack during extraction.
+#[event]
+pub struct DungeonExitItemScored {
+    pub player: Pubkey,
+    pub item_id: u16,
+    pub amount: u32,
+    pub unit_score: u64,
+    pub stack_score: u64,
+}
+
 /// Emitted when global state is initialized
 #[event]
 pub struct GlobalInitialized {

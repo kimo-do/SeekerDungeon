@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Chaindepth.Accounts;
 using Cysharp.Threading.Tasks;
 using SeekerDungeon.Dungeon;
@@ -20,6 +21,7 @@ namespace SeekerDungeon.Solana
         [SerializeField] private LGManager manager;
         [SerializeField] private LGWalletSessionManager walletSessionManager;
         [SerializeField] private ItemRegistry itemRegistry;
+        [SerializeField] private InventoryPanelUI inventoryPanelUI;
 
         [Header("Scene Flow")]
         [SerializeField] private string backSceneName = "MenuScene";
@@ -28,6 +30,8 @@ namespace SeekerDungeon.Solana
         [Header("Refresh")]
         [SerializeField] private float hudRefreshSeconds = 3f;
         [SerializeField] private bool logDebugMessages = false;
+        [Header("Inventory UI")]
+        [SerializeField] private Sprite hotbarGlowSprite;
 
         /// <summary>
         /// Fired when the inventory button is clicked.
@@ -44,8 +48,21 @@ namespace SeekerDungeon.Solana
         private Button _bagButton;
         private Label _networkLabel;
         private VisualElement _inventorySlotsContainer;
+        private VisualElement _itemTooltip;
+        private Label _itemTooltipNameLabel;
+        private Label _itemTooltipDamageLabel;
+        private Label _itemTooltipValueLabel;
+        private Button _itemTooltipEquipButton;
+        private Color _tooltipDefaultNameColor = Color.white;
+        private VisualElement _exitConfirmOverlay;
+        private Button _exitConfirmCloseButton;
+        private Button _exitConfirmLeaveButton;
+        private UniTaskCompletionSource<bool> _exitConfirmTcs;
+        private VisualElement _root;
 
         private readonly Dictionary<ItemId, VisualElement> _slotsByItemId = new();
+        private ItemId _tooltipItemId = ItemId.None;
+        private bool _isEquippingFromTooltip;
 
         private bool _isLoadingScene;
 
@@ -73,24 +90,41 @@ namespace SeekerDungeon.Solana
             {
                 walletSessionManager = UnityEngine.Object.FindFirstObjectByType<LGWalletSessionManager>();
             }
+
+            if (inventoryPanelUI == null)
+            {
+                inventoryPanelUI = UnityEngine.Object.FindFirstObjectByType<InventoryPanelUI>();
+            }
         }
 
         private void OnEnable()
         {
-            var root = _document?.rootVisualElement;
-            if (root == null)
+            _root = _document?.rootVisualElement;
+            if (_root == null)
             {
                 return;
             }
 
-            _solBalanceLabel = root.Q<Label>("wallet-sol-balance-label");
-            _skrBalanceLabel = root.Q<Label>("wallet-skr-balance-label");
-            _jobInfoLabel = root.Q<Label>("hud-job-info");
-            _statusLabel = root.Q<Label>("hud-status");
-            _backButton = root.Q<Button>("hud-btn-back");
-            _bagButton = root.Q<Button>("hud-btn-bag");
-            _networkLabel = root.Q<Label>("wallet-network-label");
-            _inventorySlotsContainer = root.Q<VisualElement>("hud-inventory-slots");
+            _solBalanceLabel = _root.Q<Label>("wallet-sol-balance-label");
+            _skrBalanceLabel = _root.Q<Label>("wallet-skr-balance-label");
+            _jobInfoLabel = _root.Q<Label>("hud-job-info");
+            _statusLabel = _root.Q<Label>("hud-status");
+            _backButton = _root.Q<Button>("hud-btn-back");
+            _bagButton = _root.Q<Button>("hud-btn-bag");
+            _networkLabel = _root.Q<Label>("wallet-network-label");
+            _inventorySlotsContainer = _root.Q<VisualElement>("hud-inventory-slots");
+            _itemTooltip = _root.Q<VisualElement>("hud-item-tooltip");
+            _itemTooltipNameLabel = _root.Q<Label>("hud-item-tooltip-name");
+            _itemTooltipDamageLabel = _root.Q<Label>("hud-item-tooltip-damage");
+            _itemTooltipValueLabel = _root.Q<Label>("hud-item-tooltip-value");
+            _itemTooltipEquipButton = _root.Q<Button>("hud-item-tooltip-equip");
+            _exitConfirmOverlay = _root.Q<VisualElement>("exit-confirm-overlay");
+            _exitConfirmCloseButton = _root.Q<Button>("btn-exit-confirm-close");
+            _exitConfirmLeaveButton = _root.Q<Button>("btn-exit-confirm-leave");
+            HideExitConfirmModal();
+            HideItemTooltip();
+            CacheTooltipDefaultStyles();
+            ResolveHotbarGlowSpriteIfMissing();
 
             SetLabel(_networkLabel, "DEVNET");
 
@@ -102,6 +136,22 @@ namespace SeekerDungeon.Solana
             if (_bagButton != null)
             {
                 _bagButton.clicked += HandleBagClicked;
+            }
+            if (_exitConfirmCloseButton != null)
+            {
+                _exitConfirmCloseButton.clicked += HandleExitConfirmCancelClicked;
+            }
+            if (_exitConfirmLeaveButton != null)
+            {
+                _exitConfirmLeaveButton.clicked += HandleExitConfirmLeaveClicked;
+            }
+            if (_itemTooltipEquipButton != null)
+            {
+                _itemTooltipEquipButton.clicked += HandleItemTooltipEquipClicked;
+            }
+            if (_root != null)
+            {
+                _root.RegisterCallback<PointerDownEvent>(HandleRootPointerDown);
             }
 
             if (manager != null)
@@ -133,6 +183,22 @@ namespace SeekerDungeon.Solana
             {
                 _bagButton.clicked -= HandleBagClicked;
             }
+            if (_exitConfirmCloseButton != null)
+            {
+                _exitConfirmCloseButton.clicked -= HandleExitConfirmCancelClicked;
+            }
+            if (_exitConfirmLeaveButton != null)
+            {
+                _exitConfirmLeaveButton.clicked -= HandleExitConfirmLeaveClicked;
+            }
+            if (_itemTooltipEquipButton != null)
+            {
+                _itemTooltipEquipButton.clicked -= HandleItemTooltipEquipClicked;
+            }
+            if (_root != null)
+            {
+                _root.UnregisterCallback<PointerDownEvent>(HandleRootPointerDown);
+            }
 
             if (manager != null)
             {
@@ -146,6 +212,11 @@ namespace SeekerDungeon.Solana
                 walletSessionManager.OnStatus -= HandleWalletSessionStatus;
                 walletSessionManager.OnError -= HandleWalletSessionError;
             }
+
+            HideExitConfirmModal();
+            HideItemTooltip();
+            _exitConfirmTcs?.TrySetResult(false);
+            _exitConfirmTcs = null;
         }
 
         private async UniTaskVoid RefreshLoopAsync(System.Threading.CancellationToken cancellationToken)
@@ -171,6 +242,7 @@ namespace SeekerDungeon.Solana
         private void HandlePlayerStateUpdated(Chaindepth.Accounts.PlayerAccount _)
         {
             RefreshJobInfo();
+            UpdateEquippedSlotHighlight();
         }
 
         private void HandleRoomStateUpdated(Chaindepth.Accounts.RoomAccount _)
@@ -331,12 +403,78 @@ namespace SeekerDungeon.Solana
 
         private void HandleBagClicked()
         {
-            OnBagClicked?.Invoke();
+            if (OnBagClicked != null)
+            {
+                OnBagClicked.Invoke();
+                return;
+            }
+
+            if (inventoryPanelUI != null)
+            {
+                inventoryPanelUI.Toggle();
+                return;
+            }
+
+            if (inventoryPanelUI == null)
+            {
+                inventoryPanelUI = UnityEngine.Object.FindFirstObjectByType<InventoryPanelUI>();
+            }
+
+            if (inventoryPanelUI != null)
+            {
+                inventoryPanelUI.Toggle();
+                return;
+            }
+
+            if (OnBagClicked == null)
+            {
+                SetStatus("Inventory panel is not configured.");
+                return;
+            }
+        }
+
+        public UniTask<bool> ShowExitDungeonConfirmationAsync()
+        {
+            if (_exitConfirmOverlay == null)
+            {
+                return UniTask.FromResult(true);
+            }
+
+            _exitConfirmTcs?.TrySetResult(false);
+            _exitConfirmTcs = new UniTaskCompletionSource<bool>();
+            _exitConfirmOverlay.style.display = DisplayStyle.Flex;
+            return _exitConfirmTcs.Task;
+        }
+
+        private void HandleExitConfirmCancelClicked()
+        {
+            var tcs = _exitConfirmTcs;
+            HideExitConfirmModal();
+            tcs?.TrySetResult(false);
+        }
+
+        private void HandleExitConfirmLeaveClicked()
+        {
+            var tcs = _exitConfirmTcs;
+            HideExitConfirmModal();
+            tcs?.TrySetResult(true);
+        }
+
+        private void HideExitConfirmModal()
+        {
+            if (_exitConfirmOverlay != null)
+            {
+                _exitConfirmOverlay.style.display = DisplayStyle.None;
+            }
         }
 
         private void HandleInventoryUpdated(InventoryAccount inventory)
         {
             RefreshInventorySlots(inventory);
+            if (_tooltipItemId != ItemId.None)
+            {
+                RefreshItemTooltipContent(_tooltipItemId);
+            }
         }
 
         private void RefreshInventorySlots(InventoryAccount inventory)
@@ -366,12 +504,24 @@ namespace SeekerDungeon.Solana
                 _inventorySlotsContainer.Add(slot);
                 _slotsByItemId[itemId] = slot;
             }
+
+            UpdateEquippedSlotHighlight();
         }
 
         private VisualElement CreateSlotElement(ItemId itemId, uint amount)
         {
             var slot = new VisualElement();
             slot.AddToClassList("hud-inventory-slot");
+
+            var glow = new VisualElement();
+            glow.AddToClassList("hud-inventory-slot-glow");
+            var rarityColor = ResolveRarityColor(itemId);
+            glow.style.unityBackgroundImageTintColor = new StyleColor(new Color(rarityColor.r, rarityColor.g, rarityColor.b, 0.38f));
+            if (hotbarGlowSprite != null)
+            {
+                glow.style.backgroundImage = new StyleBackground(hotbarGlowSprite);
+            }
+            slot.Add(glow);
 
             var icon = new VisualElement();
             icon.AddToClassList("hud-inventory-slot-icon");
@@ -395,8 +545,167 @@ namespace SeekerDungeon.Solana
             {
                 slot.tooltip = itemRegistry.GetDisplayName(itemId);
             }
+            slot.RegisterCallback<ClickEvent>(evt =>
+            {
+                evt.StopPropagation();
+                ShowItemTooltip(itemId, slot);
+            });
 
             return slot;
+        }
+
+        private void HandleRootPointerDown(PointerDownEvent evt)
+        {
+            if (_itemTooltip == null || _itemTooltip.resolvedStyle.display == DisplayStyle.None)
+            {
+                return;
+            }
+
+            var target = evt.target as VisualElement;
+            if (target != null && IsDescendantOf(target, _itemTooltip))
+            {
+                return;
+            }
+
+            HideItemTooltip();
+        }
+
+        private static bool IsDescendantOf(VisualElement element, VisualElement potentialAncestor)
+        {
+            var current = element;
+            while (current != null)
+            {
+                if (current == potentialAncestor)
+                {
+                    return true;
+                }
+
+                current = current.parent;
+            }
+
+            return false;
+        }
+
+        private void ShowItemTooltip(ItemId itemId, VisualElement anchorSlot)
+        {
+            if (_itemTooltip == null || _root == null || anchorSlot == null)
+            {
+                return;
+            }
+
+            // Clicking the same slot again should close the tooltip.
+            if (_tooltipItemId == itemId && _itemTooltip.resolvedStyle.display != DisplayStyle.None)
+            {
+                HideItemTooltip();
+                return;
+            }
+
+            _tooltipItemId = itemId;
+            RefreshItemTooltipContent(itemId);
+
+            _itemTooltip.style.display = DisplayStyle.Flex;
+            _itemTooltip.BringToFront();
+
+            var slotRect = anchorSlot.worldBound;
+            var rootRect = _root.worldBound;
+            var tooltipWidth = 320f;
+            var tooltipHeight = 190f;
+            var left = slotRect.center.x - rootRect.x - (tooltipWidth * 0.5f);
+            var top = slotRect.yMin - rootRect.y - tooltipHeight - 36f;
+
+            if (left < 12f) left = 12f;
+            if (left > rootRect.width - tooltipWidth - 12f) left = Mathf.Max(12f, rootRect.width - tooltipWidth - 12f);
+            if (top < 12f) top = slotRect.yMax - rootRect.y + 8f;
+            if (top > rootRect.height - tooltipHeight - 12f) top = Mathf.Max(12f, rootRect.height - tooltipHeight - 12f);
+
+            _itemTooltip.style.left = left;
+            _itemTooltip.style.top = top;
+        }
+
+        private void HideItemTooltip()
+        {
+            _tooltipItemId = ItemId.None;
+            if (_itemTooltip != null)
+            {
+                _itemTooltip.style.display = DisplayStyle.None;
+            }
+        }
+
+        private void RefreshItemTooltipContent(ItemId itemId)
+        {
+            SetLabel(_itemTooltipNameLabel, itemRegistry != null ? itemRegistry.GetDisplayName(itemId) : itemId.ToString());
+            var rarityColor = ResolveRarityColor(itemId);
+            if (_itemTooltipNameLabel != null)
+            {
+                _itemTooltipNameLabel.style.color = new StyleColor(rarityColor);
+            }
+            if (_itemTooltip != null)
+            {
+                var borderColor = new Color(rarityColor.r, rarityColor.g, rarityColor.b, 0.85f);
+                var borderShadow = new Color(rarityColor.r * 0.45f, rarityColor.g * 0.45f, rarityColor.b * 0.45f, 0.8f);
+                _itemTooltip.style.borderTopColor = new StyleColor(borderColor);
+                _itemTooltip.style.borderRightColor = new StyleColor(borderColor);
+                _itemTooltip.style.borderBottomColor = new StyleColor(borderShadow);
+                _itemTooltip.style.borderLeftColor = new StyleColor(borderColor);
+            }
+
+            var damage = ItemRegistry.GetWeaponDamage(itemId);
+            SetLabel(_itemTooltipDamageLabel, damage.HasValue ? $"Damage: {damage.Value}" : "Damage: -");
+
+            var value = ItemRegistry.GetExtractionValue(itemId);
+            SetLabel(_itemTooltipValueLabel, value.HasValue ? $"Value: {value.Value}" : "Value: -");
+
+            if (_itemTooltipEquipButton == null)
+            {
+                return;
+            }
+
+            var isWearable = ItemRegistry.IsWearable(itemId);
+            var equippedItemId = manager?.CurrentPlayerState != null
+                ? LGDomainMapper.ToItemId(manager.CurrentPlayerState.EquippedItemId)
+                : ItemId.None;
+            var isAlreadyEquipped = equippedItemId == itemId;
+
+            _itemTooltipEquipButton.style.display = isWearable ? DisplayStyle.Flex : DisplayStyle.None;
+            _itemTooltipEquipButton.text = isAlreadyEquipped ? "Equipped" : "Equip";
+            _itemTooltipEquipButton.SetEnabled(isWearable && !isAlreadyEquipped && !_isEquippingFromTooltip);
+        }
+
+        private void HandleItemTooltipEquipClicked()
+        {
+            if (_tooltipItemId == ItemId.None || manager == null || _isEquippingFromTooltip)
+            {
+                return;
+            }
+
+            EquipTooltipItemAsync(_tooltipItemId).Forget();
+        }
+
+        private async UniTaskVoid EquipTooltipItemAsync(ItemId itemId)
+        {
+            _isEquippingFromTooltip = true;
+            RefreshItemTooltipContent(itemId);
+
+            try
+            {
+                var result = await manager.EquipItem((ushort)itemId);
+                if (!result.Success)
+                {
+                    SetStatus($"Equip failed: {result.Error}");
+                    return;
+                }
+
+                await manager.RefreshAllState();
+                HideItemTooltip();
+            }
+            finally
+            {
+                _isEquippingFromTooltip = false;
+                if (_tooltipItemId != ItemId.None)
+                {
+                    RefreshItemTooltipContent(_tooltipItemId);
+                }
+            }
         }
 
         /// <summary>
@@ -439,6 +748,71 @@ namespace SeekerDungeon.Solana
             if (label != null)
             {
                 label.text = value;
+            }
+        }
+
+        private void UpdateEquippedSlotHighlight()
+        {
+            if (_slotsByItemId.Count == 0)
+            {
+                return;
+            }
+
+            var equippedItemId = manager?.CurrentPlayerState != null
+                ? LGDomainMapper.ToItemId(manager.CurrentPlayerState.EquippedItemId)
+                : ItemId.None;
+
+            foreach (var entry in _slotsByItemId)
+            {
+                var slot = entry.Value;
+                if (slot == null)
+                {
+                    continue;
+                }
+
+                if (entry.Key == equippedItemId)
+                {
+                    slot.AddToClassList("hud-inventory-slot-equipped");
+                }
+                else
+                {
+                    slot.RemoveFromClassList("hud-inventory-slot-equipped");
+                }
+            }
+        }
+
+        private void CacheTooltipDefaultStyles()
+        {
+            if (_itemTooltipNameLabel != null)
+            {
+                _tooltipDefaultNameColor = _itemTooltipNameLabel.resolvedStyle.color;
+            }
+        }
+
+        private Color ResolveRarityColor(ItemId itemId)
+        {
+            if (itemRegistry == null)
+            {
+                return _tooltipDefaultNameColor;
+            }
+
+            var rarity = itemRegistry.GetRarity(itemId);
+            return ItemRegistry.RarityToColor(rarity);
+        }
+
+        private void ResolveHotbarGlowSpriteIfMissing()
+        {
+            if (hotbarGlowSprite != null)
+            {
+                return;
+            }
+
+            var candidate = Resources
+                .FindObjectsOfTypeAll<Sprite>()
+                .FirstOrDefault(sprite => string.Equals(sprite.name, "Glow", StringComparison.OrdinalIgnoreCase));
+            if (candidate != null)
+            {
+                hotbarGlowSprite = candidate;
             }
         }
     }

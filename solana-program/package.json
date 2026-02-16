@@ -16,7 +16,9 @@
     "smoke-door": "npx tsx scripts/smoke-door-devnet.ts",
     "smoke-room-routing": "npx tsx scripts/smoke-room-routing-devnet.ts",
     "smoke-session-join-job": "npx tsx scripts/smoke-session-join-job-devnet.ts",
-    "watch-logs": "npx tsx scripts/watch-logs.ts"
+    "watch-logs": "npx tsx scripts/watch-logs.ts",
+    "telemetry-extraction": "npx tsx scripts/extraction-telemetry-devnet.ts",
+    "rollout-readiness": "npx tsx scripts/rollout-readiness-devnet.ts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",

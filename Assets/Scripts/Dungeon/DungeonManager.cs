@@ -40,6 +40,7 @@ namespace SeekerDungeon.Dungeon
         private bool _hasAppliedLocalVisualState;
         private PlayerSkinId _lastAppliedLocalSkin = PlayerSkinId.Goblin;
         private string _lastAppliedLocalDisplayName = string.Empty;
+        private bool _isLocalPlayerFightingBoss;
 
         // Optimistic job state: bridges the gap between a confirmed JoinJob TX
         // and the RPC returning updated data. Prevents stale reads from reverting
@@ -47,11 +48,15 @@ namespace SeekerDungeon.Dungeon
         private RoomDirection? _optimisticJobDirection;
         private float _optimisticJobSetTime;
         private const float OptimisticJobTimeoutSeconds = 15f;
+        private bool _optimisticBossFight;
+        private float _optimisticBossFightSetTime;
 
         // Optimistic target room: after a confirmed MovePlayer TX the RPC may
         // still return the old position. This override ensures the room
         // transition targets the correct destination instead of the stale one.
         private (int x, int y)? _optimisticTargetRoom;
+        private const int RoomFetchRetryAttempts = 8;
+        private const int RoomFetchRetryDelayMs = 180;
 
         // Entry direction: when the local player walks through a door (e.g. West),
         // they should appear at the opposite door (East) in the new room. This is
@@ -166,9 +171,14 @@ namespace SeekerDungeon.Dungeon
 
         public async UniTask RefreshCurrentRoomSnapshotAsync()
         {
+            await TryRefreshCurrentRoomSnapshotAsync(RoomFetchRetryAttempts, RoomFetchRetryDelayMs);
+        }
+
+        private async UniTask<bool> TryRefreshCurrentRoomSnapshotAsync(int maxFetchAttempts, int retryDelayMs)
+        {
             if (_lgManager == null)
             {
-                return;
+                return false;
             }
 
             // Prevent event-driven rebuilds while we do a controlled refresh.
@@ -178,12 +188,30 @@ namespace SeekerDungeon.Dungeon
             _isExplicitRefreshing = true;
             try
             {
-                var room = await _lgManager.FetchRoomState(_currentRoomX, _currentRoomY);
+                Chaindepth.Accounts.RoomAccount room = null;
+                for (var attempt = 0; attempt < Math.Max(1, maxFetchAttempts); attempt += 1)
+                {
+                    room = await _lgManager.FetchRoomState(_currentRoomX, _currentRoomY);
+                    if (room != null)
+                    {
+                        break;
+                    }
+
+                    // Re-resolve room coordinates during eventual-consistency windows
+                    // so we don't get stuck querying a stale target.
+                    await _lgManager.FetchPlayerState();
+                    await ResolveCurrentRoomCoordinatesAsync();
+                    if (attempt < maxFetchAttempts - 1)
+                    {
+                        await UniTask.Delay(Math.Max(1, retryDelayMs));
+                    }
+                }
+
                 if (room == null)
                 {
                     LogError($"Room not found at ({_currentRoomX}, {_currentRoomY}).");
                     GameplayActionLog.Error($"Room PDA not initialized at ({_currentRoomX}, {_currentRoomY})");
-                    return;
+                    return false;
                 }
 
                 var localWallet = ResolveLocalWalletPublicKey();
@@ -201,6 +229,7 @@ namespace SeekerDungeon.Dungeon
 
                 var occupants = await _lgManager.FetchRoomOccupants(_currentRoomX, _currentRoomY);
                 ApplySnapshot(roomView, occupants);
+                return true;
             }
             finally
             {
@@ -436,7 +465,22 @@ namespace SeekerDungeon.Dungeon
 
                 GameplayActionLog.RoomTransitionStart(prevX, prevY, _currentRoomX, _currentRoomY);
 
-                await RefreshCurrentRoomSnapshotAsync();
+                var refreshed = await TryRefreshCurrentRoomSnapshotAsync(RoomFetchRetryAttempts, RoomFetchRetryDelayMs);
+                if (!refreshed)
+                {
+                    // Keep visual and interactive state aligned with the rendered room
+                    // when target-room reads are still unavailable.
+                    _currentRoomX = prevX;
+                    _currentRoomY = prevY;
+                    if (_lgManager?.CurrentPlayerState != null)
+                    {
+                        _lgManager.CurrentPlayerState.CurrentRoomX = (sbyte)prevX;
+                        _lgManager.CurrentPlayerState.CurrentRoomY = (sbyte)prevY;
+                    }
+
+                    await TryRefreshCurrentRoomSnapshotAsync(2, 120);
+                    return;
+                }
 
                 // Clean up any stale active jobs before revealing the new room.
                 var cleaned = await TryCleanupAllActiveJobsAsync();
@@ -489,6 +533,12 @@ namespace SeekerDungeon.Dungeon
         /// </summary>
         public bool HasOptimisticJob => _optimisticJobDirection.HasValue;
 
+        public bool HasOptimisticBossFight =>
+            _optimisticBossFight &&
+            Time.unscaledTime - _optimisticBossFightSetTime <= OptimisticJobTimeoutSeconds;
+
+        public bool IsLocalPlayerFightingBoss => _isLocalPlayerFightingBoss || HasOptimisticBossFight;
+
         /// <summary>
         /// Mark a direction as optimistically joined so stale RPC reads do not
         /// revert the player's visual position or wielded item.
@@ -505,6 +555,17 @@ namespace SeekerDungeon.Dungeon
         public void ClearOptimisticJobDirection()
         {
             _optimisticJobDirection = null;
+        }
+
+        public void SetOptimisticBossFight()
+        {
+            _optimisticBossFight = true;
+            _optimisticBossFightSetTime = Time.unscaledTime;
+        }
+
+        public void ClearOptimisticBossFight()
+        {
+            _optimisticBossFight = false;
         }
 
         /// <summary>
@@ -594,7 +655,18 @@ namespace SeekerDungeon.Dungeon
 
         private async UniTaskVoid HandleRoomStateUpdatedAsync(RoomView roomView)
         {
+            if (roomView == null)
+            {
+                return;
+            }
+
             roomView.HasLocalPlayerLooted = await _lgManager.CheckHasLocalPlayerLooted();
+            if (roomView.X != _currentRoomX || roomView.Y != _currentRoomY)
+            {
+                Log($"Dropped stale room-state snapshot for ({roomView.X},{roomView.Y}); current=({_currentRoomX},{_currentRoomY})");
+                return;
+            }
+
             var snapshot = BuildSnapshot(roomView);
             PushSnapshot(snapshot);
         }
@@ -622,7 +694,18 @@ namespace SeekerDungeon.Dungeon
 
         private async UniTaskVoid HandleRoomOccupantsUpdatedAsync(RoomView roomView)
         {
+            if (roomView == null)
+            {
+                return;
+            }
+
             roomView.HasLocalPlayerLooted = await _lgManager.CheckHasLocalPlayerLooted();
+            if (roomView.X != _currentRoomX || roomView.Y != _currentRoomY)
+            {
+                Log($"Dropped stale occupant-derived snapshot for ({roomView.X},{roomView.Y}); current=({_currentRoomX},{_currentRoomY})");
+                return;
+            }
+
             var snapshot = BuildSnapshot(roomView);
             PushSnapshot(snapshot);
         }
@@ -663,6 +746,10 @@ namespace SeekerDungeon.Dungeon
                     string.Equals(visual.WalletKey, localWalletKey, StringComparison.Ordinal))
                 {
                     _localRoomOccupant = visual;
+                    if (visual.IsFightingBoss || visual.Activity == OccupantActivity.BossFight)
+                    {
+                        ClearOptimisticBossFight();
+                    }
                     continue;
                 }
 
@@ -763,6 +850,15 @@ namespace SeekerDungeon.Dungeon
 
             var activeJobDirections = ResolveLocalPlayerActiveJobDirections(roomView.X, roomView.Y);
             var fightingBoss = _localRoomOccupant?.IsFightingBoss ?? false;
+            if (roomView.TryGetMonster(out var monster) && monster != null && monster.IsDead)
+            {
+                fightingBoss = false;
+                ClearOptimisticBossFight();
+            }
+            if (!fightingBoss && HasOptimisticBossFight)
+            {
+                fightingBoss = true;
+            }
 
             return new DungeonRoomSnapshot
             {
@@ -884,6 +980,18 @@ namespace SeekerDungeon.Dungeon
 
         private void PushSnapshot(DungeonRoomSnapshot snapshot)
         {
+            if (snapshot?.Room == null)
+            {
+                return;
+            }
+
+            if (snapshot.Room.X != _currentRoomX || snapshot.Room.Y != _currentRoomY)
+            {
+                Log($"Ignored stale push snapshot room=({snapshot.Room.X},{snapshot.Room.Y}) current=({_currentRoomX},{_currentRoomY})");
+                return;
+            }
+
+            _isLocalPlayerFightingBoss = snapshot?.LocalPlayerFightingBoss ?? false;
             UpdateLocalPlayerPlacement(snapshot);
             TryReleaseGameplayDoorsReadyHold(snapshot);
             _roomController?.ApplySnapshot(snapshot);
@@ -1129,6 +1237,29 @@ namespace SeekerDungeon.Dungeon
                 activityDirection = fallbackDirection;
             }
 
+            // Fast-path UX fix: room wall state can update before occupant/player
+            // activity snapshots. If the door is no longer rubble, stop job visuals
+            // immediately so weapon swings do not continue after completion.
+            if (activity == OccupantActivity.DoorJob && activityDirection.HasValue)
+            {
+                if (snapshot.Room.Doors == null ||
+                    !snapshot.Room.Doors.TryGetValue(activityDirection.Value, out var activeDoor) ||
+                    activeDoor == null ||
+                    !activeDoor.IsRubble)
+                {
+                    activity = OccupantActivity.Idle;
+                    activityDirection = null;
+                    ClearOptimisticJobDirection();
+                }
+            }
+
+            if (snapshot.Room.TryGetMonster(out var monster) && monster != null && monster.IsDead)
+            {
+                activity = OccupantActivity.Idle;
+                activityDirection = null;
+                ClearOptimisticBossFight();
+            }
+
             // Optimistic override: keep player at the door while waiting for
             // the RPC to return updated state after a confirmed JoinJob TX.
             if (activity == OccupantActivity.Idle && _optimisticJobDirection.HasValue)
@@ -1136,6 +1267,12 @@ namespace SeekerDungeon.Dungeon
                 activity = OccupantActivity.DoorJob;
                 activityDirection = _optimisticJobDirection.Value;
             }
+            else if (activity == OccupantActivity.Idle && HasOptimisticBossFight)
+            {
+                activity = OccupantActivity.BossFight;
+            }
+
+            ApplyLocalPlayerWieldedState(activity);
 
             var placementSignature = $"{snapshot.Room.X}:{snapshot.Room.Y}:{activity}:{activityDirection}";
 
@@ -1241,6 +1378,13 @@ namespace SeekerDungeon.Dungeon
 
             if (activity == OccupantActivity.BossFight)
             {
+                if (_roomController != null &&
+                    _roomController.TryGetBossStandPlacement(out worldPosition, out var bossFacing))
+                {
+                    facingOverride = bossFacing;
+                    return true;
+                }
+
                 if (_roomController != null && _roomController.TryGetCenterStandPosition(out worldPosition))
                 {
                     return true;
@@ -1296,6 +1440,26 @@ namespace SeekerDungeon.Dungeon
             }
 
             return false;
+        }
+
+        private void ApplyLocalPlayerWieldedState(OccupantActivity activity)
+        {
+            if (localPlayerController == null || _lgManager?.CurrentPlayerState == null)
+            {
+                return;
+            }
+
+            if (activity == OccupantActivity.DoorJob || activity == OccupantActivity.BossFight)
+            {
+                var equippedId = LGDomainMapper.ToItemId(_lgManager.CurrentPlayerState.EquippedItemId);
+                if (ItemRegistry.IsWearable(equippedId))
+                {
+                    localPlayerController.ShowWieldedItem(equippedId);
+                    return;
+                }
+            }
+
+            localPlayerController.HideAllWieldedItems();
         }
 
         private string ResolveLocalWalletKey()
