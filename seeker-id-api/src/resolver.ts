@@ -1,4 +1,5 @@
 import { Connection, PublicKey } from "@solana/web3.js";
+import { TldParser } from "@onsol/tldparser";
 import type { AppConfig } from "./config.js";
 import { WalletLookupCache, type CacheEntry } from "./cache.js";
 
@@ -8,7 +9,7 @@ const ANY_SKR_REGEX = /([a-z0-9][a-z0-9-]*\.skr)\b/i;
 type ResolveResult = {
   found: boolean;
   seekerId: string | null;
-  source: "cache" | "enhanced_history" | "rpc_scan";
+  source: "cache" | "tldparser" | "enhanced_history" | "rpc_scan";
   updatedAtUnix: number;
 };
 
@@ -39,6 +40,44 @@ const isLikelyBase58Pubkey = (wallet: string): boolean => {
 
 const normalizeWallet = (wallet: string): string => wallet.trim();
 
+const tryExtractSkrFromTldEntry = (entry: unknown): string | null => {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+
+  const domain = (entry as { domain?: unknown }).domain;
+  if (typeof domain !== "string") {
+    return null;
+  }
+
+  return extractSkrFromText(domain);
+};
+
+const tryResolveFromTldParser = async (
+  wallet: string,
+  parser: TldParser,
+  log: (message: string) => void,
+  logDebug: boolean
+): Promise<string | null> => {
+  const publicKey = new PublicKey(wallet);
+  const domains = (await parser.getParsedAllUserDomainsFromTld(publicKey, "skr")) as Array<unknown>;
+  if (!Array.isArray(domains) || domains.length === 0) {
+    return null;
+  }
+
+  for (const entry of domains) {
+    const seekerId = tryExtractSkrFromTldEntry(entry);
+    if (seekerId) {
+      return seekerId;
+    }
+  }
+
+  if (logDebug) {
+    log(`tldparser_lookup_no_parseable_domain wallet=${wallet} count=${domains.length}`);
+  }
+  return null;
+};
+
 type HeliusTx = {
   description?: string;
   instructions?: Array<{ data?: string; programId?: string }>;
@@ -51,6 +90,10 @@ const fetchHeliusTransactions = async (
   pageLimit: number,
   beforeSignature?: string
 ): Promise<Array<HeliusTx>> => {
+  if (!config.heliusApiKey) {
+    return [];
+  }
+
   const url = new URL(`https://api-mainnet.helius-rpc.com/v0/addresses/${encodeURIComponent(wallet)}/transactions`);
   url.searchParams.set("api-key", config.heliusApiKey);
   url.searchParams.set("limit", String(Math.max(1, Math.min(100, pageLimit))));
@@ -209,12 +252,14 @@ export class SeekerIdService {
   private readonly cache = new WalletLookupCache();
   private readonly inFlight = new Map<string, Promise<ResolveResult>>();
   private readonly connection: Connection;
+  private readonly parser: TldParser;
 
   public constructor(private readonly config: AppConfig, private readonly log: (message: string) => void) {
     this.connection = new Connection(config.mainnetRpcUrl, {
       commitment: "confirmed",
       disableRetryOnRateLimit: true
     });
+    this.parser = new TldParser(this.connection);
   }
 
   public async resolve(walletInput: string): Promise<ResolveResult> {
@@ -248,13 +293,34 @@ export class SeekerIdService {
   }
 
   private async resolveUncached(wallet: string, nowUnix: number): Promise<ResolveResult> {
-    let heliusResult: string | null = null;
+    let tldParserResult: string | null = null;
     try {
-      heliusResult = await tryResolveFromHelius(wallet, this.config, this.log);
+      tldParserResult = await tryResolveFromTldParser(wallet, this.parser, this.log, this.config.logDebug);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (this.config.logDebug) {
-        this.log(`helius_resolve_failed wallet=${wallet} message=${message}`);
+        this.log(`tldparser_resolve_failed wallet=${wallet} message=${message}`);
+      }
+    }
+    if (tldParserResult) {
+      this.cache.set(wallet, true, tldParserResult, "tldparser", this.config.cacheTtlSeconds, nowUnix);
+      return {
+        found: true,
+        seekerId: tldParserResult,
+        source: "tldparser",
+        updatedAtUnix: nowUnix
+      };
+    }
+
+    let heliusResult: string | null = null;
+    if (this.config.heliusApiKey) {
+      try {
+        heliusResult = await tryResolveFromHelius(wallet, this.config, this.log);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (this.config.logDebug) {
+          this.log(`helius_resolve_failed wallet=${wallet} message=${message}`);
+        }
       }
     }
     if (heliusResult) {

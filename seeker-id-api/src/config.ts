@@ -25,11 +25,10 @@ export type AppConfig = {
 
 export const loadConfig = (): AppConfig => {
   const heliusApiKey = (process.env.HELIUS_API_KEY ?? "").trim();
-  if (!heliusApiKey) {
-    throw new Error("Missing HELIUS_API_KEY environment variable.");
-  }
-
-  const defaultHeliusMainnetRpcUrl = `https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(heliusApiKey)}`;
+  const defaultMainnetRpcUrl = "https://api.mainnet-beta.solana.com";
+  const defaultHeliusMainnetRpcUrl = heliusApiKey
+    ? `https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(heliusApiKey)}`
+    : defaultMainnetRpcUrl;
   const mainnetRpcUrl = (process.env.MAINNET_RPC_URL ?? defaultHeliusMainnetRpcUrl).trim();
   const cacheTtlSeconds = parseIntOrDefault(process.env.CACHE_TTL_SECONDS, 86400);
   const negativeCacheTtlSeconds = parseIntOrDefault(process.env.NEGATIVE_CACHE_TTL_SECONDS, 21600);

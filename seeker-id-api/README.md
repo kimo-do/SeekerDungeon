@@ -13,7 +13,7 @@ Response shape:
 {
   "found": true,
   "seekerId": "asynkimo.skr",
-  "source": "enhanced_history",
+  "source": "tldparser",
   "updatedAtUnix": 1739220000
 }
 ```
@@ -26,12 +26,11 @@ Response shape:
 3. Start dev server:
    - `npm run dev`
 
-## Required Environment Variables
+## Environment Variables
 
-- `HELIUS_API_KEY`
 - `PORT` (default `3000`)
-- `MAINNET_RPC_URL` (optional override; defaults to Helius mainnet RPC built from `HELIUS_API_KEY`)
-  - For this resolver, prefer Helius RPC here; public `api.mainnet-beta.solana.com` may 429 heavily on transaction lookups.
+- `MAINNET_RPC_URL` (optional override; defaults to `https://api.mainnet-beta.solana.com`)
+- `HELIUS_API_KEY` (optional; enables legacy Helius history fallback when `tldparser` lookup fails)
 - `CACHE_TTL_SECONDS` (default `86400`)
 - `NEGATIVE_CACHE_TTL_SECONDS` (default `21600`)
 - `MAX_SIGNATURE_SCAN` (default `120`, bounded fallback scan)
@@ -53,5 +52,6 @@ Response shape:
 ## Notes
 
 - `source=cache` means the result came from in-memory cache.
+- `source=tldparser` means the result came from `@onsol/tldparser` reverse lookup (primary path).
 - Backend does not block gameplay; Unity should still keep short-wallet fallback.
-- RPC fallback disables automatic retry-on-rate-limit to avoid runaway call bursts.
+- Legacy fallback path (`enhanced_history`/`rpc_scan`) remains for resilience if primary lookup fails.

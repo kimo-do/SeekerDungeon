@@ -1,7 +1,7 @@
 export type CacheEntry = {
   found: boolean;
   seekerId: string | null;
-  source: "cache" | "enhanced_history" | "rpc_scan";
+  source: "cache" | "tldparser" | "enhanced_history" | "rpc_scan";
   updatedAtUnix: number;
   expiresAtUnix: number;
 };
@@ -27,7 +27,7 @@ export class WalletLookupCache {
     wallet: string,
     found: boolean,
     seekerId: string | null,
-    source: "enhanced_history" | "rpc_scan",
+    source: "tldparser" | "enhanced_history" | "rpc_scan",
     ttlSeconds: number,
     nowUnix: number
   ): CacheEntry {
