@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using DG.Tweening;
 using TMPro;
+using SeekerDungeon.Audio;
 using UnityEngine;
 
 namespace SeekerDungeon.Solana
@@ -9,7 +10,7 @@ namespace SeekerDungeon.Solana
     [Serializable]
     public sealed class PlayerSkinSpriteEntry
     {
-        [SerializeField] private PlayerSkinId skin = PlayerSkinId.Goblin;
+        [SerializeField] private PlayerSkinId skin = PlayerSkinId.CheekyGoblin;
         [SerializeField] private Sprite sprite;
 
         public PlayerSkinId Skin => skin;
@@ -25,24 +26,52 @@ namespace SeekerDungeon.Solana
 
     public sealed class LGPlayerController : MonoBehaviour
     {
+        [Header("Skin Mapping")]
+        [SerializeField] private List<CharacterRigBindings> skinRigs = new();
         [SerializeField] private SpriteRenderer skinSpriteRenderer;
         [SerializeField] private List<PlayerSkinSpriteEntry> skinSprites = new();
+
         [Header("Identity Anchor")]
         [SerializeField] private Transform characterNameAnchor;
         [SerializeField] private GameObject playerNamePrefab;
+
         [Header("Skin Switch Animation")]
         [SerializeField] private bool animateSkinSwitch = true;
         [SerializeField] private float skinPopScaleMultiplier = 1.12f;
         [SerializeField] private float skinPopOutDuration = 0.08f;
         [SerializeField] private float skinPopReturnDuration = 0.12f;
+
         [Header("Wieldable Items")]
         [SerializeField] private List<WieldableItemEntry> wieldableItems = new();
         [SerializeField] private bool logWieldDebugMessages;
 
-        public PlayerSkinId CurrentSkin { get; private set; } = PlayerSkinId.Goblin;
-        public Transform CharacterNameAnchorTransform => characterNameAnchor != null ? characterNameAnchor : transform;
+        [Header("Job Animation")]
+        [SerializeField] private string miningAnimatorParameter = "ismining";
+        [SerializeField] private string bossJobAnimatorParameter = "ismining";
+
+        public PlayerSkinId CurrentSkin { get; private set; } = PlayerSkinId.CheekyGoblin;
+
+        public Transform CharacterNameAnchorTransform
+        {
+            get
+            {
+                if (_activeRigBindings != null && _activeRigBindings.NameAnchor != null)
+                {
+                    return _activeRigBindings.NameAnchor;
+                }
+
+                return characterNameAnchor != null ? characterNameAnchor : transform;
+            }
+        }
+
         private Vector3 _skinBaseScale = Vector3.one;
         private Sequence _skinSwitchSequence;
+        private Transform _activeVisualRootForAnimation;
+        private CharacterRigBindings _activeRigBindings;
+        private GameObject _activeWieldedVisual;
+        private bool _isMiningAnimationActive;
+        private bool _isBossAnimationActive;
+
         private GameObject _playerNameInstance;
         private TMP_Text _playerNameText;
         private Vector3 _playerNameBaseLocalScale = Vector3.one;
@@ -50,6 +79,8 @@ namespace SeekerDungeon.Solana
 
         private void Awake()
         {
+            ValidateSkinRigConfiguration();
+
             if (skinSpriteRenderer == null)
             {
                 skinSpriteRenderer = GetComponentInChildren<SpriteRenderer>();
@@ -58,6 +89,7 @@ namespace SeekerDungeon.Solana
             if (skinSpriteRenderer != null)
             {
                 _skinBaseScale = skinSpriteRenderer.transform.localScale;
+                _activeVisualRootForAnimation = skinSpriteRenderer.transform;
             }
 
             if (characterNameAnchor == null)
@@ -68,10 +100,40 @@ namespace SeekerDungeon.Solana
                     characterNameAnchor = fallbackAnchor;
                 }
             }
+
+            ActivateRigForSkin(CurrentSkin);
+        }
+
+        private void ValidateSkinRigConfiguration()
+        {
+            if (skinRigs == null || skinRigs.Count <= 1)
+            {
+                return;
+            }
+
+            var seen = new Dictionary<PlayerSkinId, CharacterRigBindings>();
+            for (var index = 0; index < skinRigs.Count; index += 1)
+            {
+                var rig = skinRigs[index];
+                if (rig == null)
+                {
+                    continue;
+                }
+
+                if (!seen.TryAdd(rig.SkinId, rig))
+                {
+                    Debug.LogWarning(
+                        $"[LGPlayerController] Duplicate skin mapping for {rig.SkinId} on '{name}'. " +
+                        "Keep one rig per SkinId to avoid label/selection confusion.");
+                }
+            }
         }
 
         private void OnDestroy()
         {
+            GameAudioManager.Instance?.SetLoop(AudioLoopId.Mining, false, transform.position);
+            GameAudioManager.Instance?.SetLoop(AudioLoopId.BossAttack, false, transform.position);
+
             if (_skinSwitchSequence != null)
             {
                 _skinSwitchSequence.Kill();
@@ -93,35 +155,95 @@ namespace SeekerDungeon.Solana
 
         public IReadOnlyList<PlayerSkinId> GetConfiguredSkins()
         {
-            var availableSkins = new List<PlayerSkinId>(skinSprites.Count);
+            var availableSkins = new List<PlayerSkinId>(skinRigs.Count + skinSprites.Count);
+
+            foreach (var skinRig in skinRigs)
+            {
+                if (skinRig == null)
+                {
+                    continue;
+                }
+
+                if (availableSkins.Contains(skinRig.SkinId))
+                {
+                    continue;
+                }
+
+                availableSkins.Add(skinRig.SkinId);
+            }
 
             foreach (var skinSpriteEntry in skinSprites)
             {
-                if (skinSpriteEntry == null)
+                if (skinSpriteEntry == null || skinSpriteEntry.Sprite == null)
                 {
                     continue;
                 }
 
-                if (skinSpriteEntry.Sprite == null)
+                if (!availableSkins.Contains(skinSpriteEntry.Skin))
                 {
-                    continue;
+                    availableSkins.Add(skinSpriteEntry.Skin);
                 }
-
-                if (availableSkins.Contains(skinSpriteEntry.Skin))
-                {
-                    continue;
-                }
-
-                availableSkins.Add(skinSpriteEntry.Skin);
             }
 
             return availableSkins;
+        }
+
+        public bool TryGetSkinLabelOverride(PlayerSkinId skin, out string label)
+        {
+            label = string.Empty;
+            if (skinRigs == null || skinRigs.Count == 0)
+            {
+                return false;
+            }
+
+            if (_activeRigBindings != null &&
+                _activeRigBindings.SkinId == skin &&
+                !string.IsNullOrWhiteSpace(_activeRigBindings.SkinLabelOverride))
+            {
+                label = _activeRigBindings.SkinLabelOverride.Trim();
+                return true;
+            }
+
+            var bestMatch = string.Empty;
+            for (var index = 0; index < skinRigs.Count; index += 1)
+            {
+                var rig = skinRigs[index];
+                if (rig == null || rig.SkinId != skin)
+                {
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(rig.SkinLabelOverride))
+                {
+                    continue;
+                }
+
+                bestMatch = rig.SkinLabelOverride.Trim();
+            }
+
+            if (string.IsNullOrWhiteSpace(bestMatch))
+            {
+                return false;
+            }
+
+            label = bestMatch;
+            return true;
         }
 
         public bool ApplySkin(PlayerSkinId skin)
         {
             if (this == null) return false;
             CurrentSkin = skin;
+
+            var rigApplied = ActivateRigForSkin(skin);
+            if (rigApplied)
+            {
+                EnsurePlayerNameTag();
+                AttachActiveWieldedItemToHand();
+                ApplyAnimatorJobState();
+                PlaySkinSwitchAnimation();
+                return true;
+            }
 
             if (skinSpriteRenderer == null)
             {
@@ -132,6 +254,8 @@ namespace SeekerDungeon.Solana
             skinSpriteRenderer.sprite = mappedSprite;
             if (mappedSprite != null)
             {
+                _activeVisualRootForAnimation = skinSpriteRenderer.transform;
+                _skinBaseScale = _activeVisualRootForAnimation.localScale;
                 PlaySkinSwitchAnimation();
             }
 
@@ -211,6 +335,12 @@ namespace SeekerDungeon.Solana
             if (toShow != null)
             {
                 toShow.SetActive(true);
+                _activeWieldedVisual = toShow;
+                AttachActiveWieldedItemToHand();
+            }
+            else
+            {
+                _activeWieldedVisual = null;
             }
 
             if (logWieldDebugMessages && bestMatch == null)
@@ -224,6 +354,7 @@ namespace SeekerDungeon.Solana
         /// </summary>
         public void HideAllWieldedItems()
         {
+            _activeWieldedVisual = null;
             foreach (var entry in wieldableItems)
             {
                 if (entry?.visual != null)
@@ -233,14 +364,39 @@ namespace SeekerDungeon.Solana
             }
         }
 
-        private void PlaySkinSwitchAnimation()
+        public void SetMiningAnimationState(bool isMining)
         {
-            if (!animateSkinSwitch || skinSpriteRenderer == null)
+            if (_isMiningAnimationActive == isMining)
             {
                 return;
             }
 
-            var skinTransform = skinSpriteRenderer.transform;
+            _isMiningAnimationActive = isMining;
+            GameAudioManager.Instance?.SetLoop(AudioLoopId.Mining, isMining, transform.position);
+            ApplyAnimatorJobState();
+        }
+
+        public void SetBossJobAnimationState(bool isBossJobActive)
+        {
+            if (_isBossAnimationActive == isBossJobActive)
+            {
+                return;
+            }
+
+            _isBossAnimationActive = isBossJobActive;
+            GameAudioManager.Instance?.SetLoop(AudioLoopId.BossAttack, isBossJobActive, transform.position);
+            ApplyAnimatorJobState();
+        }
+
+        private void PlaySkinSwitchAnimation()
+        {
+            var visualRoot = _activeVisualRootForAnimation;
+            if (!animateSkinSwitch || visualRoot == null)
+            {
+                return;
+            }
+
+            var skinTransform = visualRoot;
             _skinSwitchSequence?.Kill();
             skinTransform.localScale = _skinBaseScale;
 
@@ -333,6 +489,175 @@ namespace SeekerDungeon.Solana
             var targetScale = _playerNameBaseLocalScale;
             targetScale.x = Mathf.Abs(_playerNameBaseLocalScale.x) * (parentSignX < 0f ? -1f : 1f);
             nameTransform.localScale = targetScale;
+        }
+
+        private bool ActivateRigForSkin(PlayerSkinId skin)
+        {
+            if (skinRigs == null || skinRigs.Count == 0)
+            {
+                _activeRigBindings = null;
+                return false;
+            }
+
+            CharacterRigBindings selectedRig = null;
+            CharacterRigBindings firstValidRig = null;
+            for (var index = 0; index < skinRigs.Count; index += 1)
+            {
+                var rig = skinRigs[index];
+                if (rig == null)
+                {
+                    continue;
+                }
+
+                firstValidRig ??= rig;
+                if (rig.SkinId == skin)
+                {
+                    selectedRig = rig;
+                }
+            }
+
+            selectedRig ??= firstValidRig;
+            if (selectedRig == null)
+            {
+                _activeRigBindings = null;
+                return false;
+            }
+
+            for (var index = 0; index < skinRigs.Count; index += 1)
+            {
+                var rig = skinRigs[index];
+                if (rig == null)
+                {
+                    continue;
+                }
+
+                rig.gameObject.SetActive(rig == selectedRig);
+            }
+
+            _activeRigBindings = selectedRig;
+            _activeVisualRootForAnimation = selectedRig.transform;
+            _skinBaseScale = _activeVisualRootForAnimation.localScale;
+            return true;
+        }
+
+        private void AttachActiveWieldedItemToHand()
+        {
+            if (_activeWieldedVisual == null)
+            {
+                return;
+            }
+
+            var hand = ResolveActiveWeaponHand();
+            if (hand == null)
+            {
+                return;
+            }
+
+            var visualTransform = _activeWieldedVisual.transform;
+            if (visualTransform.parent != hand)
+            {
+                visualTransform.SetParent(hand, false);
+            }
+
+            visualTransform.localPosition = Vector3.zero;
+            visualTransform.localRotation = Quaternion.identity;
+        }
+
+        private Transform ResolveActiveWeaponHand()
+        {
+            if (_activeRigBindings != null && _activeRigBindings.PreferredWeaponHand != null)
+            {
+                return _activeRigBindings.PreferredWeaponHand;
+            }
+
+            return null;
+        }
+
+        private void ApplyAnimatorJobState()
+        {
+            var animators = ResolveActiveAnimators();
+            if (animators == null || animators.Count == 0)
+            {
+                return;
+            }
+
+            var hasMiningParam = !string.IsNullOrWhiteSpace(miningAnimatorParameter);
+            var hasBossParam = !string.IsNullOrWhiteSpace(bossJobAnimatorParameter);
+            if (!hasMiningParam && !hasBossParam)
+            {
+                return;
+            }
+
+            var useSharedParameter = hasMiningParam &&
+                                     hasBossParam &&
+                                     string.Equals(miningAnimatorParameter, bossJobAnimatorParameter, StringComparison.OrdinalIgnoreCase);
+            var mergedValue = _isMiningAnimationActive || _isBossAnimationActive;
+
+            for (var index = 0; index < animators.Count; index += 1)
+            {
+                var animator = animators[index];
+                if (animator == null || animator.runtimeAnimatorController == null)
+                {
+                    continue;
+                }
+
+                if (useSharedParameter)
+                {
+                    SetAnimatorBoolIfExists(animator, miningAnimatorParameter, mergedValue);
+                    continue;
+                }
+
+                if (hasMiningParam)
+                {
+                    SetAnimatorBoolIfExists(animator, miningAnimatorParameter, _isMiningAnimationActive);
+                }
+
+                if (hasBossParam)
+                {
+                    SetAnimatorBoolIfExists(animator, bossJobAnimatorParameter, _isBossAnimationActive);
+                }
+            }
+        }
+
+        private IReadOnlyList<Animator> ResolveActiveAnimators()
+        {
+            if (_activeRigBindings != null)
+            {
+                return _activeRigBindings.ResolveAnimators();
+            }
+
+            return GetComponentsInChildren<Animator>(true);
+        }
+
+        private static void SetAnimatorBoolIfExists(Animator animator, string parameterName, bool value)
+        {
+            if (animator == null || string.IsNullOrWhiteSpace(parameterName))
+            {
+                return;
+            }
+
+            var parameters = animator.parameters;
+            if (parameters == null || parameters.Length == 0)
+            {
+                return;
+            }
+
+            for (var index = 0; index < parameters.Length; index += 1)
+            {
+                var parameter = parameters[index];
+                if (parameter.type != AnimatorControllerParameterType.Bool)
+                {
+                    continue;
+                }
+
+                if (!string.Equals(parameter.name, parameterName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                animator.SetBool(parameter.name, value);
+                return;
+            }
         }
     }
 }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
 using DG.Tweening;
+using SeekerDungeon.Audio;
 using SeekerDungeon;
 using Solana.Unity.Programs;
 using Solana.Unity.Rpc.Types;
@@ -111,11 +112,11 @@ namespace SeekerDungeon.Solana
         public Transform CharacterNameAnchorTransform =>
             playerController != null ? playerController.CharacterNameAnchorTransform : null;
         public LGPlayerController PreviewPlayerController => playerController;
-        public PlayerSkinId SelectedSkin { get; private set; } = PlayerSkinId.Goblin;
+        public PlayerSkinId SelectedSkin { get; private set; } = PlayerSkinId.CheekyGoblin;
         public string PendingDisplayName { get; private set; } = string.Empty;
         public bool HasUnsavedProfileChanges { get; private set; }
         private readonly List<PlayerSkinId> _selectableSkins = new();
-        private PlayerSkinId _savedProfileSkin = PlayerSkinId.Goblin;
+        private PlayerSkinId _savedProfileSkin = PlayerSkinId.CheekyGoblin;
         private string _savedDisplayName = string.Empty;
         private string _solBalanceText = "--";
         private string _skrBalanceText = "--";
@@ -434,6 +435,7 @@ namespace SeekerDungeon.Solana
 
             var walletKey = Web3.Wallet?.Account?.PublicKey?.Key;
             DungeonRunResumeStore.MarkInRun(walletKey);
+            GameAudioManager.Instance?.PlayStinger(StingerSfxId.EnterDungeon);
             LoadSceneWithFadeAsync(gameplaySceneName).Forget();
         }
 
@@ -1211,46 +1213,29 @@ namespace SeekerDungeon.Solana
                     _selectableSkins.Add(configuredSkin);
                 }
             }
-
-            if (_selectableSkins.Count > 0)
-            {
-                return;
-            }
-
-            foreach (PlayerSkinId skin in Enum.GetValues(typeof(PlayerSkinId)))
-            {
-                if (_selectableSkins.Contains(skin))
-                {
-                    continue;
-                }
-
-                _selectableSkins.Add(skin);
-            }
         }
 
         private string GetSelectedSkinLabel()
         {
-            return SelectedSkin switch
+            if (playerController != null &&
+                playerController.TryGetSkinLabelOverride(SelectedSkin, out var labelOverride) &&
+                !string.IsNullOrWhiteSpace(labelOverride))
             {
-                PlayerSkinId.CheekyGoblin => "Cheeky Goblin",
-                PlayerSkinId.ScrappyDwarfCharacter => "Scrappy Dwarf",
-                PlayerSkinId.DrunkDwarfCharacter => "Drunk Dwarf",
-                PlayerSkinId.FatDwarfCharacter => "Fat Dwarf",
-                PlayerSkinId.FriendlyGoblin => "Friendly Goblin",
-                PlayerSkinId.GingerBearDwarfVariant => "Ginger Dwarf",
-                PlayerSkinId.HappyDrunkDwarf => "Happy Dwarf",
-                PlayerSkinId.IdleGoblin => "Idle Goblin",
-                PlayerSkinId.IdleHumanCharacter => "Idle Human",
-                PlayerSkinId.JollyDwarfCharacter => "Jolly Dwarf",
-                PlayerSkinId.JollyDwarfVariant => "Jolly Dwarf II",
-                PlayerSkinId.OldDwarfCharacter => "Old Dwarf",
-                PlayerSkinId.ScrappyDwarfGingerBeard => "Ginger Beard",
-                PlayerSkinId.ScrappyDwarfVariant => "Scrappy Dwarf II",
-                PlayerSkinId.ScrappyHumanAssassin => "Human Assassin",
-                PlayerSkinId.ScrappySkeleton => "Scrappy Skeleton",
-                PlayerSkinId.SinisterHoodedFigure => "Hooded Figure",
-                _ => SelectedSkin.ToString()
-            };
+                return labelOverride;
+            }
+
+            return HumanizeEnumToken(SelectedSkin.ToString());
+        }
+
+        private static string HumanizeEnumToken(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var withSpaces = System.Text.RegularExpressions.Regex.Replace(value.Trim(), "([a-z])([A-Z])", "$1 $2");
+            return withSpaces.Replace("_", " ");
         }
 
         private string GetShortWalletAddress()

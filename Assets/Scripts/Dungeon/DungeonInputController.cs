@@ -1,4 +1,5 @@
 using Cysharp.Threading.Tasks;
+using SeekerDungeon.Audio;
 using SeekerDungeon.Solana;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -200,6 +201,7 @@ namespace SeekerDungeon.Dungeon
                 {
                     var wasDoorOpenBeforeInteraction = IsDoorOpenInCurrentState(door.Direction);
                     var wasRubbleBeforeInteraction = IsDoorRubbleInCurrentState(door.Direction);
+                    var wasLockedBeforeInteraction = IsDoorLockedInCurrentState(door.Direction);
                     var wasEntranceStairsBeforeInteraction = IsDoorEntranceStairsInCurrentState(door.Direction);
                     var hadRoomBefore = TryGetCurrentRoomCoordinates(out var previousRoomX, out var previousRoomY);
 
@@ -242,6 +244,8 @@ namespace SeekerDungeon.Dungeon
                                 ? LGDomainMapper.ToItemId(_lgManager.CurrentPlayerState.EquippedItemId)
                                 : ItemId.BronzePickaxe;
                             _localPlayerController.ShowWieldedItem(equippedId);
+                            _localPlayerController.SetMiningAnimationState(true);
+                            _localPlayerController.SetBossJobAnimationState(false);
                         }
 
                         if (localPlayerJobMover != null)
@@ -276,6 +280,28 @@ namespace SeekerDungeon.Dungeon
                         door.Direction.ToString(),
                         doorResult.Success,
                         doorResult.Success ? doorResult.Signature : doorResult.Error);
+
+                    if (doorResult.Success)
+                    {
+                        if (wasDoorOpenBeforeInteraction)
+                        {
+                            GameAudioManager.Instance?.PlayWorld(
+                                WorldSfxId.DoorOpenOpen,
+                                door.InteractWorldPosition);
+                        }
+                        else if (wasRubbleBeforeInteraction)
+                        {
+                            GameAudioManager.Instance?.PlayWorld(
+                                WorldSfxId.DoorOpenRubble,
+                                door.InteractWorldPosition);
+                        }
+                        else if (wasLockedBeforeInteraction)
+                        {
+                            GameAudioManager.Instance?.PlayWorld(
+                                WorldSfxId.DoorOpenLocked,
+                                door.InteractWorldPosition);
+                        }
+                    }
 
                     // ── Post-transaction: explicit state refresh ──
                     if (wasEntranceStairsBeforeInteraction && doorResult.Success)
@@ -433,6 +459,9 @@ namespace SeekerDungeon.Dungeon
                                     {
                                         _localPlayerController.ShowWieldedItem(equippedId);
                                     }
+
+                                    _localPlayerController.SetMiningAnimationState(false);
+                                    _localPlayerController.SetBossJobAnimationState(true);
                                 }
 
                                 ResolveLocalPlayerJobMover();
@@ -469,6 +498,11 @@ namespace SeekerDungeon.Dungeon
                         else if (!centerResult.Success && wasAliveBossCenterBeforeInteraction && dungeonManager != null)
                         {
                             dungeonManager.ClearOptimisticBossFight();
+                            ResolveLocalPlayerController();
+                            if (_localPlayerController != null)
+                            {
+                                _localPlayerController.SetBossJobAnimationState(false);
+                            }
                         }
 
                         // Play chest open animation on the visual controller
@@ -626,6 +660,23 @@ namespace SeekerDungeon.Dungeon
             return roomState.Walls[directionIndex] == LGConfig.WALL_ENTRANCE_STAIRS;
         }
 
+        private bool IsDoorLockedInCurrentState(RoomDirection direction)
+        {
+            var roomState = _lgManager?.CurrentRoomState;
+            if (roomState?.Walls == null)
+            {
+                return false;
+            }
+
+            var directionIndex = (int)direction;
+            if (directionIndex < 0 || directionIndex >= roomState.Walls.Length)
+            {
+                return false;
+            }
+
+            return roomState.Walls[directionIndex] == LGConfig.WALL_LOCKED;
+        }
+
         private async UniTask LoadExitSceneAsync()
         {
             if (string.IsNullOrWhiteSpace(exitSceneName))
@@ -663,6 +714,7 @@ namespace SeekerDungeon.Dungeon
                 return;
             }
 
+            GameAudioManager.Instance?.PlayWorld(WorldSfxId.StairsExit, transform.position);
             await _lgManager.RefreshAllState();
             await LoadExitSceneAsync();
         }

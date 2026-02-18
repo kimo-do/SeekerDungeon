@@ -47,5 +47,16 @@
                 </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
+        <ui:VisualElement name="session-fee-overlay" class="hud-modal-overlay" style="display: none;">
+            <ui:VisualElement name="session-fee-card" class="hud-modal-card hud-session-fee-card">
+                <ui:VisualElement name="session-fee-gem" class="hud-session-fee-gem"/>
+                <ui:Label name="session-fee-title" text="SESSION LOW BALANCE" class="hud-modal-title"/>
+                <ui:Label name="session-fee-message" text="Your session wallet is low on SOL for transaction fees. Top up session funding to continue smooth gameplay." class="hud-modal-message"/>
+                <ui:VisualElement name="session-fee-actions" class="hud-modal-action-row">
+                    <ui:Button name="btn-session-fee-topup" text="Top Up Session" class="hud-modal-button hud-modal-button-primary"/>
+                    <ui:Button name="btn-session-fee-use-wallet" text="Use Wallet For Now" class="hud-modal-button"/>
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
     </ui:VisualElement>
 </ui:UXML>

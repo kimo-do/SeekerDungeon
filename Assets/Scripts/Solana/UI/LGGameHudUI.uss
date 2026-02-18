@@ -479,6 +479,23 @@
     color: rgb(255, 236, 172);
 }
 
+.hud-session-fee-card {
+    max-width: 980px;
+    min-width: 360px;
+    padding-top: 58px;
+}
+
+.hud-session-fee-gem {
+    width: 128px;
+    height: 128px;
+    min-width: 128px;
+    min-height: 128px;
+    margin-bottom: 12px;
+    background-image: url("project://database/Assets/Sprites/green_gem%20(1).png?fileID=4316597614382486321&guid=e1ed46fd593086b4a9d9e315ce6d4d0a&type=3#gem_inactive");
+    -unity-background-scale-mode: scale-to-fit;
+    opacity: 0.72;
+}
+
 .tx-indicator {
     position: relative;
     width: 58px;

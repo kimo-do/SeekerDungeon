@@ -1,4 +1,5 @@
 using Cysharp.Threading.Tasks;
+using SeekerDungeon.Audio;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
@@ -73,6 +74,12 @@ namespace SeekerDungeon
 
             try
             {
+                var audioManager = GameAudioManager.Instance;
+                if (audioManager != null)
+                {
+                    await audioManager.FadeOutMusicForSceneTransitionAsync(fadeDurationSeconds);
+                }
+
                 await FadeAsync(1f);
 
                 var sceneLoadOperation = SceneManager.LoadSceneAsync(sceneName, loadSceneMode);

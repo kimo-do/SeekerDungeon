@@ -1,6 +1,7 @@
 using Cysharp.Threading.Tasks;
 using System.Collections.Generic;
 using System.Threading;
+using SeekerDungeon.Audio;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -146,6 +147,8 @@ namespace SeekerDungeon.Solana
 
         private void HandleConnectClicked()
         {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Primary);
+
             if (loadingController == null)
             {
                 SetStatus("Loading controller not found");
@@ -194,6 +197,8 @@ namespace SeekerDungeon.Solana
 
         private void HandleUseSelectedEditorWalletClicked()
         {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Secondary);
+
             if (_isSwitchingEditorWallet || walletSessionManager == null || _editorWalletSlotDropdown == null)
             {
                 return;
@@ -210,6 +215,8 @@ namespace SeekerDungeon.Solana
 
         private void HandleUseNewEditorWalletClicked()
         {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Secondary);
+
             if (_isSwitchingEditorWallet || walletSessionManager == null)
             {
                 return;

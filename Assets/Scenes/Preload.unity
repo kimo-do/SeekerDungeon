@@ -453,22 +453,6 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
-    - target: {fileID: 3095660089801292672, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
-      propertyPath: fallbackRpcUrl
-      value: https://rpc.magicblock.app/devnet/
-      objectReference: {fileID: 0}
-    - target: {fileID: 3095660089801292672, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
-      propertyPath: autoFundSessionSigner
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3095660089801292672, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
-      propertyPath: simulateMobileFlowInEditor
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3095660089801292672, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
-      propertyPath: allowWalletAdapterSessionOnAndroid
-      value: 1
-      objectReference: {fileID: 0}
     - target: {fileID: 3493712294466225802, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
       propertyPath: m_LocalPosition.x
       value: -0.0162
@@ -513,36 +497,11 @@ PrefabInstance:
       propertyPath: m_Name
       value: AppBoostrap
       objectReference: {fileID: 0}
-    - target: {fileID: 7790732936833290763, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
-      propertyPath: fallbackRpcUrl
-      value: https://rpc.magicblock.app/devnet/
-      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents:
-    - targetCorrespondingSourceObject: {fileID: 7741793193702230010, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 2042139984}
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
---- !u!1 &2042139983 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 7741793193702230010, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
-  m_PrefabInstance: {fileID: 2042139982}
-  m_PrefabAsset: {fileID: 0}
---- !u!114 &2042139984
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2042139983}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 6bef446440c08ba40997d46b19fcced8, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Solana.PersistentGameObject
-  enforceSingleInstanceByName: 1
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

@@ -73,6 +73,7 @@ namespace SeekerDungeon.Solana
         public event Action<LootResult> OnChestLootResult;
         public event Action<string> OnTransactionSent;
         public event Action<string> OnError;
+        public event Action<string> OnSessionFeeFundingRequired;
 
         private PublicKey _programId;
         private PublicKey _globalPda;
@@ -82,6 +83,7 @@ namespace SeekerDungeon.Solana
         private ChaindepthClient _client;
         private readonly HashSet<string> _roomPresenceSubscriptionKeys = new();
         private uint? _lastProgramErrorCode;
+        private string _lastTransactionFailureReason;
 
         private struct GameplaySigningContext
         {
@@ -3006,6 +3008,29 @@ namespace SeekerDungeon.Solana
             }
 
             var errorDetail = FormatProgramError(_lastProgramErrorCode);
+            var failureReason = _lastTransactionFailureReason;
+
+            if (signingContext.UsesSessionSigner &&
+                IsFeePayerFundingFailure(failureReason))
+            {
+                OnSessionFeeFundingRequired?.Invoke(
+                    "Your session wallet is low on SOL for transaction fees. Top up session funding to continue smooth gameplay.");
+                Log(
+                    $"{actionName}: session signer could not pay tx fees " +
+                    $"('{failureReason}'). Retrying with wallet signer.");
+                var walletContext = BuildWalletOnlySigningContext();
+                if (walletContext.SignerAccount != null)
+                {
+                    var walletSignature = await SendTransaction(
+                        buildInstruction(walletContext),
+                        walletContext.SignerAccount,
+                        new List<Account> { walletContext.SignerAccount });
+                    if (!string.IsNullOrWhiteSpace(walletSignature))
+                    {
+                        return TxResult.Ok(walletSignature);
+                    }
+                }
+            }
 
             if (!signingContext.UsesSessionSigner || walletSessionManager == null)
             {
@@ -3134,6 +3159,7 @@ namespace SeekerDungeon.Solana
                         if (result.WasSuccessful)
                         {
                             _lastProgramErrorCode = null;
+                            _lastTransactionFailureReason = null;
                             Log($"Transaction sent ({rpcLabel}): {result.Result}");
                             OnTransactionSent?.Invoke(result.Result);
                             isSuccess = true;
@@ -3143,6 +3169,7 @@ namespace SeekerDungeon.Solana
                         var failureReason = string.IsNullOrWhiteSpace(result.Reason)
                             ? "<empty reason>"
                             : result.Reason;
+                        _lastTransactionFailureReason = failureReason;
                         _lastProgramErrorCode = ExtractCustomProgramErrorCode(failureReason);
                         LogError(
                             $"[{rpcLabel}] Transaction failed (attempt {attempt}/{MaxTransientSendAttemptsPerRpc}). " +
@@ -3168,6 +3195,7 @@ namespace SeekerDungeon.Solana
                             if (rawProbe.WasSuccessful)
                             {
                                 _lastProgramErrorCode = null;
+                                _lastTransactionFailureReason = null;
                                 Log($"Transaction sent via raw HTTP ({rpcLabel}): {rawProbe.Signature}");
                                 OnTransactionSent?.Invoke(rawProbe.Signature);
                                 isSuccess = true;
@@ -3196,6 +3224,7 @@ namespace SeekerDungeon.Solana
             }
             catch (Exception ex)
             {
+                _lastTransactionFailureReason = ex.Message;
                 LogError($"Transaction exception: {ex.Message}");
                 return null;
             }
@@ -3264,6 +3293,7 @@ namespace SeekerDungeon.Solana
 
             if (sendResult.WasSuccessful && !string.IsNullOrWhiteSpace(sendResult.Result))
             {
+                _lastTransactionFailureReason = null;
                 Log($"Transaction sent via wallet adapter: {sendResult.Result}");
                 return sendResult.Result;
             }
@@ -3271,6 +3301,7 @@ namespace SeekerDungeon.Solana
             var reason = string.IsNullOrWhiteSpace(sendResult.Reason)
                 ? "<empty reason>"
                 : sendResult.Reason;
+            _lastTransactionFailureReason = reason;
             LogError($"Wallet adapter send failed: {reason} class={ClassifyFailureReason(reason)}");
             return null;
         }
@@ -3284,6 +3315,20 @@ namespace SeekerDungeon.Solana
             if (reason.IndexOf("Unable to parse json", StringComparison.OrdinalIgnoreCase) >= 0) return "rpc_json_parse";
             if (reason.IndexOf("timed out", StringComparison.OrdinalIgnoreCase) >= 0 || reason.IndexOf("timeout", StringComparison.OrdinalIgnoreCase) >= 0) return "rpc_timeout";
             return "other";
+        }
+
+        private static bool IsFeePayerFundingFailure(string reason)
+        {
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                return false;
+            }
+
+            return
+                reason.IndexOf("InsufficientFundsForRent", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("insufficient funds for rent", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("insufficient funds for fee", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("insufficient funds", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static bool ShouldUseWalletAdapterSigning(Account feePayer, IList<Account> signers)

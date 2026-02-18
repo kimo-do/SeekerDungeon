@@ -38,7 +38,7 @@ namespace SeekerDungeon.Dungeon
         private bool _hasSnappedCameraForRoom;
         private int _lastTransitionTextIndex = -1;
         private bool _hasAppliedLocalVisualState;
-        private PlayerSkinId _lastAppliedLocalSkin = PlayerSkinId.Goblin;
+        private PlayerSkinId _lastAppliedLocalSkin = PlayerSkinId.CheekyGoblin;
         private string _lastAppliedLocalDisplayName = string.Empty;
         private bool _isLocalPlayerFightingBoss;
 
@@ -1043,7 +1043,7 @@ namespace SeekerDungeon.Dungeon
             PlayerSkinId skin;
             if (occupant.SkinId < 0 || occupant.SkinId > ushort.MaxValue)
             {
-                skin = PlayerSkinId.Goblin;
+                skin = PlayerSkinId.CheekyGoblin;
             }
             else
             {
@@ -1448,6 +1448,9 @@ namespace SeekerDungeon.Dungeon
             {
                 return;
             }
+
+            localPlayerController.SetMiningAnimationState(activity == OccupantActivity.DoorJob);
+            localPlayerController.SetBossJobAnimationState(activity == OccupantActivity.BossFight);
 
             if (activity == OccupantActivity.DoorJob || activity == OccupantActivity.BossFight)
             {

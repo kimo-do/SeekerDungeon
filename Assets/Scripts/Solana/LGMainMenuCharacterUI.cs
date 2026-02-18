@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using Cysharp.Threading.Tasks;
+using SeekerDungeon.Audio;
 using SeekerDungeon.Dungeon;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -23,6 +24,8 @@ namespace SeekerDungeon.Solana
         [SerializeField] private float firstDrinkDelaySeconds = 2f;
         [SerializeField] private float drinkIntervalMinSeconds = 8f;
         [SerializeField] private float drinkIntervalMaxSeconds = 15f;
+        [SerializeField] private Sprite audioMutedSprite;
+        [SerializeField] private Sprite audioUnmutedSprite;
 
         private UIDocument _document;
 
@@ -74,6 +77,7 @@ namespace SeekerDungeon.Solana
         private Button _lowBalanceModalDismissButton;
         private Button _lowBalanceTopUpButton;
         private Button _extractionSummaryContinueButton;
+        private Button _audioToggleButton;
         private TouchScreenKeyboard _mobileKeyboard;
         private bool _isApplyingKeyboardText;
         private VisualElement _boundRoot;
@@ -193,6 +197,7 @@ namespace SeekerDungeon.Solana
             _lowBalanceModalDismissButton = root.Q<Button>("btn-low-balance-dismiss");
             _lowBalanceTopUpButton = root.Q<Button>("btn-low-balance-topup");
             _extractionSummaryContinueButton = root.Q<Button>("btn-extraction-summary-continue");
+            _audioToggleButton = root.Q<Button>("btn-audio-toggle");
 
             if (_previousSkinButton != null)
             {
@@ -249,6 +254,11 @@ namespace SeekerDungeon.Solana
                 _extractionSummaryContinueButton.clicked += HandleExtractionSummaryContinueClicked;
             }
 
+            if (_audioToggleButton != null)
+            {
+                _audioToggleButton.clicked += HandleAudioToggleClicked;
+            }
+
             if (_displayNameInput != null)
             {
                 _displayNameInput.RegisterValueChangedCallback(HandleDisplayNameChanged);
@@ -259,6 +269,7 @@ namespace SeekerDungeon.Solana
             _isHandlersBound = true;
             _txIndicatorController ??= new TxIndicatorVisualController();
             _txIndicatorController.Bind(root);
+            UpdateAudioToggleButtonVisual();
         }
 
         private void UnbindUiHandlers()
@@ -318,6 +329,11 @@ namespace SeekerDungeon.Solana
                 _extractionSummaryContinueButton.clicked -= HandleExtractionSummaryContinueClicked;
             }
 
+            if (_audioToggleButton != null)
+            {
+                _audioToggleButton.clicked -= HandleAudioToggleClicked;
+            }
+
             if (_displayNameInput != null)
             {
                 _displayNameInput.UnregisterValueChangedCallback(HandleDisplayNameChanged);
@@ -330,47 +346,92 @@ namespace SeekerDungeon.Solana
 
         private void HandlePreviousSkinClicked()
         {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Nav);
+            GameAudioManager.Instance?.PlayWorld(WorldSfxId.CharacterSwap, transform.position);
             characterManager?.SelectPreviousSkin();
         }
 
         private void HandleNextSkinClicked()
         {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Nav);
+            GameAudioManager.Instance?.PlayWorld(WorldSfxId.CharacterSwap, transform.position);
             characterManager?.SelectNextSkin();
         }
 
         private void HandleCreateCharacterClicked()
         {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Primary);
             CreateCharacterAsync().Forget();
         }
 
         private void HandleEnterDungeonClicked()
         {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Primary);
             characterManager?.EnterDungeon();
         }
 
         private void HandleDisconnectWalletClicked()
         {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Danger);
             characterManager?.DisconnectWallet();
         }
 
         private void HandleEnableSessionClicked()
         {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Primary);
             characterManager?.EnsureSessionReadyFromMenu();
         }
 
         private void HandleLowBalanceDismissClicked()
         {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Secondary);
             characterManager?.DismissLowBalanceModal();
         }
 
         private void HandleLowBalanceTopUpClicked()
         {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Primary);
             characterManager?.RequestDevnetTopUpFromMenu();
         }
 
         private void HandleLegacyResetClicked()
         {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Danger);
             characterManager?.RequestLegacyAccountResetFromMenu();
+        }
+
+        private void HandleAudioToggleClicked()
+        {
+            var audioManager = GameAudioManager.Instance;
+            if (audioManager == null)
+            {
+                return;
+            }
+
+            var wasMuted = audioManager.IsMuted;
+            var isMuted = audioManager.ToggleMute();
+            if (wasMuted && !isMuted)
+            {
+                audioManager.PlayButton(ButtonSfxCategory.Secondary);
+            }
+
+            UpdateAudioToggleButtonVisual();
+        }
+
+        private void UpdateAudioToggleButtonVisual()
+        {
+            if (_audioToggleButton == null)
+            {
+                return;
+            }
+
+            var audioManager = GameAudioManager.Instance;
+            var isMuted = audioManager != null && audioManager.IsMuted;
+            var sprite = isMuted ? audioMutedSprite : audioUnmutedSprite;
+            _audioToggleButton.style.backgroundImage = sprite != null
+                ? new StyleBackground(sprite)
+                : new StyleBackground((Sprite)null);
+            _audioToggleButton.tooltip = isMuted ? "Audio Muted" : "Audio On";
         }
 
         private void HandleDisplayNameChanged(ChangeEvent<string> changeEvent)
@@ -819,6 +880,8 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
+            GameAudioManager.Instance?.PlayStinger(StingerSfxId.ExtractionSuccess);
+
             _isShowingExtractionSummary = true;
             _extractionSummaryOverlay.style.display = DisplayStyle.Flex;
 
@@ -956,6 +1019,8 @@ namespace SeekerDungeon.Solana
 
         private void HandleExtractionSummaryContinueClicked()
         {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Secondary);
+
             if (_extractionSummaryOverlay != null)
             {
                 _extractionSummaryOverlay.style.display = DisplayStyle.None;

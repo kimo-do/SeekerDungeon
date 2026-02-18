@@ -1,0 +1,127 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1001 &2278708281850701608
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 328866487617738155, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 328866487617738155, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0.371
+      objectReference: {fileID: 0}
+    - target: {fileID: 328866487617738155, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 328866487617738155, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 328866487617738155, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 328866487617738155, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 328866487617738155, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 328866487617738155, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 328866487617738155, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 328866487617738155, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1107449126084313854, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -0.062
+      objectReference: {fileID: 0}
+    - target: {fileID: 1107449126084313854, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -0.256
+      objectReference: {fileID: 0}
+    - target: {fileID: 1107449126084313854, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 0.7743548
+      objectReference: {fileID: 0}
+    - target: {fileID: 1107449126084313854, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0.6327517
+      objectReference: {fileID: 0}
+    - target: {fileID: 1107449126084313854, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: -78.507
+      objectReference: {fileID: 0}
+    - target: {fileID: 1118899942093606165, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_Name
+      value: Drunk Dwarf Variant
+      objectReference: {fileID: 0}
+    - target: {fileID: 1513118649455833489, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_Size.y
+      value: 0.39
+      objectReference: {fileID: 0}
+    - target: {fileID: 1513118649455833489, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: -5205494921669140033, guid: a20ad98d7220cc940a0ec784ee4c8f4a, type: 3}
+    - target: {fileID: 1539876991161305457, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -0.151
+      objectReference: {fileID: 0}
+    - target: {fileID: 1539876991161305457, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0.111
+      objectReference: {fileID: 0}
+    - target: {fileID: 2470201919507663973, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_Size.x
+      value: 0.17
+      objectReference: {fileID: 0}
+    - target: {fileID: 2470201919507663973, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_Size.y
+      value: 0.38
+      objectReference: {fileID: 0}
+    - target: {fileID: 2470201919507663973, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: 876041642358888646, guid: a20ad98d7220cc940a0ec784ee4c8f4a, type: 3}
+    - target: {fileID: 6376061609474269622, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: skinId
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 6376061609474269622, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: skinLabelOverride
+      value: Drunk Dwarf
+      objectReference: {fileID: 0}
+    - target: {fileID: 7126410378096323354, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_Size.x
+      value: 0.39
+      objectReference: {fileID: 0}
+    - target: {fileID: 7126410378096323354, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_Size.y
+      value: 0.76
+      objectReference: {fileID: 0}
+    - target: {fileID: 7126410378096323354, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: -8205556063134869150, guid: a20ad98d7220cc940a0ec784ee4c8f4a, type: 3}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}

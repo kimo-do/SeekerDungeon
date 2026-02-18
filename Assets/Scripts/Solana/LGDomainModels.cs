@@ -99,10 +99,8 @@ namespace SeekerDungeon.Solana
         ScrappyHumanAssassin = 14,
         ScrappySkeleton = 15,
         SinisterHoodedFigure = 16,
-
-        // Backward-compatible aliases for existing code/data.
-        Goblin = CheekyGoblin,
-        Dwarf = ScrappyDwarfCharacter
+        NoseGoblin = 17,
+        SkeletonCape = 18
     }
 
     public enum OccupantActivity

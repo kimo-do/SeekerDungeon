@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Chaindepth.Accounts;
 using Cysharp.Threading.Tasks;
+using SeekerDungeon.Audio;
 using SeekerDungeon.Dungeon;
 using Solana.Unity.Programs;
 using Solana.Unity.Rpc.Types;
@@ -61,6 +62,10 @@ namespace SeekerDungeon.Solana
         private VisualElement _exitConfirmOverlay;
         private Button _exitConfirmCloseButton;
         private Button _exitConfirmLeaveButton;
+        private VisualElement _sessionFeeOverlay;
+        private Label _sessionFeeMessageLabel;
+        private Button _sessionFeeTopUpButton;
+        private Button _sessionFeeUseWalletButton;
         private UniTaskCompletionSource<bool> _exitConfirmTcs;
         private VisualElement _root;
         private TxIndicatorVisualController _txIndicatorController;
@@ -70,6 +75,7 @@ namespace SeekerDungeon.Solana
         private ItemId _tooltipItemId = ItemId.None;
         private bool _isEquippingFromTooltip;
         private float _lastInventorySlotsWidth = -1f;
+        private bool _isFundingSessionFee;
 
         private bool _isLoadingScene;
 
@@ -128,7 +134,12 @@ namespace SeekerDungeon.Solana
             _exitConfirmOverlay = _root.Q<VisualElement>("exit-confirm-overlay");
             _exitConfirmCloseButton = _root.Q<Button>("btn-exit-confirm-close");
             _exitConfirmLeaveButton = _root.Q<Button>("btn-exit-confirm-leave");
+            _sessionFeeOverlay = _root.Q<VisualElement>("session-fee-overlay");
+            _sessionFeeMessageLabel = _root.Q<Label>("session-fee-message");
+            _sessionFeeTopUpButton = _root.Q<Button>("btn-session-fee-topup");
+            _sessionFeeUseWalletButton = _root.Q<Button>("btn-session-fee-use-wallet");
             HideExitConfirmModal();
+            HideSessionFeeModal();
             HideItemTooltip();
             CacheTooltipDefaultStyles();
             ResolveHotbarGlowSpriteIfMissing();
@@ -156,6 +167,14 @@ namespace SeekerDungeon.Solana
             {
                 _itemTooltipEquipButton.clicked += HandleItemTooltipEquipClicked;
             }
+            if (_sessionFeeTopUpButton != null)
+            {
+                _sessionFeeTopUpButton.clicked += HandleSessionFeeTopUpClicked;
+            }
+            if (_sessionFeeUseWalletButton != null)
+            {
+                _sessionFeeUseWalletButton.clicked += HandleSessionFeeUseWalletClicked;
+            }
             if (_root != null)
             {
                 _root.RegisterCallback<PointerDownEvent>(HandleRootPointerDown);
@@ -170,6 +189,7 @@ namespace SeekerDungeon.Solana
                 manager.OnPlayerStateUpdated += HandlePlayerStateUpdated;
                 manager.OnRoomStateUpdated += HandleRoomStateUpdated;
                 manager.OnInventoryUpdated += HandleInventoryUpdated;
+                manager.OnSessionFeeFundingRequired += HandleSessionFeeFundingRequired;
             }
 
             if (walletSessionManager != null)
@@ -211,6 +231,14 @@ namespace SeekerDungeon.Solana
             {
                 _itemTooltipEquipButton.clicked -= HandleItemTooltipEquipClicked;
             }
+            if (_sessionFeeTopUpButton != null)
+            {
+                _sessionFeeTopUpButton.clicked -= HandleSessionFeeTopUpClicked;
+            }
+            if (_sessionFeeUseWalletButton != null)
+            {
+                _sessionFeeUseWalletButton.clicked -= HandleSessionFeeUseWalletClicked;
+            }
             if (_root != null)
             {
                 _root.UnregisterCallback<PointerDownEvent>(HandleRootPointerDown);
@@ -225,6 +253,7 @@ namespace SeekerDungeon.Solana
                 manager.OnPlayerStateUpdated -= HandlePlayerStateUpdated;
                 manager.OnRoomStateUpdated -= HandleRoomStateUpdated;
                 manager.OnInventoryUpdated -= HandleInventoryUpdated;
+                manager.OnSessionFeeFundingRequired -= HandleSessionFeeFundingRequired;
             }
 
             if (walletSessionManager != null)
@@ -239,6 +268,7 @@ namespace SeekerDungeon.Solana
             _centerToastController = null;
 
             HideExitConfirmModal();
+            HideSessionFeeModal();
             HideItemTooltip();
             _exitConfirmTcs?.TrySetResult(false);
             _exitConfirmTcs = null;
@@ -299,6 +329,8 @@ namespace SeekerDungeon.Solana
 
         private void HandleBackClicked()
         {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Secondary);
+
             if (_isLoadingScene)
             {
                 return;
@@ -450,6 +482,8 @@ namespace SeekerDungeon.Solana
 
         private void HandleBagClicked()
         {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Nav);
+
             if (OnBagClicked != null)
             {
                 OnBagClicked.Invoke();
@@ -495,6 +529,7 @@ namespace SeekerDungeon.Solana
 
         private void HandleExitConfirmCancelClicked()
         {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Secondary);
             var tcs = _exitConfirmTcs;
             HideExitConfirmModal();
             tcs?.TrySetResult(false);
@@ -502,6 +537,7 @@ namespace SeekerDungeon.Solana
 
         private void HandleExitConfirmLeaveClicked()
         {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Confirm);
             var tcs = _exitConfirmTcs;
             HideExitConfirmModal();
             tcs?.TrySetResult(true);
@@ -513,6 +549,96 @@ namespace SeekerDungeon.Solana
             {
                 _exitConfirmOverlay.style.display = DisplayStyle.None;
             }
+        }
+
+        private void HandleSessionFeeFundingRequired(string message)
+        {
+            ShowSessionFeeModal(message);
+        }
+
+        private void ShowSessionFeeModal(string message)
+        {
+            if (_sessionFeeOverlay == null)
+            {
+                return;
+            }
+
+            if (_sessionFeeMessageLabel != null)
+            {
+                _sessionFeeMessageLabel.text = string.IsNullOrWhiteSpace(message)
+                    ? "Your session wallet is low on SOL for transaction fees. Top up session funding to continue smooth gameplay."
+                    : message;
+            }
+
+            _sessionFeeOverlay.style.display = DisplayStyle.Flex;
+            UpdateSessionFeeButtonsInteractable();
+        }
+
+        private void HideSessionFeeModal()
+        {
+            if (_sessionFeeOverlay != null)
+            {
+                _sessionFeeOverlay.style.display = DisplayStyle.None;
+            }
+        }
+
+        private void HandleSessionFeeTopUpClicked()
+        {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Primary);
+            TopUpSessionFeeAsync().Forget();
+        }
+
+        private void HandleSessionFeeUseWalletClicked()
+        {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Secondary);
+            HideSessionFeeModal();
+            ShowCenterToast("Using wallet signing for now.", 1.25f);
+        }
+
+        private async UniTaskVoid TopUpSessionFeeAsync()
+        {
+            if (_isFundingSessionFee)
+            {
+                return;
+            }
+
+            if (walletSessionManager == null)
+            {
+                SetStatus("Session manager unavailable.");
+                return;
+            }
+
+            _isFundingSessionFee = true;
+            UpdateSessionFeeButtonsInteractable();
+
+            try
+            {
+                var funded = await walletSessionManager.EnsureSessionSignerFundedAsync(emitPromptStatus: true);
+                if (funded)
+                {
+                    HideSessionFeeModal();
+                    ShowCenterToast("Session wallet funded.", 1.25f);
+                    await RefreshBalancesAsync();
+                    return;
+                }
+
+                SetStatus("Session top-up failed. Please retry.");
+            }
+            catch (Exception exception)
+            {
+                SetStatus($"Session top-up failed: {exception.Message}");
+            }
+            finally
+            {
+                _isFundingSessionFee = false;
+                UpdateSessionFeeButtonsInteractable();
+            }
+        }
+
+        private void UpdateSessionFeeButtonsInteractable()
+        {
+            _sessionFeeTopUpButton?.SetEnabled(!_isFundingSessionFee);
+            _sessionFeeUseWalletButton?.SetEnabled(!_isFundingSessionFee);
         }
 
         private void HandleInventoryUpdated(InventoryAccount inventory)
@@ -758,6 +884,8 @@ namespace SeekerDungeon.Solana
 
         private void HandleItemTooltipEquipClicked()
         {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Primary);
+
             if (_tooltipItemId == ItemId.None || manager == null || _isEquippingFromTooltip)
             {
                 return;
@@ -780,6 +908,7 @@ namespace SeekerDungeon.Solana
                     return;
                 }
 
+                GameAudioManager.Instance?.PlayWorld(WorldSfxId.Equip, transform.position);
                 await manager.RefreshAllState();
                 HideItemTooltip();
             }

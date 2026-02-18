@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using DG.Tweening;
+using SeekerDungeon.Audio;
 using SeekerDungeon.Solana;
 using UnityEngine;
 
@@ -59,6 +60,9 @@ namespace SeekerDungeon.Dungeon
         {
             var hadMonsterStateBeforeApply = _hadMonsterState;
             var isDead = monster != null && monster.IsDead;
+            var fighterCount = monster != null
+                ? Mathf.Max((int)monster.FighterCount, bossOccupants?.Count ?? 0)
+                : 0;
             var didTransitionToDead = DidTransitionToDead(monster, isDead);
             var isDeadOnFirstApply = monster != null && isDead && !hadMonsterStateBeforeApply;
             var activeRoot = ApplyVariant(monster);
@@ -73,12 +77,17 @@ namespace SeekerDungeon.Dungeon
             ResolveHealthBarView(activeRoot, monster);
             ApplyHealthBar(monster, GetActiveHealthBarView());
 
+            GameAudioManager.Instance?.UpdateBossMonsterAudio(
+                monster?.MonsterId ?? (ushort)0,
+                monster != null && !monster.IsDead,
+                fighterCount > 0,
+                transform.position);
+
             if (!logDebugMessages)
             {
                 return;
             }
 
-            var fighterCount = bossOccupants?.Count ?? 0;
             if (monster == null)
             {
                 Debug.Log($"[DungeonBossVisual] Monster missing. Fighters={fighterCount}");
@@ -90,6 +99,7 @@ namespace SeekerDungeon.Dungeon
 
         private void OnDisable()
         {
+            GameAudioManager.Instance?.ClearBossMonsterAudio();
             KillDeathPopTween();
             DestroySpawnedHealthBar();
             _hadMonsterState = false;

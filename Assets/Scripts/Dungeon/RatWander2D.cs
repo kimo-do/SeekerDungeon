@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
+using SeekerDungeon.Audio;
 
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
@@ -32,6 +33,9 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private Sprite deadSprite;
         [SerializeField] private Material deadMaterial;
         [SerializeField] private Camera inputCamera;
+        [SerializeField] private Vector2 randomSfxIntervalSeconds = new(4.5f, 11f);
+        [Range(0f, 1f)]
+        [SerializeField] private float randomSfxChance = 0.6f;
 
         private Vector3 _roamCenter;
         private MoveState _state;
@@ -39,6 +43,7 @@ namespace SeekerDungeon.Dungeon
         private float _moveSpeed;
         private Vector3 _moveTarget;
         private bool _isDead;
+        private float _nextRandomSfxAt;
         private Collider2D _clickCollider;
         public event System.Action<RatWander2D, Vector3> Killed;
 
@@ -68,6 +73,7 @@ namespace SeekerDungeon.Dungeon
         private void OnEnable()
         {
             _roamCenter = transform.position;
+            ScheduleNextRandomSfx();
             EnterPause();
         }
 
@@ -88,6 +94,7 @@ namespace SeekerDungeon.Dungeon
                 return;
             }
 
+            TickRandomRatSfx();
             TryHandleTapOrClick();
 
             _stateTimer -= Time.deltaTime;
@@ -153,6 +160,28 @@ namespace SeekerDungeon.Dungeon
             {
                 Killed?.Invoke(this, transform.position);
             }
+        }
+
+        private void TickRandomRatSfx()
+        {
+            if (Time.unscaledTime < _nextRandomSfxAt)
+            {
+                return;
+            }
+
+            if (UnityEngine.Random.value <= randomSfxChance)
+            {
+                GameAudioManager.Instance?.PlayWorld(WorldSfxId.RatOneShot, transform.position);
+            }
+
+            ScheduleNextRandomSfx();
+        }
+
+        private void ScheduleNextRandomSfx()
+        {
+            var min = Mathf.Max(0.2f, Mathf.Min(randomSfxIntervalSeconds.x, randomSfxIntervalSeconds.y));
+            var max = Mathf.Max(min, Mathf.Max(randomSfxIntervalSeconds.x, randomSfxIntervalSeconds.y));
+            _nextRandomSfxAt = Time.unscaledTime + UnityEngine.Random.Range(min, max);
         }
 
         private void TryHandleTapOrClick()

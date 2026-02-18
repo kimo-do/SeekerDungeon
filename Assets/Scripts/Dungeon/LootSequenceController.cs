@@ -1,6 +1,7 @@
 using System;
 using Cysharp.Threading.Tasks;
 using DG.Tweening;
+using SeekerDungeon.Audio;
 using SeekerDungeon.Solana;
 using TMPro;
 using UnityEngine;
@@ -118,6 +119,9 @@ namespace SeekerDungeon.Dungeon
         {
             var ct = this.GetCancellationTokenOnDestroy();
             var entry = itemRegistry != null ? itemRegistry.Get(item.ItemId) : null;
+            GameAudioManager.Instance?.PlayLootRevealByRarity(
+                entry?.rarity ?? ItemRarity.Common,
+                chestWorldPos);
 
             // -- Spawn item sprite --
             var spawnPos = chestWorldPos + Vector3.up * 0.5f;

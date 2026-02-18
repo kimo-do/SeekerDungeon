@@ -326,6 +326,8 @@ namespace SeekerDungeon.Dungeon
                 _playerController.ApplySkin(occupant.SkinId);
                 _playerController.SetDisplayName(occupant.DisplayName);
                 _playerController.SetDisplayNameVisible(true);
+                _playerController.SetMiningAnimationState(occupant.Activity == OccupantActivity.DoorJob);
+                _playerController.SetBossJobAnimationState(occupant.Activity == OccupantActivity.BossFight);
                 if (ItemRegistry.IsWearable(occupant.EquippedItemId))
                 {
                     _playerController.ShowWieldedItem(occupant.EquippedItemId);

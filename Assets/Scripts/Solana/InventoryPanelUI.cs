@@ -1,4 +1,5 @@
 using Chaindepth.Accounts;
+using SeekerDungeon.Audio;
 using SeekerDungeon.Dungeon;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -97,7 +98,7 @@ namespace SeekerDungeon.Solana
 
             if (_closeButton != null)
             {
-                _closeButton.clicked += Hide;
+                _closeButton.clicked += HandleCloseClicked;
             }
 
             // Click overlay backdrop to close
@@ -127,7 +128,7 @@ namespace SeekerDungeon.Solana
         {
             if (_closeButton != null)
             {
-                _closeButton.clicked -= Hide;
+                _closeButton.clicked -= HandleCloseClicked;
             }
 
             if (_overlay != null)
@@ -182,8 +183,15 @@ namespace SeekerDungeon.Solana
             // Only close if the click was on the backdrop, not on the panel itself
             if (evt.target == _overlay)
             {
+                GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Secondary);
                 Hide();
             }
+        }
+
+        private void HandleCloseClicked()
+        {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Secondary);
+            Hide();
         }
 
         private void OnInventoryUpdated(InventoryAccount inventory)
@@ -249,7 +257,11 @@ namespace SeekerDungeon.Solana
             var slot = new VisualElement();
             slot.AddToClassList("inventory-panel-slot");
             var slotIndex = index;
-            slot.RegisterCallback<ClickEvent>(_ => SelectIndex(slotIndex));
+            slot.RegisterCallback<ClickEvent>(_ =>
+            {
+                GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Nav);
+                SelectIndex(slotIndex);
+            });
 
             var glow = new VisualElement();
             glow.AddToClassList("inventory-panel-slot-glow");

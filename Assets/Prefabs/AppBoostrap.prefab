@@ -138,6 +138,8 @@ GameObject:
   - component: {fileID: 3493712294466225802}
   - component: {fileID: 3095660089801292672}
   - component: {fileID: 7790732936833290763}
+  - component: {fileID: 7139047202447593374}
+  - component: {fileID: 6032707988642726217}
   m_Layer: 0
   m_Name: AppBoostrap
   m_TagString: Untagged
@@ -175,7 +177,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Solana.LGWalletSessionManager
   rpcUrl: https://api.devnet.solana.com
-  fallbackRpcUrl: https://api.devnet.solana.com
+  fallbackRpcUrl: https://rpc.magicblock.app/devnet/
   commitment: 1
   connectOnStart: 1
   allowAutoConnectOnDeviceBuilds: 0
@@ -191,14 +193,11 @@ MonoBehaviour:
   requestAirdropIfLowSolInEditor: 1
   editorLowSolThreshold: 0.2
   editorAirdropLamports: 1000000000
+  simulateMobileFlowInEditor: 0
   autoBeginSessionAfterConnect: 0
   sessionDurationMinutes: 60
   defaultSessionMaxTokenSpend: 200000000
-  autoFundSessionSigner: 1
-  bundleSessionTopUpWithBeginSession: 0
   allowWalletAdapterSessionOnAndroid: 1
-  sessionSignerMinLamports: 5000000
-  sessionSignerTopUpLamports: 10000000
   defaultAllowlistMask: 8159
   logDebugMessages: 1
   stopRpcFallbackAfterWalletAdapterFailure: 1
@@ -216,4 +215,32 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Solana.LGManager
   logDebugMessages: 1
   rpcUrl: https://api.devnet.solana.com
-  fallbackRpcUrl: https://api.devnet.solana.com
+  fallbackRpcUrl: https://rpc.magicblock.app/devnet/
+  enableStreamingRpc: 0
+--- !u!114 &7139047202447593374
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7741793193702230010}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6bef446440c08ba40997d46b19fcced8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Solana.PersistentGameObject
+  enforceSingleInstanceByName: 1
+--- !u!114 &6032707988642726217
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7741793193702230010}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2f6f40e4f2f8437bb6e78b262c6fc841, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Audio.GameAudioManager
+  audioCatalog: {fileID: 11400000, guid: 2b00c745a5270d647b4779fbb45ee9ca, type: 2}
+  logDebugMessages: 0

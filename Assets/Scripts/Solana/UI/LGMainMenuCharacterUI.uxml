@@ -19,6 +19,7 @@
                 <ui:VisualElement name="wallet-session-icon-active" class="wallet-session-gem wallet-session-gem-active session-status-gem" style="display: none;"/>
                 <ui:Label name="wallet-session-action-label" text="Session Inactive" class="session-status-label"/>
             </ui:Button>
+            <ui:Button name="btn-audio-toggle" text="" class="audio-toggle-button"/>
             <ui:VisualElement name="tx-indicator" class="tx-indicator" style="display: none;">
                 <ui:VisualElement name="tx-indicator-success" class="tx-indicator-success"/>
                 <ui:VisualElement name="tx-indicator-ring" class="tx-indicator-ring"/>
