@@ -19,6 +19,11 @@
                 <ui:VisualElement name="wallet-session-icon-active" class="wallet-session-gem wallet-session-gem-active session-status-gem" style="display: none;"/>
                 <ui:Label name="wallet-session-action-label" text="Session Inactive" class="session-status-label"/>
             </ui:Button>
+            <ui:VisualElement name="tx-indicator" class="tx-indicator" style="display: none;">
+                <ui:VisualElement name="tx-indicator-success" class="tx-indicator-success"/>
+                <ui:VisualElement name="tx-indicator-ring" class="tx-indicator-ring"/>
+                <ui:VisualElement name="tx-indicator-logo" class="tx-indicator-logo"/>
+            </ui:VisualElement>
         </ui:VisualElement>
         <ui:VisualElement name="top-center-layer" class="top-center-layer" style="top: 44%;">
             <ui:VisualElement name="skin-nav-row" class="skin-nav-row">
@@ -27,9 +32,10 @@
                 <ui:Button name="btn-next-skin" text="&gt;" class="skin-nav-button" style="background-image: url(&quot;project://database/Assets/Sprites/selectors.png?fileID=2217153556447756492&amp;guid=f17681645497b7445a814f9e40781059&amp;type=3#selectors_1&quot;); -unity-background-scale-mode: scale-to-fit; background-color: rgba(47, 85, 145, 0); border-top-width: 0; border-right-width: 0; border-bottom-width: 0; border-left-width: 0; color: rgba(244, 248, 255, 0);"/>
             </ui:VisualElement>
         </ui:VisualElement>
-        <ui:Label name="pick-character-title-label" text="PICK YOUR CHARACTER" class="pick-character-title-label" style="-unity-font-definition: url(&quot;project://database/Assets/Samples/Solana%20SDK/1.2.10/Sample%20Wallet/Solana%20Wallet/Textures/Fonts/MouseMemoirs-Regular.ttf?fileID=12800000&amp;guid=892eeaee9ddf4004890484bdd415a52c&amp;type=3#MouseMemoirs-Regular&quot;); font-size: 85px;"/>
+        <ui:Label name="pick-character-title-label" text="PICK YOUR CHARACTER" class="pick-character-title-label" style="-unity-font-definition: url(&quot;project://database/Assets/Samples/Solana%20SDK/1.2.10/Sample%20Wallet/Solana%20Wallet/Textures/Fonts/MouseMemoirs-Regular.ttf?fileID=12800000&amp;guid=892eeaee9ddf4004890484bdd415a52c&amp;type=3#MouseMemoirs-Regular&quot;); font-size: 85px; top: 468px; right: -2px; left: 3px;"/>
         <ui:VisualElement name="bottom-center-layer" class="bottom-center-layer">
             <ui:Label name="menu-status-label" text="Loading..." class="status-label" style="font-size: 35px;"/>
+            <ui:Label name="menu-total-score-label" text="Total Score: 0" class="existing-total-score-label" style="display: none;"/>
             <ui:VisualElement name="create-identity-panel" class="floating-panel identity-panel" style="margin-bottom: 66px;">
                 <ui:TextField name="display-name-input" label="" value="Name" class="name-input" style="font-size: 34px; color: rgb(255, 255, 255); background-image: url(&quot;project://database/Assets/Sprites/inputfield.png?fileID=2800000&amp;guid=b83acef540c7dbe49a2cb7fbbc4de7e7&amp;type=3#inputfield&quot;); -unity-background-image-tint-color: rgb(255, 255, 255); -unity-background-scale-mode: scale-to-fit; height: 85px; width: 561px;"/>
             </ui:VisualElement>
@@ -53,6 +59,14 @@
                 <ui:Label name="session-setup-title" text="SESSION INACTIVE" class="session-setup-title"/>
                 <ui:Label name="session-setup-message" text="Activate your gameplay session to enable smoother actions with fewer wallet prompts." class="session-setup-message"/>
                 <ui:Button name="btn-session-setup-activate" text="Start Session" class="action-button modal-action-button modal-longbtn session-setup-button"/>
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement name="legacy-reset-overlay" class="session-setup-overlay" style="display: none; background-color: rgba(34, 17, 34, 0.83); opacity: 1;">
+            <ui:VisualElement name="legacy-reset-card" class="session-setup-card">
+                <ui:VisualElement name="legacy-reset-gem" class="wallet-session-gem wallet-session-gem-inactive session-setup-gem"/>
+                <ui:Label name="legacy-reset-title" text="ACCOUNT OUTDATED" class="session-setup-title"/>
+                <ui:Label name="legacy-reset-message" text="Your account data is outdated and must be reset." class="session-setup-message"/>
+                <ui:Button name="btn-legacy-reset" text="RESET ACCOUNT" class="action-button modal-action-button modal-longbtn session-setup-button"/>
             </ui:VisualElement>
         </ui:VisualElement>
         <ui:VisualElement name="extraction-summary-overlay" class="extraction-summary-overlay" style="display: none;">

@@ -56,6 +56,10 @@ namespace SeekerDungeon.Solana
         public const byte WALL_LOCKED = 3;
         public const byte WALL_ENTRANCE_STAIRS = 4;
 
+        // Door lock kind constants
+        public const byte LOCK_KIND_NONE = 0;
+        public const byte LOCK_KIND_SKELETON = 1;
+
         // Center state constants
         public const byte CENTER_EMPTY = 0;
         public const byte CENTER_CHEST = 1;
@@ -66,6 +70,7 @@ namespace SeekerDungeon.Solana
         public const ulong SKR_MULTIPLIER = 1_000_000_000;
         public const ulong STAKE_AMOUNT = 10_000_000; // 0.01 SKR
         public const ulong MIN_BOOST_TIP = 1_000_000; // 0.001 SKR
+        public const ushort REQUIRED_PLAYER_ACCOUNT_DATA_VERSION = 1;
 
         private static LGSolanaDeploymentConfig _cachedDeploymentConfig;
         private static bool _deploymentConfigLoadAttempted;
@@ -265,6 +270,44 @@ namespace SeekerDungeon.Solana
                 WALL_LOCKED => "Locked",
                 WALL_ENTRANCE_STAIRS => "EntranceStairs",
                 _ => "Unknown"
+            };
+        }
+
+        /// <summary>
+        /// Resolve required key item for a given lock kind.
+        /// Unknown lock kinds intentionally map to None until Unity adds support.
+        /// </summary>
+        public static ItemId GetRequiredKeyItemForLockKind(byte lockKind)
+        {
+            return lockKind switch
+            {
+                LOCK_KIND_SKELETON => ItemId.SkeletonKey,
+                _ => ItemId.None
+            };
+        }
+
+        /// <summary>
+        /// Human-readable lock/door label for UI/log text.
+        /// </summary>
+        public static string GetLockDisplayName(byte lockKind)
+        {
+            return lockKind switch
+            {
+                LOCK_KIND_SKELETON => "BoneDoor",
+                _ => "LockedDoor"
+            };
+        }
+
+        /// <summary>
+        /// Human-readable item name for user-facing messages.
+        /// </summary>
+        public static string GetItemDisplayName(ItemId itemId)
+        {
+            return itemId switch
+            {
+                ItemId.SkeletonKey => "BoneKey",
+                ItemId.None => "UnknownKey",
+                _ => itemId.ToString()
             };
         }
         

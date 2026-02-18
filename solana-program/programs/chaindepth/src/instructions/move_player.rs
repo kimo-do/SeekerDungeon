@@ -162,6 +162,8 @@ pub fn handler(ctx: Context<MovePlayer>, new_x: i8, new_y: i8) -> Result<()> {
         player_account.current_run_start_slot = clock.slot;
         player_account.runs_extracted = 0;
         player_account.last_extraction_slot = 0;
+        player_account.in_dungeon = false;
+        player_account.data_version = PlayerAccount::CURRENT_DATA_VERSION;
         player_account.season_seed = season_seed;
         player_account.bump = ctx.bumps.player_account;
     }
@@ -262,6 +264,8 @@ pub fn handler(ctx: Context<MovePlayer>, new_x: i8, new_y: i8) -> Result<()> {
     // Update player position
     player_account.current_room_x = new_x;
     player_account.current_room_y = new_y;
+    player_account.in_dungeon = true;
+    player_account.data_version = PlayerAccount::CURRENT_DATA_VERSION;
 
     upsert_presence(
         &mut ctx.accounts.target_presence,
@@ -354,6 +358,8 @@ pub fn init_player_handler(ctx: Context<InitPlayer>) -> Result<()> {
     player_account.current_run_start_slot = clock.slot;
     player_account.runs_extracted = 0;
     player_account.last_extraction_slot = 0;
+    player_account.in_dungeon = false;
+    player_account.data_version = PlayerAccount::CURRENT_DATA_VERSION;
     player_account.season_seed = global.season_seed;
     player_account.bump = ctx.bumps.player_account;
 

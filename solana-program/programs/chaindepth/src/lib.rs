@@ -38,6 +38,11 @@ pub mod chaindepth {
         instructions::reset_player_for_testing::handler(ctx)
     }
 
+    /// Self-service reset for caller's player account (plus optional profile/inventory PDAs).
+    pub fn reset_my_player(ctx: Context<ResetMyPlayer>) -> Result<()> {
+        instructions::reset_my_player::handler(ctx)
+    }
+
     /// Ensure the start room exists for the current season seed.
     pub fn ensure_start_room(ctx: Context<EnsureStartRoom>) -> Result<()> {
         instructions::ensure_start_room::handler(ctx)

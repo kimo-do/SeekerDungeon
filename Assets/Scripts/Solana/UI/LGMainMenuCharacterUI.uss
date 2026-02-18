@@ -260,6 +260,17 @@
     -unity-text-align: middle-center;
 }
 
+.existing-total-score-label {
+    font-size: 22px;
+    color: rgb(255, 231, 154);
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    margin-top: 2px;
+    margin-bottom: 8px;
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(40, 28, 0, 0.9);
+}
+
 .disconnect-button {
     min-width: 100px;
     height: 100px;
@@ -729,6 +740,9 @@
     width: 56px;
     height: 56px;
     margin-right: 14px;
+    -unity-background-scale-mode: scale-to-fit;
+    background-repeat: no-repeat;
+    background-position: center;
 }
 
 .extraction-summary-item-name {
@@ -830,4 +844,55 @@
     align-self: center;
     min-width: 420px;
     margin-top: 8px;
+}
+
+.tx-indicator {
+    position: relative;
+    width: 58px;
+    height: 58px;
+    margin-top: 6px;
+    align-self: flex-end;
+    align-items: center;
+    justify-content: center;
+}
+
+.tx-indicator-logo {
+    width: 28px;
+    height: 28px;
+    background-image: url("project://database/Assets/Sprites/sollogo.png?fileID=-2784171443929851354&guid=17a8656707e3fb6468eab6c20b7be084&type=3#sollogo_0");
+    -unity-background-scale-mode: scale-to-fit;
+}
+
+.tx-indicator-ring {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    border-top-left-radius: 29px;
+    border-top-right-radius: 29px;
+    border-bottom-left-radius: 29px;
+    border-bottom-right-radius: 29px;
+    border-top-width: 4px;
+    border-right-width: 4px;
+    border-bottom-width: 4px;
+    border-left-width: 4px;
+    border-top-color: rgb(120, 255, 188);
+    border-right-color: rgba(120, 255, 188, 0.18);
+    border-bottom-color: rgba(120, 255, 188, 0.18);
+    border-left-color: rgba(120, 255, 188, 0.18);
+}
+
+.tx-indicator-success {
+    position: absolute;
+    left: 1px;
+    right: 1px;
+    top: 1px;
+    bottom: 1px;
+    border-top-left-radius: 28px;
+    border-top-right-radius: 28px;
+    border-bottom-left-radius: 28px;
+    border-bottom-right-radius: 28px;
+    background-color: rgba(122, 255, 164, 0.45);
+    opacity: 0;
 }

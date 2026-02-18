@@ -174,6 +174,7 @@ pub fn handler(ctx: Context<ExitDungeon>) -> Result<()> {
         .ok_or(ChainDepthError::Overflow)?;
     player.last_extraction_slot = now_slot;
     player.current_run_start_slot = now_slot;
+    player.in_dungeon = false;
 
     let room_presence = &mut ctx.accounts.room_presence;
     room_presence.is_current = true;

@@ -1,24 +1,24 @@
-/* ─── Overlay (full screen backdrop) ─── */
-
+/* Overlay */
 .inventory-overlay {
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: rgba(0, 0, 0, 0.6);
+    background-color: rgba(0, 0, 0, 0.7);
     justify-content: center;
     align-items: center;
 }
 
-/* ─── Panel ─── */
-
+/* Main panel */
 .inventory-panel {
-    width: 70%;
-    max-width: 900px;
-    height: 70%;
-    max-height: 1200px;
-    background-color: rgb(22, 24, 32);
+    width: 84%;
+    max-width: 1280px;
+    min-width: 640px;
+    height: 84%;
+    max-height: 1400px;
+    min-height: 520px;
+    background-color: rgb(20, 23, 30);
     border-top-left-radius: 20px;
     border-top-right-radius: 20px;
     border-bottom-left-radius: 20px;
@@ -27,36 +27,35 @@
     border-right-width: 3px;
     border-bottom-width: 3px;
     border-left-width: 3px;
-    border-top-color: rgba(164, 173, 194, 0.8);
-    border-left-color: rgba(150, 158, 182, 0.8);
-    border-right-color: rgba(48, 53, 69, 0.9);
-    border-bottom-color: rgba(40, 46, 62, 0.9);
-    padding: 16px;
+    border-top-color: rgba(165, 176, 200, 0.9);
+    border-left-color: rgba(150, 160, 182, 0.85);
+    border-right-color: rgba(49, 54, 70, 0.95);
+    border-bottom-color: rgba(42, 48, 64, 0.95);
+    padding: 20px;
     flex-direction: column;
 }
 
-/* ─── Header ─── */
-
+/* Header */
 .inventory-header {
     flex-direction: row;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 12px;
-    padding-bottom: 10px;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
     border-bottom-width: 2px;
-    border-bottom-color: rgba(100, 110, 130, 0.4);
+    border-bottom-color: rgba(105, 115, 136, 0.45);
 }
 
 .inventory-title {
-    font-size: 38px;
+    font-size: 44px;
     -unity-font-style: bold;
     color: rgb(243, 248, 255);
 }
 
 .inventory-close-button {
-    width: 60px;
-    height: 60px;
-    font-size: 28px;
+    width: 68px;
+    height: 68px;
+    font-size: 30px;
     -unity-font-style: bold;
     -unity-font: url("project://database/Assets/OpenSans-Bold.ttf?fileID=12800000&guid=540b7a85944effe4fb9eb3de0c29d37a&type=3#OpenSans-Bold");
     -unity-font-definition: none;
@@ -81,29 +80,48 @@
     margin-bottom: -3px;
 }
 
-/* ─── Scroll area ─── */
-
-.inventory-scroll {
-    flex-grow: 1;
-}
-
-/* ─── Grid ─── */
-
-.inventory-grid {
+/* Selected item panel */
+.inventory-selected-panel {
+    position: relative;
     flex-direction: row;
-    flex-wrap: wrap;
-    justify-content: flex-start;
-    align-items: flex-start;
-    padding: 6px;
+    align-items: center;
+    height: 220px;
+    min-height: 220px;
+    max-height: 220px;
+    flex-shrink: 0;
+    margin-bottom: 18px;
+    padding: 18px;
+    background-color: rgba(34, 38, 50, 0.9);
+    border-top-left-radius: 14px;
+    border-top-right-radius: 14px;
+    border-bottom-left-radius: 14px;
+    border-bottom-right-radius: 14px;
+    border-top-width: 2px;
+    border-right-width: 2px;
+    border-bottom-width: 2px;
+    border-left-width: 2px;
+    border-top-color: rgba(119, 132, 157, 0.7);
+    border-left-color: rgba(110, 122, 148, 0.68);
+    border-right-color: rgba(55, 60, 77, 0.9);
+    border-bottom-color: rgba(48, 54, 71, 0.9);
 }
 
-/* ─── Slot ─── */
+.inventory-selected-panel-glow {
+    position: absolute;
+    left: -22px;
+    right: -22px;
+    top: -18px;
+    bottom: -18px;
+    opacity: 0.64;
+    -unity-background-scale-mode: scale-to-fit;
+    pointer-events: none;
+}
 
-.inventory-panel-slot {
-    width: 168px;
-    height: 176px;
-    margin: 6px;
-    background-color: rgba(30, 30, 40, 0.85);
+.inventory-selected-icon {
+    width: 152px;
+    height: 152px;
+    margin-right: 22px;
+    background-color: rgba(19, 22, 30, 0.95);
     border-top-left-radius: 12px;
     border-top-right-radius: 12px;
     border-bottom-left-radius: 12px;
@@ -112,56 +130,143 @@
     border-right-width: 2px;
     border-bottom-width: 2px;
     border-left-width: 2px;
-    border-color: rgba(100, 110, 130, 0.5);
-    flex-direction: column;
-    justify-content: flex-start;
-    align-items: center;
-    padding-top: 8px;
-    padding-right: 8px;
-    padding-bottom: 8px;
-    padding-left: 8px;
-}
-
-.inventory-panel-slot-icon {
-    width: 72px;
-    height: 72px;
-    margin-bottom: 6px;
+    border-color: rgba(118, 128, 148, 0.62);
     -unity-background-scale-mode: scale-to-fit;
     background-position: center;
     background-repeat: no-repeat;
 }
 
-.inventory-panel-slot-name {
-    width: 100%;
-    max-height: 48px;
+.inventory-selected-info {
+    flex-direction: column;
+    flex-grow: 1;
+    justify-content: center;
+}
+
+.inventory-selected-name {
+    font-size: 42px;
+    -unity-font-style: bold;
+    color: rgb(242, 247, 255);
+    margin-bottom: 8px;
+}
+
+.inventory-selected-meta {
+    font-size: 24px;
+    color: rgb(173, 198, 230);
+    margin-bottom: 10px;
+}
+
+.inventory-selected-amount {
+    font-size: 30px;
+    -unity-font-style: bold;
+    color: rgb(237, 243, 255);
+    margin-bottom: 8px;
+}
+
+.inventory-selected-durability {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    padding-top: 3px;
+    padding-right: 10px;
+    padding-bottom: 3px;
+    padding-left: 10px;
+    font-size: 22px;
+    -unity-font-style: bold;
+    color: rgb(179, 238, 179);
+    background-color: rgba(11, 20, 14, 0.85);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-color: rgba(123, 192, 123, 0.65);
+}
+
+/* Scroll area + icon grid */
+.inventory-scroll {
+    flex-grow: 1;
+}
+
+.inventory-grid {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    align-items: flex-start;
+    padding: 8px;
+}
+
+.inventory-panel-slot {
+    position: relative;
+    width: 112px;
+    height: 112px;
+    margin: 8px;
+    background-color: rgba(27, 31, 41, 0.94);
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
+    border-top-width: 2px;
+    border-right-width: 2px;
+    border-bottom-width: 2px;
+    border-left-width: 2px;
+    border-color: rgba(96, 108, 129, 0.62);
+    justify-content: center;
+    align-items: center;
+}
+
+.inventory-panel-slot-glow {
+    position: absolute;
+    left: -10px;
+    right: -10px;
+    top: -10px;
+    bottom: -10px;
+    opacity: 0.6;
+    -unity-background-scale-mode: scale-to-fit;
+    pointer-events: none;
+}
+
+.inventory-panel-slot-selected {
+    background-color: rgba(45, 63, 88, 0.95);
+    border-top-color: rgba(167, 198, 246, 0.95);
+    border-left-color: rgba(150, 180, 234, 0.9);
+    border-right-color: rgba(73, 90, 126, 0.96);
+    border-bottom-color: rgba(70, 86, 121, 0.96);
+}
+
+.inventory-panel-slot-icon {
+    width: 78px;
+    height: 78px;
+    -unity-background-scale-mode: scale-to-fit;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.inventory-panel-slot-count {
+    position: absolute;
+    right: 6px;
+    bottom: 4px;
+    padding-top: 1px;
+    padding-right: 6px;
+    padding-bottom: 1px;
+    padding-left: 6px;
     font-size: 20px;
     -unity-font-style: bold;
-    color: rgb(220, 230, 245);
-    -unity-text-align: upper-center;
-    white-space: normal;
-    overflow: hidden;
-    margin-bottom: 4px;
+    color: rgb(238, 244, 255);
+    background-color: rgba(16, 20, 29, 0.92);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
 }
 
-.inventory-panel-slot-amount {
-    width: 100%;
-    font-size: 18px;
-    color: rgb(180, 190, 210);
-    -unity-text-align: middle-center;
-}
-
-.inventory-panel-slot-durability {
-    width: 100%;
-    font-size: 16px;
-    color: rgb(140, 200, 140);
-    -unity-text-align: middle-center;
-}
-
-/* ─── Empty state ─── */
-
+/* Empty state */
 .inventory-empty-label {
-    font-size: 28px;
-    color: rgb(140, 150, 170);
+    width: 100%;
+    font-size: 30px;
+    color: rgb(147, 158, 178);
     -unity-text-align: middle-center;
-    margin-top: 60px;
+    margin-top: 70px;
 }

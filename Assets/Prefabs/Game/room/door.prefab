@@ -360,6 +360,7 @@ GameObject:
   - component: {fileID: 6676928685385102446}
   - component: {fileID: 8198310348737614339}
   - component: {fileID: 5470789097208853861}
+  - component: {fileID: 1843868035634669800}
   m_Layer: 6
   m_Name: Stairs
   m_TagString: Untagged
@@ -496,6 +497,20 @@ PolygonCollider2D:
       - {x: 0.2204906, y: 0.27133095}
       - {x: 0.02414034, y: 0.27433473}
   m_UseDelaunayMesh: 1
+--- !u!114 &1843868035634669800
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5316884584385044680}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 482c7600b08aa5244be5eb0d388edea3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Dungeon.VisualInteractable
+  minFade: 0
+  interactable: 0
 --- !u!1 &5667746776477286885
 GameObject:
   m_ObjectHideFlags: 0

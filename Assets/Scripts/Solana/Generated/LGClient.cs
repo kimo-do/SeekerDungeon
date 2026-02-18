@@ -265,6 +265,10 @@ namespace Chaindepth
 
             public ulong LastExtractionSlot { get; set; }
 
+            public bool InDungeon { get; set; }
+
+            public ushort DataVersion { get; set; }
+
             public ulong SeasonSeed { get; set; }
 
             public byte Bump { get; set; }
@@ -309,6 +313,10 @@ namespace Chaindepth
                 offset += 8;
                 result.LastExtractionSlot = _data.GetU64(offset);
                 offset += 8;
+                result.InDungeon = _data.GetBool(offset);
+                offset += 1;
+                result.DataVersion = _data.GetU16(offset);
+                offset += 2;
                 result.SeasonSeed = _data.GetU64(offset);
                 offset += 8;
                 result.Bump = _data.GetU8(offset);
@@ -1500,6 +1508,15 @@ namespace Chaindepth
             public PublicKey SessionAuthority { get; set; }
         }
 
+        public class ResetMyPlayerAccounts
+        {
+            public PublicKey Authority { get; set; }
+
+            public PublicKey PlayerAccount { get; set; }
+
+            public PublicKey SystemProgram { get; set; } = new PublicKey("11111111111111111111111111111111");
+        }
+
         public class ResetPlayerForTestingAccounts
         {
             public PublicKey Authority { get; set; }
@@ -1913,6 +1930,20 @@ namespace Chaindepth
                 offset += 2;
                 _data.WriteU32(amount, offset);
                 offset += 4;
+                byte[] resultData = new byte[offset];
+                Array.Copy(_data, resultData, offset);
+                return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
+            }
+
+            public static Solana.Unity.Rpc.Models.TransactionInstruction ResetMyPlayer(ResetMyPlayerAccounts accounts, PublicKey programId = null)
+            {
+                programId ??= new(ID);
+                List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
+                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Authority, true), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.PlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
+                byte[] _data = new byte[1200];
+                int offset = 0;
+                _data.WriteU64(9865713732384978146UL, offset);
+                offset += 8;
                 byte[] resultData = new byte[offset];
                 Array.Copy(_data, resultData, offset);
                 return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};

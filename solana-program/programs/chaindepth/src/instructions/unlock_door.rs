@@ -4,9 +4,9 @@ use crate::errors::ChainDepthError;
 use crate::events::DoorUnlocked;
 use crate::instructions::session_auth::authorize_player_action;
 use crate::state::{
-    calculate_depth, enforce_special_room_topology, initialize_discovered_room, item_ids,
-    session_instruction_bits, GlobalAccount, InventoryAccount, PlayerAccount, RoomAccount,
-    SessionAuthority, LOCK_KIND_NONE, LOCK_KIND_SKELETON, WALL_LOCKED, WALL_OPEN,
+    calculate_depth, enforce_special_room_topology, initialize_discovered_room, is_bone_room,
+    item_ids, session_instruction_bits, GlobalAccount, InventoryAccount, PlayerAccount,
+    RoomAccount, SessionAuthority, LOCK_KIND_NONE, LOCK_KIND_SKELETON, WALL_LOCKED, WALL_OPEN,
 };
 
 #[derive(Accounts)]
@@ -131,11 +131,19 @@ pub fn handler(ctx: Context<UnlockDoor>, direction: u8) -> Result<()> {
         );
     }
 
-    adjacent_room.walls[opposite_direction as usize] = WALL_OPEN;
-    adjacent_room.door_lock_kinds[opposite_direction as usize] = LOCK_KIND_NONE;
+    let adjacent_depth = calculate_depth(adjacent_room.x, adjacent_room.y);
+    if !is_bone_room(
+        ctx.accounts.global.season_seed,
+        adjacent_room.x,
+        adjacent_room.y,
+        adjacent_depth,
+    ) {
+        adjacent_room.walls[opposite_direction as usize] = WALL_OPEN;
+        adjacent_room.door_lock_kinds[opposite_direction as usize] = LOCK_KIND_NONE;
+    }
     enforce_special_room_topology(adjacent_room);
 
-    let new_depth = calculate_depth(adjacent_room.x, adjacent_room.y);
+    let new_depth = adjacent_depth;
     if new_depth > ctx.accounts.global.depth {
         ctx.accounts.global.depth = new_depth;
     }

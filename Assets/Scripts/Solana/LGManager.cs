@@ -479,7 +479,29 @@ namespace SeekerDungeon.Solana
                     return null;
                 }
 
-                var result = await _client.GetPlayerAccountAsync(playerPda.Key, Commitment.Confirmed);
+                global::Solana.Unity.Programs.Models.AccountResultWrapper<PlayerAccount> result;
+                try
+                {
+                    result = await _client.GetPlayerAccountAsync(playerPda.Key, Commitment.Confirmed);
+                }
+                catch (ArgumentOutOfRangeException decodeError)
+                {
+                    // Legacy or mismatched account layouts can throw offset range errors in generated deserializers.
+                    // Treat as unreadable player state instead of surfacing a fatal UI error.
+                    Log(
+                        $"Player account decode skipped due to incompatible layout: {decodeError.Message}");
+                    CurrentPlayerState = null;
+                    OnPlayerStateUpdated?.Invoke(null);
+                    return null;
+                }
+                catch (ArgumentException decodeError) when (string.Equals(decodeError.ParamName, "offset", StringComparison.Ordinal))
+                {
+                    Log(
+                        $"Player account decode skipped due to incompatible layout: {decodeError.Message}");
+                    CurrentPlayerState = null;
+                    OnPlayerStateUpdated?.Invoke(null);
+                    return null;
+                }
                 
                 if (!result.WasSuccessful || result.ParsedResult == null)
                 {
@@ -941,11 +963,15 @@ namespace SeekerDungeon.Solana
                 }
                 else if (wallState == LGConfig.WALL_LOCKED)
                 {
-                    Log($"Door {LGConfig.GetDirectionName(direction)} is locked. Attempting unlock.");
+                    var lockDisplayName = GetLockDisplayNameForDoor(direction);
+                    await FetchInventory();
+                    LogInventoryDebugForDoorUnlock(direction);
+                    Log($"Door {LGConfig.GetDirectionName(direction)} is {lockDisplayName}. Attempting unlock.");
                     var unlockResult = await UnlockDoor(direction);
-                    if (!unlockResult.Success && IsMissingRequiredKeyError())
+                    if (!unlockResult.Success && (IsMissingRequiredKeyError() || IsInsufficientItemAmountError()))
                     {
-                        return TxResult.Fail("Missing required key: SkeletonKey");
+                        var requiredKeyName = GetRequiredKeyDisplayNameForDoor(direction);
+                        return TxResult.Fail($"Missing required key: {requiredKeyName} (for {lockDisplayName})");
                     }
                     if (unlockResult.Success)
                     {
@@ -1481,6 +1507,66 @@ namespace SeekerDungeon.Solana
         }
 
         /// <summary>
+        /// Self-service reset for the connected player's account data.
+        /// Closes player account and, when present, also profile/inventory PDAs.
+        /// </summary>
+        public async UniTask<TxResult> ResetMyPlayerData()
+        {
+            if (Web3.Wallet?.Account == null)
+            {
+                LogError("Wallet not connected");
+                return TxResult.Fail("Wallet not connected");
+            }
+
+            try
+            {
+                var authority = Web3.Wallet.Account.PublicKey;
+                var playerPda = DerivePlayerPda(authority);
+                var profilePda = DeriveProfilePda(authority);
+                var inventoryPda = DeriveInventoryPda(authority);
+
+                if (!await AccountHasData(playerPda))
+                {
+                    return TxResult.Fail("No player account to reset");
+                }
+
+                var instruction = ChaindepthProgram.ResetMyPlayer(
+                    new ResetMyPlayerAccounts
+                    {
+                        Authority = authority,
+                        PlayerAccount = playerPda,
+                        SystemProgram = SystemProgram.ProgramIdKey
+                    },
+                    _programId
+                );
+
+                if (await AccountHasData(profilePda))
+                {
+                    instruction.Keys.Add(AccountMeta.Writable(profilePda, false));
+                }
+
+                if (await AccountHasData(inventoryPda))
+                {
+                    instruction.Keys.Add(AccountMeta.Writable(inventoryPda, false));
+                }
+
+                var signature = await SendTransaction(instruction);
+                if (string.IsNullOrWhiteSpace(signature))
+                {
+                    return TxResult.Fail("Reset player transaction failed");
+                }
+
+                await RefreshAllState();
+                return TxResult.Ok(signature);
+            }
+            catch (Exception exception)
+            {
+                LogError($"ResetMyPlayerData failed: {exception.Message}");
+                return TxResult.Fail(exception.Message);
+            }
+        }
+
+        /// <summary>
         /// Move player to new coordinates
         /// </summary>
         public async UniTask<TxResult> MovePlayer(int newX, int newY)
@@ -1598,6 +1684,7 @@ namespace SeekerDungeon.Solana
                 var playerBefore = await FetchPlayerState();
                 var totalScoreBefore = playerBefore?.TotalScore ?? CurrentPlayerState?.TotalScore ?? 0UL;
                 var inventoryBefore = CloneInventorySnapshot(await FetchInventory());
+                Log($"ExitDungeon pre-extract scored inventory: {BuildScoredLootDebugSummary(inventoryBefore)}");
 
                 var result = await ExecuteGameplayActionAsync(
                     "ExitDungeon",
@@ -1679,8 +1766,9 @@ namespace SeekerDungeon.Solana
 
                 if (result.Success)
                 {
-                    await FetchPlayerState();
-                    await FetchInventory();
+                    await EnsureExtractionStateSettledForSummary(inventoryBefore, totalScoreBefore);
+                    Log($"ExitDungeon post-extract scored inventory: {BuildScoredLootDebugSummary(CurrentInventoryState)}");
+                    Log($"ExitDungeon scored delta: {BuildScoredExtractionDeltaDebugSummary(inventoryBefore, CurrentInventoryState)}");
                     var walletKey = Web3.Wallet?.Account?.PublicKey?.Key;
                     DungeonRunResumeStore.ClearRun(walletKey);
                     var extractionSummary = BuildExtractionSummary(
@@ -2984,6 +3072,8 @@ namespace SeekerDungeon.Solana
                 return null;
             }
 
+            var txHandle = LGTransactionActivity.Begin();
+            var isSuccess = false;
             try
             {
                 var useWalletAdapter = ShouldUseWalletAdapterSigning(feePayer, signers);
@@ -2998,6 +3088,7 @@ namespace SeekerDungeon.Solana
                     {
                         _lastProgramErrorCode = null;
                         OnTransactionSent?.Invoke(walletSignedSignature);
+                        isSuccess = true;
                         return walletSignedSignature;
                     }
                 }
@@ -3045,6 +3136,7 @@ namespace SeekerDungeon.Solana
                             _lastProgramErrorCode = null;
                             Log($"Transaction sent ({rpcLabel}): {result.Result}");
                             OnTransactionSent?.Invoke(result.Result);
+                            isSuccess = true;
                             return result.Result;
                         }
 
@@ -3078,6 +3170,7 @@ namespace SeekerDungeon.Solana
                                 _lastProgramErrorCode = null;
                                 Log($"Transaction sent via raw HTTP ({rpcLabel}): {rawProbe.Signature}");
                                 OnTransactionSent?.Invoke(rawProbe.Signature);
+                                isSuccess = true;
                                 return rawProbe.Signature;
                             }
                         }
@@ -3105,6 +3198,10 @@ namespace SeekerDungeon.Solana
             {
                 LogError($"Transaction exception: {ex.Message}");
                 return null;
+            }
+            finally
+            {
+                txHandle.Complete(isSuccess);
             }
         }
 
@@ -3328,6 +3425,51 @@ namespace SeekerDungeon.Solana
             }
         }
 
+        private async UniTask EnsureExtractionStateSettledForSummary(
+            InventoryAccount inventoryBefore,
+            ulong totalScoreBefore)
+        {
+            const int maxAttempts = 20;
+            const int delayMs = 250;
+
+            var hadScoredLootBefore = BuildAmountByItemId(inventoryBefore)
+                .Any(entry => ExtractionScoreTable.IsScoredLoot(entry.Key) && entry.Value > 0);
+
+            for (var attempt = 0; attempt < maxAttempts; attempt += 1)
+            {
+                await FetchPlayerState();
+                await FetchInventory();
+
+                var summaryCandidate = BuildExtractionSummary(
+                    inventoryBefore,
+                    CurrentInventoryState,
+                    totalScoreBefore,
+                    CurrentPlayerState?.TotalScore ?? totalScoreBefore);
+
+                var scoreAdvanced = (CurrentPlayerState?.TotalScore ?? totalScoreBefore) > totalScoreBefore;
+                var hasRunScore = summaryCandidate.RunScore > 0;
+                var hasExtractedItems = summaryCandidate.Items.Count > 0;
+
+                // If we had scored loot before extraction, wait until inventory diff catches up
+                // so the summary can show concrete extracted items in UI.
+                if (hadScoredLootBefore)
+                {
+                    if (hasExtractedItems || (hasRunScore && attempt >= 4))
+                    {
+                        return;
+                    }
+                }
+                else if (scoreAdvanced || hasRunScore || hasExtractedItems)
+                {
+                    return;
+                }
+
+                await UniTask.Delay(delayMs);
+            }
+
+            Log("ExitDungeon summary settle timed out; proceeding with latest fetched state.");
+        }
+
         private static DungeonExtractionSummary BuildExtractionSummary(
             InventoryAccount inventoryBefore,
             InventoryAccount inventoryAfter,
@@ -3416,6 +3558,69 @@ namespace SeekerDungeon.Solana
             }
 
             return amounts;
+        }
+
+        private static string BuildScoredLootDebugSummary(InventoryAccount inventory)
+        {
+            var amounts = BuildAmountByItemId(inventory);
+            var entries = new List<string>();
+
+            foreach (var pair in amounts)
+            {
+                if (!ExtractionScoreTable.IsScoredLoot(pair.Key))
+                {
+                    continue;
+                }
+
+                var score = ExtractionScoreTable.ScoreValueForItem(pair.Key);
+                entries.Add($"{pair.Key}:{LGDomainMapper.ToItemId(pair.Key)} x{pair.Value} s{score}");
+            }
+
+            if (entries.Count == 0)
+            {
+                return "none";
+            }
+
+            entries.Sort(StringComparer.Ordinal);
+            return string.Join(", ", entries);
+        }
+
+        private static string BuildScoredExtractionDeltaDebugSummary(
+            InventoryAccount inventoryBefore,
+            InventoryAccount inventoryAfter)
+        {
+            var before = BuildAmountByItemId(inventoryBefore);
+            var after = BuildAmountByItemId(inventoryAfter);
+            var deltas = new List<string>();
+
+            foreach (var pair in before)
+            {
+                if (!ExtractionScoreTable.IsScoredLoot(pair.Key))
+                {
+                    continue;
+                }
+
+                after.TryGetValue(pair.Key, out var afterAmount);
+                if (pair.Value <= afterAmount)
+                {
+                    continue;
+                }
+
+                var extractedAmount = pair.Value - afterAmount;
+                var unitScore = ExtractionScoreTable.ScoreValueForItem(pair.Key);
+                var stackScore = unitScore * extractedAmount;
+                deltas.Add(
+                    $"{pair.Key}:{LGDomainMapper.ToItemId(pair.Key)} -{extractedAmount} " +
+                    $"({pair.Value}->{afterAmount}, stack={stackScore})");
+            }
+
+            if (deltas.Count == 0)
+            {
+                return "none";
+            }
+
+            deltas.Sort(StringComparer.Ordinal);
+            return string.Join("; ", deltas);
         }
 
         private struct RawHttpProbeResult
@@ -3585,6 +3790,113 @@ namespace SeekerDungeon.Solana
         {
             return _lastProgramErrorCode.HasValue &&
                    _lastProgramErrorCode.Value == (uint)Chaindepth.Errors.ChaindepthErrorKind.MissingRequiredKey;
+        }
+
+        private bool IsInsufficientItemAmountError()
+        {
+            return _lastProgramErrorCode.HasValue &&
+                   _lastProgramErrorCode.Value == (uint)Chaindepth.Errors.ChaindepthErrorKind.InsufficientItemAmount;
+        }
+
+        private string GetRequiredKeyDisplayNameForDoor(byte direction)
+        {
+            if (CurrentRoomState?.DoorLockKinds == null ||
+                direction >= CurrentRoomState.DoorLockKinds.Length)
+            {
+                return LGConfig.GetItemDisplayName(ItemId.SkeletonKey);
+            }
+
+            var lockKind = CurrentRoomState.DoorLockKinds[direction];
+            var requiredItem = LGConfig.GetRequiredKeyItemForLockKind(lockKind);
+            return LGConfig.GetItemDisplayName(requiredItem);
+        }
+
+        private string GetLockDisplayNameForDoor(byte direction)
+        {
+            if (CurrentRoomState?.DoorLockKinds == null ||
+                direction >= CurrentRoomState.DoorLockKinds.Length)
+            {
+                return LGConfig.GetLockDisplayName(LGConfig.LOCK_KIND_SKELETON);
+            }
+
+            var lockKind = CurrentRoomState.DoorLockKinds[direction];
+            return LGConfig.GetLockDisplayName(lockKind);
+        }
+
+        private void LogInventoryDebugForDoorUnlock(byte direction)
+        {
+            var requiredKeyName = GetRequiredKeyDisplayNameForDoor(direction);
+            var requiredKeyItemId = GetRequiredKeyItemIdForDoor(direction);
+            var requiredKeyCount = GetInventoryItemTotalAmount(requiredKeyItemId);
+            var inventorySummary = BuildInventorySummaryForDebug();
+
+            Log(
+                $"UnlockDoor inventory debug: requiredKeyId={(ushort)requiredKeyItemId} " +
+                $"requiredKeyName={requiredKeyName} requiredKeyCount={requiredKeyCount} " +
+                $"items=[{inventorySummary}]");
+        }
+
+        private ItemId GetRequiredKeyItemIdForDoor(byte direction)
+        {
+            if (CurrentRoomState?.DoorLockKinds == null ||
+                direction >= CurrentRoomState.DoorLockKinds.Length)
+            {
+                return ItemId.SkeletonKey;
+            }
+
+            var lockKind = CurrentRoomState.DoorLockKinds[direction];
+            return LGConfig.GetRequiredKeyItemForLockKind(lockKind);
+        }
+
+        private uint GetInventoryItemTotalAmount(ItemId itemId)
+        {
+            if (CurrentInventoryState?.Items == null || itemId == ItemId.None)
+            {
+                return 0;
+            }
+
+            uint total = 0;
+            for (var index = 0; index < CurrentInventoryState.Items.Length; index += 1)
+            {
+                var item = CurrentInventoryState.Items[index];
+                if (item == null || item.ItemId != (ushort)itemId)
+                {
+                    continue;
+                }
+
+                total += item.Amount;
+            }
+
+            return total;
+        }
+
+        private string BuildInventorySummaryForDebug()
+        {
+            if (CurrentInventoryState?.Items == null || CurrentInventoryState.Items.Length == 0)
+            {
+                return "<empty>";
+            }
+
+            var entries = new List<string>();
+            for (var index = 0; index < CurrentInventoryState.Items.Length; index += 1)
+            {
+                var item = CurrentInventoryState.Items[index];
+                if (item == null || item.Amount == 0)
+                {
+                    continue;
+                }
+
+                var itemId = (ItemId)item.ItemId;
+                var displayName = LGConfig.GetItemDisplayName(itemId);
+                entries.Add($"{item.ItemId}:{displayName} x{item.Amount} d{item.Durability}");
+            }
+
+            if (entries.Count == 0)
+            {
+                return "<empty>";
+            }
+
+            return string.Join(", ", entries);
         }
 
         /// <summary>

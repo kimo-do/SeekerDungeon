@@ -29,6 +29,10 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private bool autoTickBossFight = true;
         [SerializeField] private float bossTickIntervalSeconds = 2.2f;
         [SerializeField] private float bossTickRetryCooldownSeconds = 1.2f;
+        [SerializeField] private float bossTickRateLimitBaseCooldownSeconds = 3f;
+        [SerializeField] private float bossTickRateLimitMaxCooldownSeconds = 18f;
+        [SerializeField] private int bossPropagationMaxAttempts = 4;
+        [SerializeField] private int bossPropagationDelayMs = 220;
 
         [SerializeField] private float completeJobFailCooldownSeconds = 30f;
         [SerializeField] private int maxCompleteJobRetries = 3;
@@ -47,6 +51,7 @@ namespace SeekerDungeon.Dungeon
         private float _nextBossTickAt;
         private float _nextBossFighterCheckAt;
         private bool _cachedIsLocalBossFighter;
+        private int _bossTickRateLimitFailureCount;
 
         private void Awake()
         {
@@ -284,16 +289,46 @@ namespace SeekerDungeon.Dungeon
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+            var hpBeforeTick = room.BossCurrentHp;
             var tickResult = await lgManager.TickBossFight();
             if (!tickResult.Success)
             {
+                if (IsBossAlreadyDefeatedError(tickResult.Error))
+                {
+                    _cachedIsLocalBossFighter = false;
+                    if (dungeonManager != null)
+                    {
+                        dungeonManager.ClearOptimisticBossFight();
+                        await dungeonManager.RefreshCurrentRoomSnapshotAsync();
+                    }
+
+                    return Mathf.Max(minRecheckSeconds, 0.25f);
+                }
+
+                if (IsRpcRateLimitError(tickResult.Error))
+                {
+                    _bossTickRateLimitFailureCount = Mathf.Clamp(_bossTickRateLimitFailureCount + 1, 1, 8);
+                    var backoffSeconds = Mathf.Min(
+                        bossTickRateLimitMaxCooldownSeconds,
+                        bossTickRateLimitBaseCooldownSeconds * Mathf.Pow(1.8f, _bossTickRateLimitFailureCount - 1));
+                    var jitter = UnityEngine.Random.Range(0.05f, 0.45f);
+                    _nextBossTickAt = now + backoffSeconds + jitter;
+                    GameplayActionLog.AutoComplete("CenterBoss", "TickBossFight", false, tickResult.Error);
+                    Log(
+                        $"Boss tick rate-limited. failureCount={_bossTickRateLimitFailureCount} " +
+                        $"cooldown={(_nextBossTickAt - now):F2}s");
+                    return Mathf.Max(minRecheckSeconds, _nextBossTickAt - now);
+                }
+
                 _nextBossTickAt = now + Mathf.Max(0.2f, bossTickRetryCooldownSeconds);
                 GameplayActionLog.AutoComplete("CenterBoss", "TickBossFight", false, tickResult.Error);
                 return Mathf.Max(minRecheckSeconds, bossTickRetryCooldownSeconds);
             }
 
+            _bossTickRateLimitFailureCount = 0;
             GameplayActionLog.AutoComplete("CenterBoss", "TickBossFight", true, tickResult.Signature);
             _nextBossTickAt = now + Mathf.Max(0.2f, bossTickIntervalSeconds);
+            await WaitForBossStatePropagationAsync(room, hpBeforeTick, cancellationToken);
 
             if (dungeonManager != null)
             {
@@ -301,6 +336,60 @@ namespace SeekerDungeon.Dungeon
             }
 
             return Mathf.Max(minRecheckSeconds, bossTickIntervalSeconds);
+        }
+
+        private async UniTask WaitForBossStatePropagationAsync(
+            Chaindepth.Accounts.RoomAccount room,
+            ulong hpBeforeTick,
+            CancellationToken cancellationToken)
+        {
+            if (lgManager == null || room == null || room.CenterType != LGConfig.CENTER_BOSS || room.BossDefeated)
+            {
+                return;
+            }
+
+            var maxAttempts = Mathf.Max(1, bossPropagationMaxAttempts);
+            var delayMs = Mathf.Max(80, bossPropagationDelayMs);
+
+            for (var attempt = 0; attempt < maxAttempts; attempt += 1)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var refreshedRoom = await lgManager.FetchRoomState(room.X, room.Y, fireEvent: false);
+                if (refreshedRoom != null)
+                {
+                    if (refreshedRoom.CenterType != LGConfig.CENTER_BOSS ||
+                        refreshedRoom.BossDefeated ||
+                        refreshedRoom.BossCurrentHp < hpBeforeTick)
+                    {
+                        return;
+                    }
+                }
+
+                await UniTask.Delay(delayMs, cancellationToken: cancellationToken);
+            }
+        }
+
+        private static bool IsRpcRateLimitError(string error)
+        {
+            if (string.IsNullOrWhiteSpace(error))
+            {
+                return false;
+            }
+
+            return
+                error.IndexOf("429", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                error.IndexOf("Too Many Requests", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                error.IndexOf("rate limit", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsBossAlreadyDefeatedError(string error)
+        {
+            if (string.IsNullOrWhiteSpace(error))
+            {
+                return false;
+            }
+
+            return error.IndexOf("BossAlreadyDefeated", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private async UniTask<bool> ResolveLocalBossFighterFromPdaAsync(Chaindepth.Accounts.RoomAccount room)

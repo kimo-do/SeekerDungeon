@@ -1,4 +1,9 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
+
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
 namespace SeekerDungeon.Dungeon
 {
@@ -6,6 +11,7 @@ namespace SeekerDungeon.Dungeon
     /// Simple top-down rat wander: short burst moves + short pauses
     /// within a rectangular roam area.
     /// </summary>
+    [RequireComponent(typeof(Collider2D))]
     public sealed class RatWander2D : MonoBehaviour
     {
         private enum MoveState
@@ -22,18 +28,40 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private bool rotateToMoveDirection = true;
         [SerializeField] private float rotationOffsetDegrees;
         [SerializeField] private bool flipXByMoveDirection;
+        [SerializeField] private SpriteRenderer spriteRenderer;
+        [SerializeField] private Sprite deadSprite;
+        [SerializeField] private Material deadMaterial;
+        [SerializeField] private Camera inputCamera;
 
         private Vector3 _roamCenter;
         private MoveState _state;
         private float _stateTimer;
         private float _moveSpeed;
         private Vector3 _moveTarget;
+        private bool _isDead;
+        private Collider2D _clickCollider;
+        public event System.Action<RatWander2D, Vector3> Killed;
 
         private void Awake()
         {
             if (visualRoot == null)
             {
                 visualRoot = transform;
+            }
+
+            if (spriteRenderer == null)
+            {
+                spriteRenderer = visualRoot.GetComponentInChildren<SpriteRenderer>();
+                if (spriteRenderer == null)
+                {
+                    spriteRenderer = GetComponentInChildren<SpriteRenderer>();
+                }
+            }
+
+            _clickCollider = GetComponent<Collider2D>();
+            if (inputCamera == null)
+            {
+                inputCamera = Camera.main;
             }
         }
 
@@ -55,6 +83,13 @@ namespace SeekerDungeon.Dungeon
 
         private void Update()
         {
+            if (_isDead)
+            {
+                return;
+            }
+
+            TryHandleTapOrClick();
+
             _stateTimer -= Time.deltaTime;
             if (_state == MoveState.Pausing)
             {
@@ -83,6 +118,153 @@ namespace SeekerDungeon.Dungeon
             var dir = toTarget.normalized;
             transform.position += dir * step;
             ApplyFacing(dir);
+        }
+
+        public void KillRat()
+        {
+            SetDead(true);
+        }
+
+        public void SetDead(bool notifyListeners)
+        {
+            if (_isDead)
+            {
+                return;
+            }
+
+            _isDead = true;
+            _state = MoveState.Pausing;
+            _stateTimer = 0f;
+
+            if (spriteRenderer != null)
+            {
+                if (deadSprite != null)
+                {
+                    spriteRenderer.sprite = deadSprite;
+                }
+
+                if (deadMaterial != null)
+                {
+                    spriteRenderer.sharedMaterial = deadMaterial;
+                }
+            }
+
+            if (notifyListeners)
+            {
+                Killed?.Invoke(this, transform.position);
+            }
+        }
+
+        private void TryHandleTapOrClick()
+        {
+            if (_clickCollider == null)
+            {
+                return;
+            }
+
+#if ENABLE_INPUT_SYSTEM
+            if (Touchscreen.current != null)
+            {
+                var touches = Touchscreen.current.touches;
+                for (var index = 0; index < touches.Count; index += 1)
+                {
+                    var touch = touches[index];
+                    if (!touch.press.wasReleasedThisFrame)
+                    {
+                        continue;
+                    }
+
+                    var touchId = touch.touchId.ReadValue();
+                    if (IsPointerOverUi(touchId))
+                    {
+                        continue;
+                    }
+
+                    if (IsScreenPointOnRat(touch.position.ReadValue()))
+                    {
+                        KillRat();
+                        return;
+                    }
+                }
+            }
+
+            if (Mouse.current != null && Mouse.current.leftButton.wasReleasedThisFrame)
+            {
+                if (IsPointerOverUi(-1))
+                {
+                    return;
+                }
+
+                if (IsScreenPointOnRat(Mouse.current.position.ReadValue()))
+                {
+                    KillRat();
+                }
+            }
+#else
+            if (Input.touchCount > 0)
+            {
+                for (var index = 0; index < Input.touchCount; index += 1)
+                {
+                    var touch = Input.GetTouch(index);
+                    if (touch.phase != TouchPhase.Ended)
+                    {
+                        continue;
+                    }
+
+                    if (IsPointerOverUi(touch.fingerId))
+                    {
+                        continue;
+                    }
+
+                    if (IsScreenPointOnRat(touch.position))
+                    {
+                        KillRat();
+                        return;
+                    }
+                }
+            }
+
+            if (Input.GetMouseButtonUp(0))
+            {
+                if (IsPointerOverUi(-1))
+                {
+                    return;
+                }
+
+                if (IsScreenPointOnRat(Input.mousePosition))
+                {
+                    KillRat();
+                }
+            }
+#endif
+        }
+
+        private bool IsScreenPointOnRat(Vector2 screenPosition)
+        {
+            if (inputCamera == null)
+            {
+                inputCamera = Camera.main;
+                if (inputCamera == null)
+                {
+                    return false;
+                }
+            }
+
+            var worldPosition = inputCamera.ScreenToWorldPoint(screenPosition);
+            var worldPoint2D = new Vector2(worldPosition.x, worldPosition.y);
+            return _clickCollider.OverlapPoint(worldPoint2D);
+        }
+
+        private static bool IsPointerOverUi(int pointerId)
+        {
+            if (EventSystem.current == null)
+            {
+                return false;
+            }
+
+            return pointerId < 0
+                ? EventSystem.current.IsPointerOverGameObject()
+                : EventSystem.current.IsPointerOverGameObject(pointerId);
         }
 
         private void EnterPause()

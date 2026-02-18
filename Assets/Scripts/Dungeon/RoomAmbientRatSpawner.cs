@@ -1,11 +1,12 @@
 using SeekerDungeon.Solana;
 using UnityEngine;
+using System.Collections.Generic;
 
 namespace SeekerDungeon.Dungeon
 {
     /// <summary>
-    /// Spawns an ambient rat in some rooms. Chance is deterministic by room coords
-    /// so repeated snapshot refreshes in the same room do not reroll.
+    /// Spawns ambient rats with per-visit random chance.
+    /// Dead rat positions are tracked in-session per room and replayed on revisit.
     /// </summary>
     public sealed class RoomAmbientRatSpawner : MonoBehaviour
     {
@@ -21,7 +22,8 @@ namespace SeekerDungeon.Dungeon
 
         private int _lastRoomX = int.MinValue;
         private int _lastRoomY = int.MinValue;
-        private readonly System.Collections.Generic.List<GameObject> _spawnedRats = new();
+        private readonly List<GameObject> _spawnedRats = new();
+        private readonly Dictionary<(int x, int y), List<Vector3>> _deadRatPositionsByRoom = new();
 
         private void OnDisable()
         {
@@ -48,29 +50,30 @@ namespace SeekerDungeon.Dungeon
             _lastRoomY = roomY;
 
             DespawnRats();
-            if (ratPrefab == null || firstRatSpawnChance <= 0f)
+            if (ratPrefab == null)
             {
                 return;
             }
 
-            var firstRoll = (ComputeRoomHash(roomX, roomY, randomSalt) % 10000U) / 10000f;
-            if (firstRoll > firstRatSpawnChance)
+            if (firstRatSpawnChance > 0f)
             {
-                return;
+                var firstRoll = UnityEngine.Random.value;
+                if (firstRoll <= firstRatSpawnChance)
+                {
+                    SpawnRat(roomX, roomY, randomSalt + 101);
+
+                    if (secondRatSpawnChance > 0f)
+                    {
+                        var secondRoll = UnityEngine.Random.value;
+                        if (secondRoll <= secondRatSpawnChance)
+                        {
+                            SpawnRat(roomX, roomY, randomSalt + 211);
+                        }
+                    }
+                }
             }
 
-            SpawnRat(roomX, roomY, randomSalt + 101);
-
-            if (secondRatSpawnChance <= 0f)
-            {
-                return;
-            }
-
-            var secondRoll = (ComputeRoomHash(roomX, roomY, randomSalt + 53) % 10000U) / 10000f;
-            if (secondRoll <= secondRatSpawnChance)
-            {
-                SpawnRat(roomX, roomY, randomSalt + 211);
-            }
+            SpawnPersistedDeadRats(roomX, roomY);
         }
 
         private Vector3 BuildSpawnPosition(int roomX, int roomY, uint hash)
@@ -90,6 +93,25 @@ namespace SeekerDungeon.Dungeon
         private void SpawnRat(int roomX, int roomY, int salt)
         {
             var spawnPos = BuildSpawnPosition(roomX, roomY, ComputeRoomHash(roomX, roomY, salt));
+            SpawnRatAtPosition(spawnPos, spawnDead: false);
+        }
+
+        private void SpawnPersistedDeadRats(int roomX, int roomY)
+        {
+            var roomKey = (roomX, roomY);
+            if (!_deadRatPositionsByRoom.TryGetValue(roomKey, out var positions) || positions == null || positions.Count == 0)
+            {
+                return;
+            }
+
+            for (var index = 0; index < positions.Count; index += 1)
+            {
+                SpawnRatAtPosition(positions[index], spawnDead: true);
+            }
+        }
+
+        private void SpawnRatAtPosition(Vector3 spawnPos, bool spawnDead)
+        {
             var rat = Instantiate(
                 ratPrefab,
                 spawnPos,
@@ -101,6 +123,34 @@ namespace SeekerDungeon.Dungeon
             if (wander != null)
             {
                 wander.SetRoamArea(spawnPos, spawnAreaSize);
+                if (spawnDead)
+                {
+                    wander.SetDead(false);
+                }
+                else
+                {
+                    wander.Killed += HandleRatKilled;
+                }
+            }
+        }
+
+        private void HandleRatKilled(RatWander2D rat, Vector3 worldPosition)
+        {
+            var roomKey = (_lastRoomX, _lastRoomY);
+            if (!_deadRatPositionsByRoom.TryGetValue(roomKey, out var positions) || positions == null)
+            {
+                positions = new List<Vector3>();
+                _deadRatPositionsByRoom[roomKey] = positions;
+            }
+
+            if (!ContainsPosition(positions, worldPosition))
+            {
+                positions.Add(worldPosition);
+            }
+
+            if (rat != null)
+            {
+                rat.Killed -= HandleRatKilled;
             }
         }
 
@@ -116,6 +166,11 @@ namespace SeekerDungeon.Dungeon
                 var rat = _spawnedRats[index];
                 if (rat != null)
                 {
+                    var wander = rat.GetComponent<RatWander2D>();
+                    if (wander != null)
+                    {
+                        wander.Killed -= HandleRatKilled;
+                    }
                     Destroy(rat);
                 }
             }
@@ -133,6 +188,20 @@ namespace SeekerDungeon.Dungeon
                 hash = (hash ^ (uint)salt) * 16777619U;
                 return hash;
             }
+        }
+
+        private static bool ContainsPosition(List<Vector3> positions, Vector3 candidate)
+        {
+            const float epsilonSq = 0.0004f;
+            for (var index = 0; index < positions.Count; index += 1)
+            {
+                if ((positions[index] - candidate).sqrMagnitude <= epsilonSq)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

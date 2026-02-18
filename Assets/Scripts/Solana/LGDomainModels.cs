@@ -188,6 +188,7 @@ namespace SeekerDungeon.Solana
         public ulong JobsCompleted { get; init; }
         public ulong TotalScore { get; init; }
         public ulong RunsExtracted { get; init; }
+        public bool InDungeon { get; init; }
         public ItemId EquippedItemId { get; init; }
         public int SkinId { get; init; }
         public string DisplayName { get; init; }
@@ -300,6 +301,7 @@ namespace SeekerDungeon.Solana
                 JobsCompleted = player.JobsCompleted,
                 TotalScore = player.TotalScore,
                 RunsExtracted = player.RunsExtracted,
+                InDungeon = player.InDungeon,
                 EquippedItemId = ToItemId(player.EquippedItemId),
                 SkinId = profile != null ? profile.SkinId : defaultSkinId,
                 DisplayName = profile?.DisplayName ?? string.Empty,
@@ -501,11 +503,7 @@ namespace SeekerDungeon.Solana
 
         private static ItemId ToRequiredKeyItem(byte lockKind)
         {
-            return lockKind switch
-            {
-                1 => ItemId.SkeletonKey,
-                _ => ItemId.None
-            };
+            return LGConfig.GetRequiredKeyItemForLockKind(lockKind);
         }
     }
 }

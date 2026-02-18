@@ -1,3 +1,4 @@
+using System;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -12,10 +13,16 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private TMP_Text valueLabel;
         [SerializeField] private float smoothSpeed = 6f;
         [SerializeField] private bool hideWhenNoBoss = true;
+        [SerializeField] private float slotSecondsEstimate = 0.4f;
 
         private float _displayNormalized = 1f;
         private float _targetNormalized = 1f;
         private bool _wasVisible;
+        private ulong _boundCurrentHp;
+        private ulong _boundMaxHp;
+        private ulong _boundTotalDps;
+        private bool _boundDead;
+        private float _boundAtUnscaledTime;
 
         private void Awake()
         {
@@ -35,9 +42,26 @@ namespace SeekerDungeon.Dungeon
                     Time.unscaledDeltaTime * smoothSpeed);
                 ApplyNormalized(_displayNormalized);
             }
+
+            if (_boundMaxHp == 0UL || _boundDead || _boundTotalDps == 0UL)
+            {
+                return;
+            }
+
+            var projectedHp = ComputeProjectedCurrentHp();
+            var projectedNormalized = (float)projectedHp / _boundMaxHp;
+            if (projectedNormalized < _targetNormalized)
+            {
+                _targetNormalized = projectedNormalized;
+            }
+
+            if (valueLabel != null)
+            {
+                valueLabel.text = $"{projectedHp}/{_boundMaxHp}";
+            }
         }
 
-        public void Bind(ulong currentHp, ulong maxHp, bool isVisible)
+        public void Bind(ulong currentHp, ulong maxHp, ulong totalDps, bool isDead, bool isVisible)
         {
             if (root != null)
             {
@@ -50,6 +74,10 @@ namespace SeekerDungeon.Dungeon
                 _displayNormalized = 0f;
                 ApplyNormalized(0f);
                 _wasVisible = false;
+                _boundCurrentHp = 0UL;
+                _boundMaxHp = 0UL;
+                _boundTotalDps = 0UL;
+                _boundDead = false;
                 if (valueLabel != null)
                 {
                     valueLabel.text = string.Empty;
@@ -59,6 +87,11 @@ namespace SeekerDungeon.Dungeon
             }
 
             var clampedCurrent = currentHp > maxHp ? maxHp : currentHp;
+            _boundCurrentHp = clampedCurrent;
+            _boundMaxHp = maxHp;
+            _boundTotalDps = totalDps;
+            _boundDead = isDead;
+            _boundAtUnscaledTime = Time.unscaledTime;
             if (!_wasVisible)
             {
                 // Reset to full whenever the bar is shown again (spawn/reuse),
@@ -80,6 +113,24 @@ namespace SeekerDungeon.Dungeon
             {
                 valueLabel.text = $"{clampedCurrent}/{maxHp}";
             }
+        }
+
+        private ulong ComputeProjectedCurrentHp()
+        {
+            if (_boundDead || _boundTotalDps == 0UL || _boundCurrentHp == 0UL)
+            {
+                return _boundCurrentHp;
+            }
+
+            var elapsedSeconds = Mathf.Max(0f, Time.unscaledTime - _boundAtUnscaledTime);
+            var slotsElapsed = elapsedSeconds / Mathf.Max(0.01f, slotSecondsEstimate);
+            var projectedDamageDouble = Math.Floor(_boundTotalDps * slotsElapsed);
+            var projectedDamage = projectedDamageDouble >= ulong.MaxValue
+                ? ulong.MaxValue
+                : (ulong)projectedDamageDouble;
+            return _boundCurrentHp > projectedDamage
+                ? _boundCurrentHp - projectedDamage
+                : 0UL;
         }
 
         private void ApplyNormalized(float normalized)

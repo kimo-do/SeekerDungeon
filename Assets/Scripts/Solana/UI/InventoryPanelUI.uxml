@@ -6,6 +6,16 @@
                 <ui:Label name="inventory-title" text="Inventory" class="inventory-title"/>
                 <ui:Button name="inventory-btn-close" text="X" class="inventory-close-button"/>
             </ui:VisualElement>
+            <ui:VisualElement name="inventory-selected-panel" class="inventory-selected-panel">
+                <ui:VisualElement name="inventory-selected-panel-glow" class="inventory-selected-panel-glow"/>
+                <ui:Label name="inventory-selected-durability" text="" class="inventory-selected-durability"/>
+                <ui:VisualElement name="inventory-selected-icon" class="inventory-selected-icon"/>
+                <ui:VisualElement name="inventory-selected-info" class="inventory-selected-info">
+                    <ui:Label name="inventory-selected-name" text="Select an item" class="inventory-selected-name"/>
+                    <ui:Label name="inventory-selected-meta" text="" class="inventory-selected-meta"/>
+                    <ui:Label name="inventory-selected-amount" text="" class="inventory-selected-amount"/>
+                </ui:VisualElement>
+            </ui:VisualElement>
             <ui:ScrollView name="inventory-scroll" class="inventory-scroll" mode="Vertical">
                 <ui:VisualElement name="inventory-grid" class="inventory-grid"/>
             </ui:ScrollView>

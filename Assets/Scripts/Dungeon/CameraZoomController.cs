@@ -84,7 +84,7 @@ namespace SeekerDungeon.Dungeon
             ApplyZoomSmoothing();
 
             // ── Pan: only process when pointer is inside the game view ──
-            if (!IsMouseInsideGameView())
+            if (!IsPointerInsideGameView())
             {
                 if (_pointerDown)
                     CancelDrag();
@@ -301,12 +301,40 @@ namespace SeekerDungeon.Dungeon
             return true;
         }
 
-        private static bool IsMouseInsideGameView()
+        private static bool IsPointerInsideGameView()
         {
 #if ENABLE_INPUT_SYSTEM
+            if (Touchscreen.current != null)
+            {
+                var touches = Touchscreen.current.touches;
+                for (var index = 0; index < touches.Count; index += 1)
+                {
+                    var touch = touches[index];
+                    if (!touch.isInProgress)
+                    {
+                        continue;
+                    }
+
+                    var touchPosition = touch.position.ReadValue();
+                    return touchPosition.x >= 0f &&
+                           touchPosition.x <= Screen.width &&
+                           touchPosition.y >= 0f &&
+                           touchPosition.y <= Screen.height;
+                }
+            }
+
             if (Mouse.current == null) return false;
             var mp = Mouse.current.position.ReadValue();
 #else
+            if (Input.touchCount > 0)
+            {
+                var touchPosition = Input.GetTouch(0).position;
+                return touchPosition.x >= 0f &&
+                       touchPosition.x <= Screen.width &&
+                       touchPosition.y >= 0f &&
+                       touchPosition.y <= Screen.height;
+            }
+
             var mp = (Vector2)Input.mousePosition;
 #endif
             return mp.x >= 0f && mp.x <= Screen.width && mp.y >= 0f && mp.y <= Screen.height;

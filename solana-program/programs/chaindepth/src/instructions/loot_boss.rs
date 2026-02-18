@@ -2,6 +2,7 @@ use anchor_lang::prelude::*;
 
 use crate::errors::ChainDepthError;
 use crate::events::{item_types, BossLooted};
+use crate::instructions::join_boss_fight::apply_boss_damage;
 use crate::instructions::session_auth::authorize_player_action;
 use crate::state::{
     item_ids, session_instruction_bits, BossFightAccount, GlobalAccount, InventoryAccount,
@@ -119,6 +120,7 @@ pub fn handler(ctx: Context<LootBoss>) -> Result<()> {
     let loot_receipt = &mut ctx.accounts.loot_receipt;
 
     require!(room.center_type == CENTER_BOSS, ChainDepthError::NoBoss);
+    apply_boss_damage(room, clock.slot)?;
     require!(room.boss_defeated, ChainDepthError::BossNotDefeated);
     require!(
         player_account.is_at_room(room.x, room.y),
@@ -144,23 +146,28 @@ pub fn handler(ctx: Context<LootBoss>) -> Result<()> {
     ctx.accounts.room_presence.set_idle();
 
     let loot_hash = generate_loot_hash(clock.slot, &player_key, room.center_id);
-    let (item_type, item_amount) = calculate_boss_loot(loot_hash);
-    let item_id = map_item_type_to_item_id(item_type, loot_hash);
-    let durability = item_durability(item_type, item_id);
+    let loot_bundle = build_boss_loot_bundle(loot_hash);
 
     if inventory.owner == Pubkey::default() {
         inventory.owner = player_key;
         inventory.items = Vec::new();
         inventory.bump = ctx.bumps.inventory;
     }
-    inventory.add_item(item_id, u32::from(item_amount), durability)?;
+
+    let mut event_item_type = item_types::TOOL;
+    let mut event_item_amount_total = 0u32;
+    for stack in loot_bundle.iter() {
+        inventory.add_item(stack.item_id, stack.amount, stack.durability)?;
+        event_item_amount_total = event_item_amount_total.saturating_add(stack.amount);
+        event_item_type = stack.item_type;
+    }
 
     emit!(BossLooted {
         room_x: room.x,
         room_y: room.y,
         player: player_key,
-        item_type,
-        item_amount,
+        item_type: event_item_type,
+        item_amount: event_item_amount_total.min(u32::from(u8::MAX)) as u8,
     });
 
     Ok(())
@@ -180,78 +187,198 @@ fn generate_loot_hash(slot: u64, player: &Pubkey, boss_id: u16) -> u64 {
     hash
 }
 
-fn calculate_boss_loot(hash: u64) -> (u8, u8) {
-    let type_roll = hash % 100;
-    let item_type = if type_roll < 35 {
-        item_types::ORE
-    } else if type_roll < 75 {
-        item_types::TOOL
-    } else {
-        item_types::BUFF
-    };
-
-    let amount_hash = (hash >> 32) as u8;
-    let item_amount = match item_type {
-        item_types::ORE => (amount_hash % 8) + 3,
-        item_types::TOOL => 1,
-        item_types::BUFF => (amount_hash % 5) + 2,
-        _ => 1,
-    };
-
-    (item_type, item_amount)
+#[derive(Clone, Copy)]
+struct LootSpec {
+    item_id: u16,
+    weight: u16,
+    min_amount: u8,
+    max_amount: u8,
 }
 
-fn map_item_type_to_item_id(item_type: u8, hash: u64) -> u16 {
-    let picker = ((hash >> 16) & 0xFFFF) as usize;
-    match item_type {
-        item_types::TOOL => {
-            // Boss drops: includes rare weapons not found in chests
-            const TOOLS: [u16; 9] = [
-                item_ids::IRON_PICKAXE,
-                item_ids::IRON_SWORD,
-                item_ids::DIAMOND_SWORD,
-                item_ids::NOKIA_3310,
-                item_ids::IRON_SCIMITAR,
-                item_ids::BRONZE_SWORD,
-                item_ids::BRONZE_PICKAXE,
-                item_ids::WOODEN_PIPE,
-                item_ids::WOODEN_TANKARD,
-            ];
-            TOOLS[picker % TOOLS.len()]
-        }
-        item_types::ORE => {
-            // Boss drops: includes rare valuables not found in chests
-            const VALUABLES: [u16; 16] = [
-                item_ids::GOLD_COIN,
-                item_ids::GOLD_BAR,
-                item_ids::GOLD_BAR,     // weighted: more common from bosses
-                item_ids::DIAMOND,
-                item_ids::RUBY,
-                item_ids::SAPPHIRE,
-                item_ids::EMERALD,
-                item_ids::ANCIENT_CROWN,
-                item_ids::DRAGON_SCALE,
-                item_ids::CURSED_AMULET,
-                item_ids::GOLDEN_CHALICE,
-                item_ids::MYSTIC_ORB,
-                item_ids::PHOENIX_FEATHER,
-                item_ids::VOID_SHARD,
-                item_ids::SKELETON_KEY,
-                item_ids::ENCHANTED_SCROLL,
-            ];
-            VALUABLES[picker % VALUABLES.len()]
-        }
-        item_types::BUFF => {
-            // Boss drops more major buffs
-            const BUFFS: [u16; 3] = [
-                item_ids::MINOR_BUFF,
-                item_ids::MAJOR_BUFF,
-                item_ids::MAJOR_BUFF,   // weighted: better from bosses
-            ];
-            BUFFS[picker % BUFFS.len()]
-        }
-        _ => item_ids::GOLD_COIN,
+#[derive(Clone, Copy)]
+struct LootStack {
+    item_id: u16,
+    amount: u32,
+    durability: u16,
+    item_type: u8,
+}
+
+struct LootRng {
+    state: u64,
+}
+
+impl LootRng {
+    fn new(seed: u64) -> Self {
+        Self { state: seed ^ 0x9E37_79B9_7F4A_7C15 }
     }
+
+    fn next_u64(&mut self) -> u64 {
+        self.state = self.state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+
+    fn range_u32(&mut self, upper_exclusive: u32) -> u32 {
+        if upper_exclusive <= 1 {
+            return 0;
+        }
+        (self.next_u64() % u64::from(upper_exclusive)) as u32
+    }
+}
+
+const BOSS_WEAPONS: [LootSpec; 9] = [
+    LootSpec { item_id: item_ids::IRON_PICKAXE, weight: 12, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::IRON_SWORD, weight: 13, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::DIAMOND_SWORD, weight: 7, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::NOKIA_3310, weight: 4, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::IRON_SCIMITAR, weight: 10, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::BRONZE_SWORD, weight: 11, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::BRONZE_PICKAXE, weight: 10, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::WOODEN_PIPE, weight: 8, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::WOODEN_TANKARD, weight: 9, min_amount: 1, max_amount: 1 },
+];
+
+const BOSS_VALUABLES: [LootSpec; 15] = [
+    LootSpec { item_id: item_ids::GOLD_COIN, weight: 19, min_amount: 6, max_amount: 18 },
+    LootSpec { item_id: item_ids::GOLD_BAR, weight: 14, min_amount: 1, max_amount: 3 },
+    LootSpec { item_id: item_ids::DIAMOND, weight: 7, min_amount: 1, max_amount: 2 },
+    LootSpec { item_id: item_ids::RUBY, weight: 8, min_amount: 1, max_amount: 2 },
+    LootSpec { item_id: item_ids::SAPPHIRE, weight: 8, min_amount: 1, max_amount: 2 },
+    LootSpec { item_id: item_ids::EMERALD, weight: 8, min_amount: 1, max_amount: 2 },
+    LootSpec { item_id: item_ids::ANCIENT_CROWN, weight: 4, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::DRAGON_SCALE, weight: 5, min_amount: 1, max_amount: 2 },
+    LootSpec { item_id: item_ids::CURSED_AMULET, weight: 4, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::GOLDEN_CHALICE, weight: 5, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::MYSTIC_ORB, weight: 3, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::PHOENIX_FEATHER, weight: 3, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::VOID_SHARD, weight: 3, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::ENCHANTED_SCROLL, weight: 4, min_amount: 1, max_amount: 2 },
+    LootSpec { item_id: item_ids::SKELETON_KEY, weight: 3, min_amount: 1, max_amount: 1 },
+];
+
+const BOSS_BUFFS: [LootSpec; 2] = [
+    LootSpec { item_id: item_ids::MINOR_BUFF, weight: 8, min_amount: 1, max_amount: 3 },
+    LootSpec { item_id: item_ids::MAJOR_BUFF, weight: 14, min_amount: 1, max_amount: 3 },
+];
+
+fn build_boss_loot_bundle(seed: u64) -> Vec<LootStack> {
+    let mut rng = LootRng::new(seed);
+    let mut drops = Vec::<LootStack>::new();
+
+    // Boss always drops a weapon.
+    append_single_roll(&mut drops, &BOSS_WEAPONS, item_types::TOOL, &mut rng);
+
+    // Boss drops 2-4 different valuable stacks.
+    let valuable_roll = rng.range_u32(100);
+    let valuable_stacks = if valuable_roll < 50 {
+        2
+    } else if valuable_roll < 85 {
+        3
+    } else {
+        4
+    };
+    append_unique_rolls(
+        &mut drops,
+        &BOSS_VALUABLES,
+        valuable_stacks,
+        item_types::ORE,
+        &mut rng,
+    );
+
+    // Optional bonus buff stack.
+    if rng.range_u32(100) < 60 {
+        append_single_roll(&mut drops, &BOSS_BUFFS, item_types::BUFF, &mut rng);
+    }
+
+    drops
+}
+
+fn append_single_roll(
+    drops: &mut Vec<LootStack>,
+    pool: &[LootSpec],
+    item_type: u8,
+    rng: &mut LootRng,
+) {
+    if pool.is_empty() {
+        return;
+    }
+
+    let index = draw_weighted_index(pool, rng, None);
+    let spec = pool[index];
+    drops.push(LootStack {
+        item_id: spec.item_id,
+        amount: roll_amount(spec, rng),
+        durability: item_durability(item_type, spec.item_id),
+        item_type,
+    });
+}
+
+fn append_unique_rolls(
+    drops: &mut Vec<LootStack>,
+    pool: &[LootSpec],
+    count: usize,
+    item_type: u8,
+    rng: &mut LootRng,
+) {
+    if pool.is_empty() || count == 0 {
+        return;
+    }
+
+    let draw_count = count.min(pool.len());
+    let mut picked = vec![false; pool.len()];
+
+    for _ in 0..draw_count {
+        let index = draw_weighted_index(pool, rng, Some(&picked));
+        picked[index] = true;
+        let spec = pool[index];
+        drops.push(LootStack {
+            item_id: spec.item_id,
+            amount: roll_amount(spec, rng),
+            durability: item_durability(item_type, spec.item_id),
+            item_type,
+        });
+    }
+}
+
+fn draw_weighted_index(pool: &[LootSpec], rng: &mut LootRng, exclude: Option<&[bool]>) -> usize {
+    let mut total_weight = 0u32;
+    for (index, spec) in pool.iter().enumerate() {
+        if exclude.is_some_and(|flags| flags[index]) {
+            continue;
+        }
+        total_weight = total_weight.saturating_add(u32::from(spec.weight));
+    }
+
+    if total_weight == 0 {
+        return 0;
+    }
+
+    let mut roll = rng.range_u32(total_weight);
+    for (index, spec) in pool.iter().enumerate() {
+        if exclude.is_some_and(|flags| flags[index]) {
+            continue;
+        }
+
+        let weight = u32::from(spec.weight);
+        if roll < weight {
+            return index;
+        }
+        roll -= weight;
+    }
+
+    0
+}
+
+fn roll_amount(spec: LootSpec, rng: &mut LootRng) -> u32 {
+    let min = u32::from(spec.min_amount);
+    let max = u32::from(spec.max_amount.max(spec.min_amount));
+    if max == min {
+        return min;
+    }
+
+    min + rng.range_u32(max - min + 1)
 }
 
 fn item_durability(item_type: u8, item_id: u16) -> u16 {

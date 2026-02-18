@@ -1,5 +1,7 @@
 using System;
+using System;
 using System.Collections.Generic;
+using System.Text;
 using Cysharp.Threading.Tasks;
 using SeekerDungeon.Dungeon;
 using UnityEngine;
@@ -16,6 +18,11 @@ namespace SeekerDungeon.Solana
 
         [SerializeField] private LGMainMenuCharacterManager characterManager;
         [SerializeField] private ItemRegistry itemRegistry;
+        [SerializeField] private Animator drinkAnimator;
+        [SerializeField] private string drinkParameterName = "drink";
+        [SerializeField] private float firstDrinkDelaySeconds = 2f;
+        [SerializeField] private float drinkIntervalMinSeconds = 8f;
+        [SerializeField] private float drinkIntervalMaxSeconds = 15f;
 
         private UIDocument _document;
 
@@ -30,13 +37,16 @@ namespace SeekerDungeon.Solana
         private TextField _displayNameInput;
         private Label _statusLabel;
         private Label _existingNameLabel;
+        private Label _menuTotalScoreLabel;
         private Label _pickCharacterTitleLabel;
         private Label _walletSolBalanceLabel;
         private Label _walletSkrBalanceLabel;
         private Label _walletSessionActionLabel;
         private VisualElement _lowBalanceModalOverlay;
         private VisualElement _sessionSetupOverlay;
+        private VisualElement _legacyResetOverlay;
         private Label _sessionSetupMessageLabel;
+        private Label _legacyResetMessageLabel;
         private Label _lowBalanceModalMessageLabel;
         private VisualElement _walletSessionIconInactive;
         private VisualElement _walletSessionIconActive;
@@ -60,6 +70,7 @@ namespace SeekerDungeon.Solana
         private Button _disconnectButton;
         private Button _sessionPillButton;
         private Button _sessionSetupActivateButton;
+        private Button _legacyResetButton;
         private Button _lowBalanceModalDismissButton;
         private Button _lowBalanceTopUpButton;
         private Button _extractionSummaryContinueButton;
@@ -70,6 +81,9 @@ namespace SeekerDungeon.Solana
         private bool _hasRevealedUi;
         private bool _isShowingExtractionSummary;
         private float _spinnerAngle;
+        private TxIndicatorVisualController _txIndicatorController;
+        private bool _drinkLoopStarted;
+        private bool _stopDrinkLoop;
 
         private void Awake()
         {
@@ -80,11 +94,15 @@ namespace SeekerDungeon.Solana
             {
                 characterManager = FindObjectOfType<LGMainMenuCharacterManager>();
             }
+
+            ResolveItemRegistryIfMissing();
         }
 
         private void OnEnable()
         {
             _hasRevealedUi = false;
+            _drinkLoopStarted = false;
+            _stopDrinkLoop = false;
             TryRebindUi(force: true);
             if (characterManager != null)
             {
@@ -98,8 +116,11 @@ namespace SeekerDungeon.Solana
 
         private void OnDisable()
         {
+            _stopDrinkLoop = true;
             UnbindUiHandlers();
             _isShowingExtractionSummary = false;
+            _txIndicatorController?.Dispose();
+            _txIndicatorController = null;
 
             if (characterManager != null)
             {
@@ -122,6 +143,7 @@ namespace SeekerDungeon.Solana
             }
 
             UnbindUiHandlers();
+            ResolveItemRegistryIfMissing();
 
             _createIdentityPanel = root.Q<VisualElement>("create-identity-panel");
             _menuRoot = root.Q<VisualElement>("menu-root");
@@ -146,6 +168,7 @@ namespace SeekerDungeon.Solana
             _skinNameLabel = root.Q<Label>("selected-skin-label");
             _displayNameInput = root.Q<TextField>("display-name-input");
             _statusLabel = root.Q<Label>("menu-status-label");
+            _menuTotalScoreLabel = root.Q<Label>("menu-total-score-label");
             _existingNameLabel = root.Q<Label>("existing-display-name-label");
             _pickCharacterTitleLabel = root.Q<Label>("pick-character-title-label");
             _walletSolBalanceLabel = root.Q<Label>("wallet-sol-balance-label");
@@ -153,7 +176,9 @@ namespace SeekerDungeon.Solana
             _walletSessionActionLabel = root.Q<Label>("wallet-session-action-label");
             _lowBalanceModalOverlay = root.Q<VisualElement>("low-balance-modal-overlay");
             _sessionSetupOverlay = root.Q<VisualElement>("session-setup-overlay");
+            _legacyResetOverlay = root.Q<VisualElement>("legacy-reset-overlay");
             _sessionSetupMessageLabel = root.Q<Label>("session-setup-message");
+            _legacyResetMessageLabel = root.Q<Label>("legacy-reset-message");
             _lowBalanceModalMessageLabel = root.Q<Label>("low-balance-modal-message");
             _walletSessionIconInactive = root.Q<VisualElement>("wallet-session-icon-inactive");
             _walletSessionIconActive = root.Q<VisualElement>("wallet-session-icon-active");
@@ -164,6 +189,7 @@ namespace SeekerDungeon.Solana
             _disconnectButton = root.Q<Button>("btn-disconnect-wallet");
             _sessionPillButton = root.Q<Button>("btn-session-pill");
             _sessionSetupActivateButton = root.Q<Button>("btn-session-setup-activate");
+            _legacyResetButton = root.Q<Button>("btn-legacy-reset");
             _lowBalanceModalDismissButton = root.Q<Button>("btn-low-balance-dismiss");
             _lowBalanceTopUpButton = root.Q<Button>("btn-low-balance-topup");
             _extractionSummaryContinueButton = root.Q<Button>("btn-extraction-summary-continue");
@@ -203,6 +229,11 @@ namespace SeekerDungeon.Solana
                 _sessionSetupActivateButton.clicked += HandleEnableSessionClicked;
             }
 
+            if (_legacyResetButton != null)
+            {
+                _legacyResetButton.clicked += HandleLegacyResetClicked;
+            }
+
             if (_lowBalanceModalDismissButton != null)
             {
                 _lowBalanceModalDismissButton.clicked += HandleLowBalanceDismissClicked;
@@ -226,6 +257,8 @@ namespace SeekerDungeon.Solana
 
             _boundRoot = root;
             _isHandlersBound = true;
+            _txIndicatorController ??= new TxIndicatorVisualController();
+            _txIndicatorController.Bind(root);
         }
 
         private void UnbindUiHandlers()
@@ -263,6 +296,11 @@ namespace SeekerDungeon.Solana
             if (_sessionSetupActivateButton != null)
             {
                 _sessionSetupActivateButton.clicked -= HandleEnableSessionClicked;
+            }
+
+            if (_legacyResetButton != null)
+            {
+                _legacyResetButton.clicked -= HandleLegacyResetClicked;
             }
 
             if (_lowBalanceModalDismissButton != null)
@@ -330,6 +368,11 @@ namespace SeekerDungeon.Solana
             characterManager?.RequestDevnetTopUpFromMenu();
         }
 
+        private void HandleLegacyResetClicked()
+        {
+            characterManager?.RequestLegacyAccountResetFromMenu();
+        }
+
         private void HandleDisplayNameChanged(ChangeEvent<string> changeEvent)
         {
             if (_isApplyingKeyboardText)
@@ -374,6 +417,8 @@ namespace SeekerDungeon.Solana
             {
                 TryRebindUi();
             }
+
+            _txIndicatorController?.Tick(Time.unscaledDeltaTime);
 
             // Animate loading spinner rotation
             if (_loadingSpinner != null &&
@@ -458,6 +503,8 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
+            StartDrinkLoopIfNeeded();
+
             // ── Normal (ready) state handling ──
             if (_skinNameLabel != null)
             {
@@ -478,6 +525,13 @@ namespace SeekerDungeon.Solana
             if (_existingNameLabel != null)
             {
                 _existingNameLabel.text = $"Name: {state.PlayerDisplayName}";
+            }
+
+            if (_menuTotalScoreLabel != null)
+            {
+                var shouldShowTotalScore = state.TotalScore > 0;
+                _menuTotalScoreLabel.style.display = shouldShowTotalScore ? DisplayStyle.Flex : DisplayStyle.None;
+                _menuTotalScoreLabel.text = $"Total Score: {state.TotalScore}";
             }
 
             var isLockedProfile = state.HasProfile && !state.HasUnsavedProfileChanges;
@@ -536,10 +590,18 @@ namespace SeekerDungeon.Solana
             var shouldShowSessionSetupOverlay =
                 state.HasProfile &&
                 !state.IsSessionReady &&
-                !state.IsLowBalanceBlocking;
+                !state.IsLowBalanceBlocking &&
+                !state.IsLegacyResetRequired;
             if (_sessionSetupOverlay != null)
             {
                 _sessionSetupOverlay.style.display = shouldShowSessionSetupOverlay
+                    ? DisplayStyle.Flex
+                    : DisplayStyle.None;
+            }
+
+            if (_legacyResetOverlay != null)
+            {
+                _legacyResetOverlay.style.display = state.IsLegacyResetRequired
                     ? DisplayStyle.Flex
                     : DisplayStyle.None;
             }
@@ -549,6 +611,13 @@ namespace SeekerDungeon.Solana
                 _sessionSetupMessageLabel.text = state.IsBusy
                     ? "Please confirm in your wallet to activate your gameplay session."
                     : "Activate your gameplay session to enable smoother actions with fewer wallet prompts.";
+            }
+
+            if (_legacyResetMessageLabel != null)
+            {
+                _legacyResetMessageLabel.text = string.IsNullOrWhiteSpace(state.LegacyResetMessage)
+                    ? "Your account data is outdated and must be reset."
+                    : state.LegacyResetMessage;
             }
 
             if (_lowBalanceModalMessageLabel != null)
@@ -624,13 +693,21 @@ namespace SeekerDungeon.Solana
                     : "Enter the Dungeon";
             }
 
+            if (_legacyResetButton != null)
+            {
+                _legacyResetButton.text = state.IsLegacyResetConfirmArmed
+                    ? "CONFIRM RESET ACCOUNT"
+                    : "RESET ACCOUNT";
+            }
+
             _previousSkinButton?.SetEnabled(canEditProfile);
             _nextSkinButton?.SetEnabled(canEditProfile);
             _displayNameInput?.SetEnabled(false);
             _confirmCreateButton?.SetEnabled(
                 canEditProfile &&
+                !state.IsLegacyResetRequired &&
                 (!state.HasProfile || state.HasUnsavedProfileChanges));
-            _enterDungeonButton?.SetEnabled(canEnter);
+            _enterDungeonButton?.SetEnabled(canEnter && !state.IsLegacyResetRequired);
             _disconnectButton?.SetEnabled(!state.IsBusy);
             if (_sessionPillButton != null)
             {
@@ -642,10 +719,76 @@ namespace SeekerDungeon.Solana
                 state.IsReady &&
                 !state.IsBusy &&
                 state.HasProfile);
+            _legacyResetButton?.SetEnabled(
+                state.IsLegacyResetRequired &&
+                state.CanSelfResetLegacyAccount &&
+                !state.IsResettingLegacyAccount &&
+                !state.IsBusy);
             _lowBalanceModalDismissButton?.SetEnabled(!state.IsRequestingDevnetTopUp);
             _lowBalanceTopUpButton?.SetEnabled(!state.IsRequestingDevnetTopUp && !state.IsBusy);
 
             TryShowPendingExtractionSummary();
+        }
+
+        private void StartDrinkLoopIfNeeded()
+        {
+            if (_drinkLoopStarted)
+            {
+                return;
+            }
+
+            _drinkLoopStarted = true;
+            DrinkLoopAsync().Forget();
+        }
+
+        private async UniTaskVoid DrinkLoopAsync()
+        {
+            await UniTask.Delay(
+                TimeSpan.FromSeconds(Mathf.Max(0f, firstDrinkDelaySeconds)),
+                cancellationToken: this.GetCancellationTokenOnDestroy());
+
+            while (!_stopDrinkLoop && isActiveAndEnabled)
+            {
+                TriggerDrinkParameter();
+
+                var min = Mathf.Max(0.1f, drinkIntervalMinSeconds);
+                var max = Mathf.Max(min, drinkIntervalMaxSeconds);
+                var delaySeconds = UnityEngine.Random.Range(min, max);
+                await UniTask.Delay(
+                    TimeSpan.FromSeconds(delaySeconds),
+                    cancellationToken: this.GetCancellationTokenOnDestroy());
+            }
+        }
+
+        private void TriggerDrinkParameter()
+        {
+            var animator = drinkAnimator;
+            if (animator == null || string.IsNullOrWhiteSpace(drinkParameterName))
+            {
+                return;
+            }
+
+            var parameters = animator.parameters;
+            for (var index = 0; index < parameters.Length; index += 1)
+            {
+                var parameter = parameters[index];
+                if (!string.Equals(parameter.name, drinkParameterName, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (parameter.type == AnimatorControllerParameterType.Trigger)
+                {
+                    animator.SetTrigger(drinkParameterName);
+                }
+                else if (parameter.type == AnimatorControllerParameterType.Bool)
+                {
+                    animator.SetBool(drinkParameterName, true);
+                    animator.SetBool(drinkParameterName, false);
+                }
+
+                return;
+            }
         }
 
         private void TryShowPendingExtractionSummary()
@@ -712,17 +855,14 @@ namespace SeekerDungeon.Solana
 
                 var icon = new VisualElement();
                 icon.AddToClassList("extraction-summary-item-icon");
-                if (itemRegistry != null)
+                var iconSprite = ResolveItemIcon(item.ItemId);
+                if (iconSprite != null)
                 {
-                    var iconSprite = itemRegistry.GetIcon(item.ItemId);
-                    if (iconSprite != null)
-                    {
-                        icon.style.backgroundImage = new StyleBackground(iconSprite);
-                    }
+                    icon.style.backgroundImage = new StyleBackground(iconSprite);
                 }
                 row.Add(icon);
 
-                var nameLabel = new Label(itemRegistry != null ? itemRegistry.GetDisplayName(item.ItemId) : item.ItemId.ToString());
+                var nameLabel = new Label(ResolveItemDisplayName(item.ItemId));
                 nameLabel.AddToClassList("extraction-summary-item-name");
                 row.Add(nameLabel);
 
@@ -832,6 +972,72 @@ namespace SeekerDungeon.Solana
             }
 
             label.text = text ?? string.Empty;
+        }
+
+        private void ResolveItemRegistryIfMissing()
+        {
+            if (itemRegistry != null)
+            {
+                return;
+            }
+
+            var registries = Resources.FindObjectsOfTypeAll<ItemRegistry>();
+            if (registries != null && registries.Length > 0)
+            {
+                itemRegistry = registries[0];
+            }
+        }
+
+        private Sprite ResolveItemIcon(ItemId itemId)
+        {
+            ResolveItemRegistryIfMissing();
+            return itemRegistry != null ? itemRegistry.GetIcon(itemId) : null;
+        }
+
+        private string ResolveItemDisplayName(ItemId itemId)
+        {
+            ResolveItemRegistryIfMissing();
+
+            if (itemRegistry != null)
+            {
+                var displayName = itemRegistry.GetDisplayName(itemId);
+                if (!string.IsNullOrWhiteSpace(displayName))
+                {
+                    return displayName;
+                }
+            }
+
+            return HumanizeEnumLikeName(itemId.ToString());
+        }
+
+        private static string HumanizeEnumLikeName(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return "Unknown Item";
+            }
+
+            var builder = new StringBuilder(raw.Length + 8);
+            for (var index = 0; index < raw.Length; index += 1)
+            {
+                var current = raw[index];
+                if (index > 0)
+                {
+                    var previous = raw[index - 1];
+                    var next = index + 1 < raw.Length ? raw[index + 1] : '\0';
+                    var upperAfterLower = char.IsUpper(current) && char.IsLower(previous);
+                    var upperBeforeLower = char.IsUpper(current) && char.IsUpper(previous) && char.IsLower(next);
+                    var digitAfterLetter = char.IsDigit(current) && char.IsLetter(previous);
+                    if (upperAfterLower || upperBeforeLower || digitAfterLetter)
+                    {
+                        builder.Append(' ');
+                    }
+                }
+
+                builder.Append(current);
+            }
+
+            return builder.ToString();
         }
 
         private void ApplySkinLabelSizing(string labelText)

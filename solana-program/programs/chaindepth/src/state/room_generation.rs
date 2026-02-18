@@ -9,6 +9,8 @@ use super::{
 const LOCK_MIN_DEPTH: u32 = 2;
 const MAX_LOCKED_DOORS_PER_ROOM: usize = 1;
 const FORCED_KEY_CHEST_MIN_DEPTH: u32 = 2;
+const BONE_ROOM_MIN_DEPTH: u32 = 2;
+const BONE_ROOM_CHANCE_PERCENT: u64 = 18;
 
 pub fn calculate_depth(x: i8, y: i8) -> u32 {
     let dx = (x - GlobalAccount::START_X).abs() as u32;
@@ -96,6 +98,15 @@ pub fn initialize_discovered_room(
         room_depth,
         entrance_direction,
     );
+    apply_bone_room_locks(
+        &mut room.walls,
+        &mut room.door_lock_kinds,
+        season_seed,
+        room_x,
+        room_y,
+        room_depth,
+        entrance_direction,
+    );
     enforce_special_room_topology(room);
     room.helper_counts = [0; 4];
     room.progress = [0; 4];
@@ -127,6 +138,22 @@ pub fn initialize_discovered_room(
     room.created_by = created_by;
     room.created_slot = created_slot;
     room.bump = bump;
+}
+
+pub fn is_bone_room(season_seed: u64, room_x: i8, room_y: i8, depth: u32) -> bool {
+    if depth < BONE_ROOM_MIN_DEPTH {
+        return false;
+    }
+
+    // Parity gate guarantees no two orthogonally adjacent bone rooms.
+    let parity = ((i16::from(room_x) + i16::from(room_y)).rem_euclid(2)) as u64;
+    let target_parity = season_seed & 1;
+    if parity != target_parity {
+        return false;
+    }
+
+    let room_hash = generate_room_hash(season_seed ^ 0xB0DE_B0DE_B0DE_B0DE, room_x, room_y);
+    (room_hash % 100) < BONE_ROOM_CHANCE_PERCENT
 }
 
 pub fn enforce_special_room_topology(room: &mut RoomAccount) {
@@ -192,6 +219,77 @@ fn apply_locked_doors(
         if locked_count >= MAX_LOCKED_DOORS_PER_ROOM {
             break;
         }
+    }
+}
+
+fn apply_bone_room_locks(
+    walls: &mut [u8; 4],
+    door_lock_kinds: &mut [u8; 4],
+    season_seed: u64,
+    room_x: i8,
+    room_y: i8,
+    room_depth: u32,
+    entrance_direction: u8,
+) {
+    if room_depth < BONE_ROOM_MIN_DEPTH {
+        return;
+    }
+
+    let current_is_bone_room = is_bone_room(season_seed, room_x, room_y, room_depth);
+    for direction in 0..=DIRECTION_WEST {
+        if !is_lockable_door_wall(walls[direction as usize]) {
+            continue;
+        }
+
+        if current_is_bone_room {
+            walls[direction as usize] = WALL_LOCKED;
+            door_lock_kinds[direction as usize] = LOCK_KIND_SKELETON;
+            continue;
+        }
+
+        // Preserve the room entry side for non-bone rooms.
+        if direction == entrance_direction {
+            continue;
+        }
+
+        let adjacent_x = adjacent_x(room_x, direction);
+        let adjacent_y = adjacent_y(room_y, direction);
+        if !is_within_dungeon_bounds(adjacent_x, adjacent_y) {
+            continue;
+        }
+
+        let adjacent_depth = calculate_depth(adjacent_x, adjacent_y);
+        if is_bone_room(season_seed, adjacent_x, adjacent_y, adjacent_depth) {
+            walls[direction as usize] = WALL_LOCKED;
+            door_lock_kinds[direction as usize] = LOCK_KIND_SKELETON;
+        }
+    }
+}
+
+fn is_lockable_door_wall(wall: u8) -> bool {
+    wall == WALL_RUBBLE || wall == WALL_OPEN
+}
+
+fn is_within_dungeon_bounds(x: i8, y: i8) -> bool {
+    x >= GlobalAccount::MIN_COORD
+        && x <= GlobalAccount::MAX_COORD
+        && y >= GlobalAccount::MIN_COORD
+        && y <= GlobalAccount::MAX_COORD
+}
+
+fn adjacent_x(x: i8, direction: u8) -> i8 {
+    match direction {
+        2 => x + 1,
+        3 => x - 1,
+        _ => x,
+    }
+}
+
+fn adjacent_y(y: i8, direction: u8) -> i8 {
+    match direction {
+        0 => y + 1,
+        1 => y - 1,
+        _ => y,
     }
 }
 
@@ -331,5 +429,31 @@ mod tests {
         enforce_special_room_topology(&mut room);
         assert_eq!(room.walls[DIRECTION_NORTH as usize], WALL_SOLID);
         assert_eq!(room.door_lock_kinds[DIRECTION_NORTH as usize], LOCK_KIND_NONE);
+    }
+
+    #[test]
+    fn bone_rooms_never_touch_orthogonally() {
+        let seed = 123456u64;
+        for x in GlobalAccount::MIN_COORD..=GlobalAccount::MAX_COORD {
+            for y in GlobalAccount::MIN_COORD..=GlobalAccount::MAX_COORD {
+                let depth = calculate_depth(x, y);
+                if !is_bone_room(seed, x, y, depth) {
+                    continue;
+                }
+
+                let neighbors = [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)];
+                for (nx, ny) in neighbors {
+                    if !is_within_dungeon_bounds(nx, ny) {
+                        continue;
+                    }
+
+                    let neighbor_depth = calculate_depth(nx, ny);
+                    assert!(
+                        !is_bone_room(seed, nx, ny, neighbor_depth),
+                        "Adjacent bone rooms found at ({x},{y}) and ({nx},{ny})"
+                    );
+                }
+            }
+        }
     }
 }

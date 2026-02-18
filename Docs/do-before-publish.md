@@ -36,3 +36,15 @@
   - SKR name resolution (falls back gracefully)
   - create character + enter dungeon
 - Confirm no devnet-only labels/endpoints remain.
+
+## 6) Legacy account compatibility gate
+- If a wallet has old/incompatible onchain player account data, block gameplay until user action.
+- Show a clear blocking message:
+  - account is from an older version
+  - reset is required to continue
+- Require explicit user confirmation for reset (do not auto-reset silently).
+- Ensure reset path is available in-app before release (for devnet/testing environments).
+- Version bump knobs:
+  - Onchain account version constant: `solana-program/programs/chaindepth/src/state/player.rs` (`PlayerAccount::CURRENT_DATA_VERSION`)
+  - Unity required version gate: `Assets/Scripts/Solana/LGConfig.cs` (`REQUIRED_PLAYER_ACCOUNT_DATA_VERSION`)
+  - For a breaking change, bump both and deploy.

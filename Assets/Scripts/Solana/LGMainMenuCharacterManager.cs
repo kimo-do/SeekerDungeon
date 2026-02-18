@@ -34,6 +34,12 @@ namespace SeekerDungeon.Solana
         public bool IsDevnetRuntime { get; init; }
         public bool IsRequestingDevnetTopUp { get; init; }
         public bool IsInActiveDungeonRun { get; init; }
+        public bool IsLegacyResetRequired { get; init; }
+        public string LegacyResetMessage { get; init; }
+        public bool IsLegacyResetConfirmArmed { get; init; }
+        public bool IsResettingLegacyAccount { get; init; }
+        public bool CanSelfResetLegacyAccount { get; init; }
+        public ulong TotalScore { get; init; }
     }
 
     /// <summary>
@@ -50,6 +56,9 @@ namespace SeekerDungeon.Solana
         private const int DevnetTopUpRetryAttempts = 3;
         private const int DevnetTopUpRetryDelayMs = 1200;
         private const ulong DevnetTopUpLamports = 1_000_000_000UL;
+        private const string LegacyAccountResetMessage =
+            "Your account data is from an older game version and is incompatible with this build. " +
+            "Please reset your devnet player account and create your character again.";
 
         [Header("References")]
         [SerializeField] private LGManager lgManager;
@@ -125,6 +134,10 @@ namespace SeekerDungeon.Solana
         private string _lowBalanceModalMessage = string.Empty;
         private LocalSeekerIdentityConfig _localSeekerIdentityConfig;
         private bool _isRequestingDevnetTopUp;
+        private bool _isLegacyResetRequired;
+        private string _legacyResetMessage = string.Empty;
+        private bool _legacyResetConfirmArmed;
+        private bool _isResettingLegacyAccount;
 
         private bool IsSessionAutoPreparationEnabled
         {
@@ -287,6 +300,12 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
+            if (_isLegacyResetRequired)
+            {
+                EmitState(_legacyResetMessage);
+                return;
+            }
+
             if (lgManager == null)
             {
                 EmitError("LGManager not found in scene.");
@@ -388,6 +407,12 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
+            if (_isLegacyResetRequired)
+            {
+                EmitState(_legacyResetMessage);
+                return;
+            }
+
             if (!HasExistingProfile)
             {
                 EmitError("Create a character first.");
@@ -438,6 +463,12 @@ namespace SeekerDungeon.Solana
 
         public void EnsureSessionReadyFromMenu()
         {
+            if (_isLegacyResetRequired)
+            {
+                EmitState(_legacyResetMessage);
+                return;
+            }
+
             if (!HasExistingProfile)
             {
                 EmitState("Create your character before activating session.");
@@ -462,6 +493,11 @@ namespace SeekerDungeon.Solana
         public void DismissLowBalanceModal()
         {
             DismissLowBalanceModalAsync().Forget();
+        }
+
+        public void RequestLegacyAccountResetFromMenu()
+        {
+            RequestLegacyAccountResetFromMenuAsync().Forget();
         }
 
         private async UniTaskVoid InitializeAsync()
@@ -490,6 +526,7 @@ namespace SeekerDungeon.Solana
                 await lgManager.FetchGlobalState();
                 await lgManager.FetchPlayerState();
                 await lgManager.FetchPlayerProfile();
+                await RefreshCompatibilityGateAsync();
 
                 var profile = lgManager.CurrentProfileState;
                 HasExistingProfile = profile != null;
@@ -523,7 +560,7 @@ namespace SeekerDungeon.Solana
                 {
                     ShowLowBalanceModal();
                 }
-                else if (IsSessionAutoPreparationEnabled && HasExistingProfile)
+                else if (IsSessionAutoPreparationEnabled && HasExistingProfile && !_isLegacyResetRequired)
                 {
                     await PrepareGameplaySessionAsync();
                     await RefreshWalletPanelAsync();
@@ -531,6 +568,7 @@ namespace SeekerDungeon.Solana
                 if (IsSessionAutoPreparationEnabled &&
                     walletSessionManager != null &&
                     HasExistingProfile &&
+                    !_isLegacyResetRequired &&
                     !walletSessionManager.CanUseLocalSessionSigning)
                 {
                     startupStatusMessage = "Session unavailable. Gameplay will require wallet approval.";
@@ -564,6 +602,7 @@ namespace SeekerDungeon.Solana
                 {
                     ResolveSeekerIdDefaultNameAsync().Forget();
                 }
+                await RefreshCompatibilityGateAsync();
                 startupStatusMessage = "Wallet connected. Character sync unavailable.";
             }
             finally
@@ -579,9 +618,15 @@ namespace SeekerDungeon.Solana
         {
             await lgManager.FetchGlobalState();
             await lgManager.FetchPlayerState();
+            await lgManager.FetchPlayerProfile();
+            await RefreshCompatibilityGateAsync();
 
             if (lgManager.CurrentPlayerState != null)
             {
+                if (_isLegacyResetRequired)
+                {
+                    throw new InvalidOperationException(_legacyResetMessage);
+                }
                 return;
             }
 
@@ -589,7 +634,16 @@ namespace SeekerDungeon.Solana
             var initSignature = await lgManager.InitPlayer();
             if (string.IsNullOrWhiteSpace(initSignature))
             {
-                throw new InvalidOperationException("Failed to initialize player account.");
+                var recovered = await TryRecoverFromPartialInitStateAsync();
+                if (!recovered)
+                {
+                    if (await IsLegacyPlayerAccountLayoutAsync())
+                    {
+                        throw new InvalidOperationException(LegacyAccountResetMessage);
+                    }
+
+                    throw new InvalidOperationException("Failed to initialize player account.");
+                }
             }
 
             var initialized = await WaitForPlayerAccountAfterInitAsync();
@@ -597,6 +651,238 @@ namespace SeekerDungeon.Solana
             {
                 throw new InvalidOperationException(
                     $"Player account still missing after init. signature={initSignature}");
+            }
+
+            await RefreshCompatibilityGateAsync();
+            if (_isLegacyResetRequired)
+            {
+                throw new InvalidOperationException(_legacyResetMessage);
+            }
+        }
+
+        private async UniTask<bool> TryRecoverFromPartialInitStateAsync()
+        {
+            if (!await IsPartialInitStateAsync())
+            {
+                return false;
+            }
+
+            EmitState("Recovering player state...");
+            var startX = LGConfig.START_X;
+            var startY = LGConfig.START_Y;
+            var moveCandidates = new (int x, int y)[]
+            {
+                (startX + 1, startY),
+                (startX - 1, startY),
+                (startX, startY + 1),
+                (startX, startY - 1)
+            };
+
+            for (var index = 0; index < moveCandidates.Length; index += 1)
+            {
+                var candidate = moveCandidates[index];
+                var moveResult = await lgManager.MovePlayer(candidate.x, candidate.y);
+                if (!moveResult.Success)
+                {
+                    continue;
+                }
+
+                await lgManager.FetchPlayerState();
+                if (lgManager.CurrentPlayerState != null)
+                {
+                    if (logDebugMessages)
+                    {
+                        Debug.Log(
+                            $"[MainMenuCharacter] Partial-init recovery succeeded via bootstrap move to ({candidate.x},{candidate.y}).");
+                    }
+
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private async UniTask<bool> IsPartialInitStateAsync()
+        {
+            if (lgManager == null || Web3.Wallet?.Account == null)
+            {
+                return false;
+            }
+
+            if (lgManager.CurrentGlobalState == null)
+            {
+                await lgManager.FetchGlobalState();
+            }
+
+            await lgManager.FetchPlayerState();
+            await lgManager.FetchPlayerProfile();
+            if (lgManager.CurrentPlayerState != null || lgManager.CurrentProfileState != null)
+            {
+                return false;
+            }
+
+            var globalState = lgManager.CurrentGlobalState;
+            if (globalState == null)
+            {
+                return false;
+            }
+
+            var startPresencePda = lgManager.DeriveRoomPresencePda(
+                globalState.SeasonSeed,
+                LGConfig.START_X,
+                LGConfig.START_Y,
+                Web3.Wallet.Account.PublicKey);
+            if (startPresencePda == null)
+            {
+                return false;
+            }
+
+            var rpc = Web3.Wallet.ActiveRpcClient;
+            if (rpc == null)
+            {
+                return false;
+            }
+
+            var accountInfo = await rpc.GetAccountInfoAsync(startPresencePda, Commitment.Confirmed);
+            return accountInfo.WasSuccessful && accountInfo.Result?.Value != null;
+        }
+
+        private async UniTask<bool> IsLegacyPlayerAccountLayoutAsync()
+        {
+            if (lgManager == null || Web3.Wallet?.Account == null)
+            {
+                return false;
+            }
+
+            var playerPda = lgManager.DerivePlayerPda(Web3.Wallet.Account.PublicKey);
+            if (playerPda == null)
+            {
+                return false;
+            }
+
+            var rpc = Web3.Wallet.ActiveRpcClient;
+            if (rpc == null)
+            {
+                return false;
+            }
+
+            var accountInfo = await rpc.GetAccountInfoAsync(playerPda, Commitment.Confirmed);
+            if (!accountInfo.WasSuccessful || accountInfo.Result?.Value == null)
+            {
+                return false;
+            }
+
+            var data = accountInfo.Result.Value.Data;
+            if (data == null || data.Count == 0 || string.IsNullOrWhiteSpace(data[0]))
+            {
+                return false;
+            }
+
+            try
+            {
+                var bytes = Convert.FromBase64String(data[0]);
+                var playerAccount = Chaindepth.Accounts.PlayerAccount.Deserialize(bytes);
+                return playerAccount == null;
+            }
+            catch (FormatException)
+            {
+                return false;
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                return true;
+            }
+            catch (ArgumentException decodeError) when (string.Equals(decodeError.ParamName, "offset", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        private async UniTask RefreshCompatibilityGateAsync()
+        {
+            _isLegacyResetRequired = false;
+            _legacyResetMessage = string.Empty;
+            _legacyResetConfirmArmed = false;
+
+            if (await IsLegacyPlayerAccountLayoutAsync())
+            {
+                _isLegacyResetRequired = true;
+                _legacyResetMessage =
+                    "Your account data is from an older game version and is incompatible with this build.\n" +
+                    "A reset is required before you can continue.";
+                return;
+            }
+
+            var player = lgManager?.CurrentPlayerState;
+            if (player != null && player.DataVersion < LGConfig.REQUIRED_PLAYER_ACCOUNT_DATA_VERSION)
+            {
+                _isLegacyResetRequired = true;
+                _legacyResetMessage =
+                    $"Your player account version ({player.DataVersion}) is older than required ({LGConfig.REQUIRED_PLAYER_ACCOUNT_DATA_VERSION}).\n" +
+                    "Please reset your account data to continue.";
+            }
+        }
+
+        private async UniTaskVoid RequestLegacyAccountResetFromMenuAsync()
+        {
+            if (!_isLegacyResetRequired || _isResettingLegacyAccount || IsBusy)
+            {
+                return;
+            }
+
+            if (lgManager == null)
+            {
+                EmitError("LGManager not found in scene.");
+                return;
+            }
+
+            if (LGConfig.IsMainnetRuntime)
+            {
+                EmitState("Legacy reset is disabled on mainnet runtime.");
+                return;
+            }
+
+            if (!_legacyResetConfirmArmed)
+            {
+                _legacyResetConfirmArmed = true;
+                EmitState("Tap reset again to confirm account wipe.");
+                return;
+            }
+
+            _isResettingLegacyAccount = true;
+            IsBusy = true;
+            EmitState("Resetting onchain account data...");
+
+            try
+            {
+                var resetResult = await lgManager.ResetMyPlayerData();
+                if (!resetResult.Success)
+                {
+                    EmitError($"Reset failed: {resetResult.Error}");
+                    return;
+                }
+
+                await lgManager.FetchPlayerState();
+                await lgManager.FetchPlayerProfile();
+                await RefreshCompatibilityGateAsync();
+                HasExistingProfile = lgManager.CurrentProfileState != null;
+                PendingDisplayName = GetShortWalletAddress();
+                _hasUserEditedDisplayName = false;
+                HasUnsavedProfileChanges = false;
+
+                EmitState("Account reset complete. Create your character to continue.");
+            }
+            catch (Exception exception)
+            {
+                EmitError($"Reset failed: {exception.Message}");
+            }
+            finally
+            {
+                _legacyResetConfirmArmed = false;
+                _isResettingLegacyAccount = false;
+                IsBusy = false;
+                EmitState(string.Empty);
             }
         }
 
@@ -1198,23 +1484,8 @@ namespace SeekerDungeon.Solana
                 : GetShortWalletAddress();
             var lowBalanceBlocking = IsLowBalanceForCharacterCreate();
             var playerState = lgManager != null ? lgManager.CurrentPlayerState : null;
-            var hasUnextractedRunBySlot = playerState != null &&
-                                          playerState.CurrentRunStartSlot > playerState.LastExtractionSlot;
-            var isAwayFromEntrance = playerState != null &&
-                                     (playerState.CurrentRoomX != LGConfig.START_X ||
-                                      playerState.CurrentRoomY != LGConfig.START_Y);
-            var hasActiveJobs = playerState?.ActiveJobs != null && playerState.ActiveJobs.Length > 0;
-            var hasNeverExtracted = playerState != null &&
-                                    playerState.CurrentRunStartSlot > 0 &&
-                                    playerState.RunsExtracted == 0;
-            var walletKey = Web3.Wallet?.Account?.PublicKey?.Key;
-            var hasLocalResumeMarker = DungeonRunResumeStore.IsMarkedInRun(walletKey);
-            var hasUnextractedRun =
-                hasUnextractedRunBySlot ||
-                isAwayFromEntrance ||
-                hasActiveJobs ||
-                hasNeverExtracted ||
-                hasLocalResumeMarker;
+            var hasUnextractedRun = playerState != null && playerState.InDungeon;
+            var totalScore = playerState?.TotalScore ?? 0UL;
 
             return new MainMenuCharacterState
             {
@@ -1237,7 +1508,13 @@ namespace SeekerDungeon.Solana
                 IsLowBalanceBlocking = lowBalanceBlocking,
                 IsDevnetRuntime = !LGConfig.IsMainnetRuntime,
                 IsRequestingDevnetTopUp = _isRequestingDevnetTopUp,
-                IsInActiveDungeonRun = hasUnextractedRun
+                IsInActiveDungeonRun = hasUnextractedRun,
+                IsLegacyResetRequired = _isLegacyResetRequired,
+                LegacyResetMessage = _legacyResetMessage,
+                IsLegacyResetConfirmArmed = _legacyResetConfirmArmed,
+                IsResettingLegacyAccount = _isResettingLegacyAccount,
+                CanSelfResetLegacyAccount = !LGConfig.IsMainnetRuntime,
+                TotalScore = totalScore
             };
         }
 

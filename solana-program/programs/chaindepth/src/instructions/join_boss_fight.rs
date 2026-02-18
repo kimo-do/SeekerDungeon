@@ -103,12 +103,11 @@ pub fn handler(ctx: Context<JoinBossFight>) -> Result<()> {
         player_account.is_at_room(room.x, room.y),
         ChainDepthError::NotInRoom
     );
+    apply_boss_damage(room, clock.slot)?;
     require!(
         !room.boss_defeated,
         ChainDepthError::BossAlreadyDefeated
     );
-
-    apply_boss_damage(room, clock.slot)?;
 
     let fighter_dps = weapon_dps(player_account.equipped_item_id);
 

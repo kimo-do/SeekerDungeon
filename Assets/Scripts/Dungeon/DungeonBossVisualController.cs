@@ -721,7 +721,7 @@ namespace SeekerDungeon.Dungeon
 
             if (monster == null)
             {
-                activeHealthBarView.Bind(0UL, 0UL, false);
+                activeHealthBarView.Bind(0UL, 0UL, 0UL, true, false);
                 return;
             }
 
@@ -729,6 +729,8 @@ namespace SeekerDungeon.Dungeon
             activeHealthBarView.Bind(
                 monster.CurrentHp,
                 monster.MaxHp,
+                monster.TotalDps,
+                monster.IsDead,
                 hasHp && !monster.IsDead);
         }
 

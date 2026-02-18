@@ -129,10 +129,10 @@ MonoBehaviour:
     rarity: 2
     icon: {fileID: -7931123541273070009, guid: 1f9c10ed7c0d17748aa0b22bb941bc73, type: 3}
   - id: 214
-    displayName: Skeleton Key
+    displayName: Bone Key
     category: 1
     rarity: 1
-    icon: {fileID: -4562212063941728495, guid: 1f9c10ed7c0d17748aa0b22bb941bc73, type: 3}
+    icon: {fileID: 8780387736085619966, guid: 872c8095d6d4abd4399603b5742a5f69, type: 3}
   - id: 215
     displayName: Mystic Orb
     category: 1
@@ -159,12 +159,12 @@ MonoBehaviour:
     rarity: 3
     icon: {fileID: -6172522568114850728, guid: d94cb901906c71e4da761e21e2cad1d5, type: 3}
   - id: 300
-    displayName: Rubber Duck
-    category: 1
-    rarity: 3
+    displayName: Minor Buff
+    category: 2
+    rarity: 0
     icon: {fileID: -591156215409238601, guid: d94cb901906c71e4da761e21e2cad1d5, type: 3}
   - id: 301
-    displayName: Bone Key
-    category: 1
+    displayName: Major Buff
+    category: 2
     rarity: 1
-    icon: {fileID: 8780387736085619966, guid: 872c8095d6d4abd4399603b5742a5f69, type: 3}
+    icon: {fileID: -591156215409238601, guid: d94cb901906c71e4da761e21e2cad1d5, type: 3}

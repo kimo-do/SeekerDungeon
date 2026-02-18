@@ -17,6 +17,10 @@ namespace SeekerDungeon.Solana
     [RequireComponent(typeof(UIDocument))]
     public sealed class LGGameHudUI : MonoBehaviour
     {
+        private const float HudSlotWidthPx = 118f;
+        private const float HudSlotHorizontalMarginPx = 14f;
+        private const int FallbackVisibleSlotLimit = 6;
+
         [Header("References")]
         [SerializeField] private LGManager manager;
         [SerializeField] private LGWalletSessionManager walletSessionManager;
@@ -59,10 +63,13 @@ namespace SeekerDungeon.Solana
         private Button _exitConfirmLeaveButton;
         private UniTaskCompletionSource<bool> _exitConfirmTcs;
         private VisualElement _root;
+        private TxIndicatorVisualController _txIndicatorController;
+        private HudCenterToastVisualController _centerToastController;
 
         private readonly Dictionary<ItemId, VisualElement> _slotsByItemId = new();
         private ItemId _tooltipItemId = ItemId.None;
         private bool _isEquippingFromTooltip;
+        private float _lastInventorySlotsWidth = -1f;
 
         private bool _isLoadingScene;
 
@@ -153,6 +160,10 @@ namespace SeekerDungeon.Solana
             {
                 _root.RegisterCallback<PointerDownEvent>(HandleRootPointerDown);
             }
+            if (_inventorySlotsContainer != null)
+            {
+                _inventorySlotsContainer.RegisterCallback<GeometryChangedEvent>(HandleInventorySlotsGeometryChanged);
+            }
 
             if (manager != null)
             {
@@ -166,6 +177,11 @@ namespace SeekerDungeon.Solana
                 walletSessionManager.OnStatus += HandleWalletSessionStatus;
                 walletSessionManager.OnError += HandleWalletSessionError;
             }
+
+            _txIndicatorController ??= new TxIndicatorVisualController();
+            _txIndicatorController.Bind(_root);
+            _centerToastController ??= new HudCenterToastVisualController();
+            _centerToastController.Bind(_root);
 
             RefreshHudAsync().Forget();
             RefreshLoopAsync(this.GetCancellationTokenOnDestroy()).Forget();
@@ -199,6 +215,10 @@ namespace SeekerDungeon.Solana
             {
                 _root.UnregisterCallback<PointerDownEvent>(HandleRootPointerDown);
             }
+            if (_inventorySlotsContainer != null)
+            {
+                _inventorySlotsContainer.UnregisterCallback<GeometryChangedEvent>(HandleInventorySlotsGeometryChanged);
+            }
 
             if (manager != null)
             {
@@ -213,10 +233,37 @@ namespace SeekerDungeon.Solana
                 walletSessionManager.OnError -= HandleWalletSessionError;
             }
 
+            _txIndicatorController?.Dispose();
+            _txIndicatorController = null;
+            _centerToastController?.Dispose();
+            _centerToastController = null;
+
             HideExitConfirmModal();
             HideItemTooltip();
             _exitConfirmTcs?.TrySetResult(false);
             _exitConfirmTcs = null;
+        }
+
+        private void Update()
+        {
+            _txIndicatorController?.Tick(Time.unscaledDeltaTime);
+            _centerToastController?.Tick(Time.unscaledDeltaTime);
+        }
+
+        public void ShowCenterToast(string message, float holdSeconds = 1.5f)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return;
+            }
+
+            if (_centerToastController == null)
+            {
+                SetStatus(message);
+                return;
+            }
+
+            _centerToastController.Show(message, holdSeconds);
         }
 
         private async UniTaskVoid RefreshLoopAsync(System.Threading.CancellationToken cancellationToken)
@@ -477,6 +524,18 @@ namespace SeekerDungeon.Solana
             }
         }
 
+        private void HandleInventorySlotsGeometryChanged(GeometryChangedEvent _)
+        {
+            var width = _inventorySlotsContainer?.resolvedStyle.width ?? -1f;
+            if (Mathf.Approximately(width, _lastInventorySlotsWidth))
+            {
+                return;
+            }
+
+            _lastInventorySlotsWidth = width;
+            RefreshInventorySlots(manager?.CurrentInventoryState);
+        }
+
         private void RefreshInventorySlots(InventoryAccount inventory)
         {
             if (_inventorySlotsContainer == null)
@@ -492,6 +551,8 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
+            var visibleSlotLimit = CalculateVisibleInventorySlotLimit();
+            var shownCount = 0;
             foreach (var item in inventory.Items)
             {
                 if (item == null || item.Amount == 0)
@@ -499,13 +560,37 @@ namespace SeekerDungeon.Solana
                     continue;
                 }
 
+                if (shownCount >= visibleSlotLimit)
+                {
+                    break;
+                }
+
                 var itemId = LGDomainMapper.ToItemId(item.ItemId);
                 var slot = CreateSlotElement(itemId, item.Amount);
                 _inventorySlotsContainer.Add(slot);
                 _slotsByItemId[itemId] = slot;
+                shownCount += 1;
             }
 
             UpdateEquippedSlotHighlight();
+        }
+
+        private int CalculateVisibleInventorySlotLimit()
+        {
+            if (_inventorySlotsContainer == null)
+            {
+                return FallbackVisibleSlotLimit;
+            }
+
+            var containerWidth = _inventorySlotsContainer.resolvedStyle.width;
+            var slotFootprint = HudSlotWidthPx + HudSlotHorizontalMarginPx;
+            if (slotFootprint <= 0f || containerWidth <= 0f || float.IsNaN(containerWidth))
+            {
+                return FallbackVisibleSlotLimit;
+            }
+
+            var visible = Mathf.FloorToInt(containerWidth / slotFootprint);
+            return Mathf.Max(1, visible);
         }
 
         private VisualElement CreateSlotElement(ItemId itemId, uint amount)

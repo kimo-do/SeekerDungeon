@@ -154,6 +154,8 @@ namespace SeekerDungeon.Solana
                 SessionInstructionAllowlist.UnlockDoor |
                 SessionInstructionAllowlist.ExitDungeon
             );
+        private const SessionInstructionAllowlist RequiredGameplayAllowlistBits =
+            SessionInstructionAllowlist.UnlockDoor;
 
         [Header("Debug")]
         [SerializeField] private bool logDebugMessages = true;
@@ -207,6 +209,9 @@ namespace SeekerDungeon.Solana
         private const int BaseTransientRetryDelayMs = 300;
         private const int RawHttpProbeTimeoutSeconds = 20;
         private const int RawHttpBodyLogLimit = 400;
+        private const string LegacyAccountResetMessage =
+            "Your player account is from an older build and cannot be used by this version. " +
+            "Reset your devnet player account, then create your character again.";
 
         private void Awake()
         {
@@ -477,6 +482,13 @@ namespace SeekerDungeon.Solana
             );
 
             EmitStatus($"[{attemptTag}] Begin session requested for wallet={player} playerPda={playerPda} skrMint={LGConfig.ActiveSkrMint}");
+            var playerAccountReady = await IsPlayerAccountReadableForSessionAsync(playerPda, attemptTag);
+            if (!playerAccountReady)
+            {
+                ClearSessionState(preserveSigner: true);
+                return false;
+            }
+
             var playerTokenAccountReady = await EnsurePlayerTokenAccountExistsAsync(player, playerTokenAccount, attemptTag);
             if (!playerTokenAccountReady)
             {
@@ -486,6 +498,14 @@ namespace SeekerDungeon.Solana
 
             var durationMinutes = Math.Max(1, durationMinutesOverride ?? sessionDurationMinutes);
             var resolvedAllowlist = allowlistOverride ?? (SessionInstructionAllowlist)defaultAllowlistMask;
+            if ((resolvedAllowlist & RequiredGameplayAllowlistBits) != RequiredGameplayAllowlistBits)
+            {
+                var originalAllowlist = resolvedAllowlist;
+                resolvedAllowlist |= RequiredGameplayAllowlistBits;
+                EmitStatus(
+                    $"[{attemptTag}] Session allowlist missing required bits. " +
+                    $"original=0x{(ulong)originalAllowlist:X} patched=0x{(ulong)resolvedAllowlist:X}");
+            }
             var allowlist = (ulong)resolvedAllowlist;
             var maxTokenSpend = maxTokenSpendOverride ?? defaultSessionMaxTokenSpend;
             EmitStatus(
@@ -583,6 +603,62 @@ namespace SeekerDungeon.Solana
             _isSessionSignerFunded = true;
             OnSessionStateChanged?.Invoke(true);
             EmitStatus($"[{attemptTag}] Session started. Session key={_sessionSignerAccount.PublicKey} tx={signature} funded={_isSessionSignerFunded}");
+
+            return true;
+        }
+
+        private async UniTask<bool> IsPlayerAccountReadableForSessionAsync(PublicKey playerPda, string attemptTag)
+        {
+            var tracePrefix = BuildTracePrefix(attemptTag);
+            var rpc = GetRpcClient();
+            if (rpc == null)
+            {
+                EmitError($"{tracePrefix}RPC unavailable while validating player account.");
+                return false;
+            }
+
+            var accountInfo = await rpc.GetAccountInfoAsync(playerPda, commitment);
+            if (!accountInfo.WasSuccessful || accountInfo.Result?.Value == null)
+            {
+                EmitError($"{tracePrefix}Player account is missing. Create character first.");
+                return false;
+            }
+
+            var data = accountInfo.Result.Value.Data;
+            if (data == null || data.Count == 0 || string.IsNullOrWhiteSpace(data[0]))
+            {
+                EmitError($"{tracePrefix}Player account data is empty.");
+                return false;
+            }
+
+            try
+            {
+                var bytes = Convert.FromBase64String(data[0]);
+                var parsed = Chaindepth.Accounts.PlayerAccount.Deserialize(bytes);
+                if (parsed == null)
+                {
+                    EmitError(
+                        $"{tracePrefix}Player account could not be deserialized (possible legacy/incompatible layout).");
+                    return false;
+                }
+            }
+            catch (FormatException)
+            {
+                EmitError($"{tracePrefix}Player account data was not valid base64.");
+                return false;
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                EmitError(
+                    $"{tracePrefix}{LegacyAccountResetMessage} (Anchor 3003 / 0xbbb AccountDidNotDeserialize)");
+                return false;
+            }
+            catch (ArgumentException decodeError) when (string.Equals(decodeError.ParamName, "offset", StringComparison.Ordinal))
+            {
+                EmitError(
+                    $"{tracePrefix}{LegacyAccountResetMessage} (Anchor 3003 / 0xbbb AccountDidNotDeserialize)");
+                return false;
+            }
 
             return true;
         }
@@ -1091,127 +1167,139 @@ namespace SeekerDungeon.Solana
 
             var useWalletAdapter = ShouldUseWalletAdapterSigning(signers);
             EmitStatus($"{tracePrefix}SendInstructions: signerCount={signers.Count} useWalletAdapter={useWalletAdapter} rpcCandidates={rpcCandidates.Count} stopAfterAdapterFail={stopAfterWalletAdapterFailure}");
-            if (useWalletAdapter)
+            var txHandle = LGTransactionActivity.Begin();
+            var isSuccess = false;
+            try
             {
-                var walletSignature = await SendTransactionViaWalletAdapterAsync(instructions, signers, traceTag);
-                if (!string.IsNullOrWhiteSpace(walletSignature))
+                if (useWalletAdapter)
                 {
-                    return walletSignature;
+                    var walletSignature = await SendTransactionViaWalletAdapterAsync(instructions, signers, traceTag);
+                    if (!string.IsNullOrWhiteSpace(walletSignature))
+                    {
+                        isSuccess = true;
+                        return walletSignature;
+                    }
+
+                    if (stopAfterWalletAdapterFailure)
+                    {
+                        EmitError($"{tracePrefix}Wallet adapter failed. Skipping local RPC fallback (stopAfterWalletAdapterFailure=true).");
+                        return null;
+                    }
+                    EmitStatus($"{tracePrefix}Wallet adapter failed but stopAfterWalletAdapterFailure=false, trying local RPC fallback...");
                 }
 
-                if (stopAfterWalletAdapterFailure)
+                string lastFailure = null;
+                for (var candidateIndex = 0; candidateIndex < rpcCandidates.Count; candidateIndex += 1)
                 {
-                    EmitError($"{tracePrefix}Wallet adapter failed. Skipping local RPC fallback (stopAfterWalletAdapterFailure=true).");
-                    return null;
-                }
-                EmitStatus($"{tracePrefix}Wallet adapter failed but stopAfterWalletAdapterFailure=false, trying local RPC fallback...");
-            }
-
-            string lastFailure = null;
-            for (var candidateIndex = 0; candidateIndex < rpcCandidates.Count; candidateIndex += 1)
-            {
-                var rpcCandidate = rpcCandidates[candidateIndex];
-                var rpcLabel = candidateIndex == 0 ? "primary" : "fallback";
-                var endpoint = DescribeRpcEndpoint(rpcCandidate);
-                var rawProbeAttempted = false;
-                for (var attempt = 1; attempt <= MaxTransientSendAttemptsPerRpc; attempt += 1)
-                {
-                    var latestBlockHash = await rpcCandidate.GetLatestBlockHashAsync(commitment);
-                    if (!latestBlockHash.WasSuccessful || latestBlockHash.Result?.Value == null)
+                    var rpcCandidate = rpcCandidates[candidateIndex];
+                    var rpcLabel = candidateIndex == 0 ? "primary" : "fallback";
+                    var endpoint = DescribeRpcEndpoint(rpcCandidate);
+                    var rawProbeAttempted = false;
+                    for (var attempt = 1; attempt <= MaxTransientSendAttemptsPerRpc; attempt += 1)
                     {
-                        EmitError(
-                            $"{tracePrefix}[{rpcLabel}] Failed to get latest blockhash (attempt {attempt}/{MaxTransientSendAttemptsPerRpc}) endpoint={endpoint}: {latestBlockHash.Reason}");
-                        break;
-                    }
-
-                    var transactionBytes = new TransactionBuilder()
-                        .SetRecentBlockHash(latestBlockHash.Result.Value.Blockhash)
-                        .SetFeePayer(signers[0]);
-                    for (var instructionIndex = 0; instructionIndex < instructions.Count; instructionIndex += 1)
-                    {
-                        transactionBytes.AddInstruction(instructions[instructionIndex]);
-                    }
-
-                    var builtTransactionBytes = transactionBytes.Build(new List<Account>(signers));
-
-                    var transactionBase64 = Convert.ToBase64String(builtTransactionBytes);
-                    var sendResult = await rpcCandidate.SendTransactionAsync(
-                        transactionBase64,
-                        skipPreflight: false,
-                        preFlightCommitment: commitment);
-
-                    if (sendResult.WasSuccessful)
-                    {
-                        return sendResult.Result;
-                    }
-
-                    var reason = string.IsNullOrWhiteSpace(sendResult.Reason)
-                        ? "<empty reason>"
-                        : sendResult.Reason;
-                    lastFailure = reason;
-                    if (IsTransientRpcFailure(reason))
-                    {
-                        EmitStatus(
-                            $"{tracePrefix}[{rpcLabel}] Transaction failed (attempt {attempt}/{MaxTransientSendAttemptsPerRpc}) endpoint={endpoint}: {reason} class={ClassifyFailureReason(reason)}");
-                    }
-                    else
-                    {
-                        EmitError(
-                            $"{tracePrefix}[{rpcLabel}] Transaction failed (attempt {attempt}/{MaxTransientSendAttemptsPerRpc}) endpoint={endpoint}: {reason} class={ClassifyFailureReason(reason)}");
-                    }
-                    if (sendResult.ServerErrorCode != 0)
-                    {
-                        EmitStatus($"{tracePrefix}[{rpcLabel}] Server error code: {sendResult.ServerErrorCode}");
-                    }
-
-                    if (!rawProbeAttempted && IsJsonParseFailure(reason))
-                    {
-                        rawProbeAttempted = true;
-                        var rawProbe = await TrySendTransactionViaRawHttpAsync(endpoint, transactionBase64);
-                        if (rawProbe.Attempted)
+                        var latestBlockHash = await rpcCandidate.GetLatestBlockHashAsync(commitment);
+                        if (!latestBlockHash.WasSuccessful || latestBlockHash.Result?.Value == null)
                         {
-                            var rawProbeMessage =
-                                $"[{rpcLabel}] Raw HTTP probe status={rawProbe.HttpStatusCode} " +
-                                $"networkError={rawProbe.NetworkError ?? "<none>"} " +
-                                $"rpcError={rawProbe.RpcError ?? "<none>"} " +
-                                $"body={rawProbe.BodySnippet}";
-                            if (IsNonFatalProbeError(rawProbe.RpcError))
+                            EmitError(
+                                $"{tracePrefix}[{rpcLabel}] Failed to get latest blockhash (attempt {attempt}/{MaxTransientSendAttemptsPerRpc}) endpoint={endpoint}: {latestBlockHash.Reason}");
+                            break;
+                        }
+
+                        var transactionBytes = new TransactionBuilder()
+                            .SetRecentBlockHash(latestBlockHash.Result.Value.Blockhash)
+                            .SetFeePayer(signers[0]);
+                        for (var instructionIndex = 0; instructionIndex < instructions.Count; instructionIndex += 1)
+                        {
+                            transactionBytes.AddInstruction(instructions[instructionIndex]);
+                        }
+
+                        var builtTransactionBytes = transactionBytes.Build(new List<Account>(signers));
+
+                        var transactionBase64 = Convert.ToBase64String(builtTransactionBytes);
+                        var sendResult = await rpcCandidate.SendTransactionAsync(
+                            transactionBase64,
+                            skipPreflight: false,
+                            preFlightCommitment: commitment);
+
+                        if (sendResult.WasSuccessful)
+                        {
+                            isSuccess = true;
+                            return sendResult.Result;
+                        }
+
+                        var reason = string.IsNullOrWhiteSpace(sendResult.Reason)
+                            ? "<empty reason>"
+                            : sendResult.Reason;
+                        lastFailure = reason;
+                        if (IsTransientRpcFailure(reason))
+                        {
+                            EmitStatus(
+                                $"{tracePrefix}[{rpcLabel}] Transaction failed (attempt {attempt}/{MaxTransientSendAttemptsPerRpc}) endpoint={endpoint}: {reason} class={ClassifyFailureReason(reason)}");
+                        }
+                        else
+                        {
+                            EmitError(
+                                $"{tracePrefix}[{rpcLabel}] Transaction failed (attempt {attempt}/{MaxTransientSendAttemptsPerRpc}) endpoint={endpoint}: {reason} class={ClassifyFailureReason(reason)}");
+                        }
+                        if (sendResult.ServerErrorCode != 0)
+                        {
+                            EmitStatus($"{tracePrefix}[{rpcLabel}] Server error code: {sendResult.ServerErrorCode}");
+                        }
+
+                        if (!rawProbeAttempted && IsJsonParseFailure(reason))
+                        {
+                            rawProbeAttempted = true;
+                            var rawProbe = await TrySendTransactionViaRawHttpAsync(endpoint, transactionBase64);
+                            if (rawProbe.Attempted)
                             {
-                                EmitStatus($"{tracePrefix}{rawProbeMessage}");
+                                var rawProbeMessage =
+                                    $"[{rpcLabel}] Raw HTTP probe status={rawProbe.HttpStatusCode} " +
+                                    $"networkError={rawProbe.NetworkError ?? "<none>"} " +
+                                    $"rpcError={rawProbe.RpcError ?? "<none>"} " +
+                                    $"body={rawProbe.BodySnippet}";
+                                if (IsNonFatalProbeError(rawProbe.RpcError))
+                                {
+                                    EmitStatus($"{tracePrefix}{rawProbeMessage}");
+                                }
+                                else
+                                {
+                                    EmitError($"{tracePrefix}{rawProbeMessage}");
+                                }
                             }
-                            else
+
+                            if (rawProbe.WasSuccessful)
                             {
-                                EmitError($"{tracePrefix}{rawProbeMessage}");
+                                isSuccess = true;
+                                return rawProbe.Signature;
                             }
                         }
 
-                        if (rawProbe.WasSuccessful)
+                        if (!IsTransientRpcFailure(reason))
                         {
-                            return rawProbe.Signature;
+                            break;
+                        }
+
+                        if (attempt < MaxTransientSendAttemptsPerRpc)
+                        {
+                            var retryDelayMs = BaseTransientRetryDelayMs * attempt;
+                            EmitStatus(
+                                $"{tracePrefix}[{rpcLabel}] Transient RPC failure detected. Retrying in {retryDelayMs}ms.");
+                            await UniTask.Delay(retryDelayMs);
                         }
                     }
-
-                    if (!IsTransientRpcFailure(reason))
-                    {
-                        break;
-                    }
-
-                    if (attempt < MaxTransientSendAttemptsPerRpc)
-                    {
-                        var retryDelayMs = BaseTransientRetryDelayMs * attempt;
-                        EmitStatus(
-                            $"{tracePrefix}[{rpcLabel}] Transient RPC failure detected. Retrying in {retryDelayMs}ms.");
-                        await UniTask.Delay(retryDelayMs);
-                    }
                 }
-            }
 
-            if (!string.IsNullOrWhiteSpace(lastFailure))
+                if (!string.IsNullOrWhiteSpace(lastFailure))
+                {
+                    EmitError($"{tracePrefix}Transaction failed after retry attempts: {lastFailure} class={ClassifyFailureReason(lastFailure)}");
+                }
+
+                return null;
+            }
+            finally
             {
-                EmitError($"{tracePrefix}Transaction failed after retry attempts: {lastFailure} class={ClassifyFailureReason(lastFailure)}");
+                txHandle.Complete(isSuccess);
             }
-
-            return null;
         }
 
         private async UniTask<string> SendTransactionViaWalletAdapterAsync(

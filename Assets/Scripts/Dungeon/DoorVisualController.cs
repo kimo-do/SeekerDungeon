@@ -15,13 +15,25 @@ namespace SeekerDungeon.Dungeon
         public GameObject VisualRoot => visualRoot;
     }
 
+    [Serializable]
+    public sealed class LockedDoorVisualEntry
+    {
+        [SerializeField] private byte lockKind;
+        [SerializeField] private GameObject visualRoot;
+
+        public byte LockKind => lockKind;
+        public GameObject VisualRoot => visualRoot;
+    }
+
     public sealed class DoorVisualController : MonoBehaviour
     {
         [SerializeField] private List<DoorStateVisualEntry> stateVisuals = new();
+        [SerializeField] private List<LockedDoorVisualEntry> lockedDoorVisuals = new();
         [SerializeField] private GameObject entranceStairsVisualRoot;
         [SerializeField] private GameObject fallbackVisualRoot;
 
         private readonly Dictionary<RoomWallState, GameObject> _visualByState = new();
+        private readonly Dictionary<byte, GameObject> _lockedVisualByKind = new();
         private RubbleJobVfxController[] _rubbleJobVfxControllers = Array.Empty<RubbleJobVfxController>();
 
         /// <summary>
@@ -44,17 +56,9 @@ namespace SeekerDungeon.Dungeon
                 return;
             }
 
-            var targetVisual = ResolveVisual(door.WallState);
+            var targetVisual = ResolveVisual(door);
 
-            foreach (var stateVisual in _visualByState.Values)
-            {
-                if (stateVisual == null)
-                {
-                    continue;
-                }
-
-                stateVisual.SetActive(stateVisual == targetVisual);
-            }
+            SetAllKnownDoorVisualsActiveState(targetVisual);
 
             if (fallbackVisualRoot != null)
             {
@@ -78,6 +82,7 @@ namespace SeekerDungeon.Dungeon
         private void RebuildStateIndex()
         {
             _visualByState.Clear();
+            _lockedVisualByKind.Clear();
 
             foreach (var stateVisual in stateVisuals)
             {
@@ -93,6 +98,22 @@ namespace SeekerDungeon.Dungeon
                 !_visualByState.ContainsKey(RoomWallState.EntranceStairs))
             {
                 _visualByState[RoomWallState.EntranceStairs] = entranceStairsVisualRoot;
+            }
+
+            if (!_visualByState.ContainsKey(RoomWallState.Locked) &&
+                _visualByState.TryGetValue(RoomWallState.Solid, out var solidVisual))
+            {
+                _visualByState[RoomWallState.Locked] = solidVisual;
+            }
+
+            foreach (var lockedVisual in lockedDoorVisuals)
+            {
+                if (lockedVisual == null || lockedVisual.VisualRoot == null)
+                {
+                    continue;
+                }
+
+                _lockedVisualByKind[lockedVisual.LockKind] = lockedVisual.VisualRoot;
             }
         }
 
@@ -120,8 +141,17 @@ namespace SeekerDungeon.Dungeon
             }
         }
 
-        private GameObject ResolveVisual(RoomWallState wallState)
+        private GameObject ResolveVisual(DoorJobView door)
         {
+            var wallState = door.WallState;
+
+            if (wallState == RoomWallState.Locked &&
+                _lockedVisualByKind.TryGetValue(door.LockKind, out var lockedVisual) &&
+                lockedVisual != null)
+            {
+                return lockedVisual;
+            }
+
             if (_visualByState.TryGetValue(wallState, out var visual))
             {
                 return visual;
@@ -134,6 +164,31 @@ namespace SeekerDungeon.Dungeon
             }
 
             return null;
+        }
+
+        private void SetAllKnownDoorVisualsActiveState(GameObject targetVisual)
+        {
+            var handled = new HashSet<GameObject>();
+
+            foreach (var stateVisual in _visualByState.Values)
+            {
+                if (stateVisual == null || !handled.Add(stateVisual))
+                {
+                    continue;
+                }
+
+                stateVisual.SetActive(stateVisual == targetVisual);
+            }
+
+            foreach (var lockedVisual in _lockedVisualByKind.Values)
+            {
+                if (lockedVisual == null || !handled.Add(lockedVisual))
+                {
+                    continue;
+                }
+
+                lockedVisual.SetActive(lockedVisual == targetVisual);
+            }
         }
     }
 }

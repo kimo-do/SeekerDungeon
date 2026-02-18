@@ -41,6 +41,13 @@ pub struct PlayerAccount {
     /// Slot of latest successful extraction.
     pub last_extraction_slot: u64,
 
+    /// True while the player has an active run inside the dungeon.
+    /// Set true on first successful in-dungeon action and false on successful extraction.
+    pub in_dungeon: bool,
+
+    /// Version of the player account data layout/semantics.
+    pub data_version: u16,
+
     /// Season this player data belongs to (for cleanup on reset)
     pub season_seed: u64,
 
@@ -58,6 +65,7 @@ pub struct ActiveJob {
 
 impl PlayerAccount {
     pub const SEED_PREFIX: &'static [u8] = b"player";
+    pub const CURRENT_DATA_VERSION: u16 = 1;
 
     /// Check if player is at the given room
     pub fn is_at_room(&self, x: i8, y: i8) -> bool {

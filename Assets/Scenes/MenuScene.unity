@@ -563,6 +563,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Solana.LGMainMenuCharacterUI
   characterManager: {fileID: 1459274709}
+  itemRegistry: {fileID: 0}
+  drinkAnimator: {fileID: 3221953863398097267}
+  drinkParameterName: drink
+  firstDrinkDelaySeconds: 2
+  drinkIntervalMinSeconds: 8
+  drinkIntervalMaxSeconds: 15
 --- !u!114 &956339299
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -983,6 +989,42 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 1849901288416928751, guid: 801d1000ca6b4874a85a4ca31780a2ec, type: 3}
+      propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 2060196414955562904, guid: 801d1000ca6b4874a85a4ca31780a2ec, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 2060196414955562904, guid: 801d1000ca6b4874a85a4ca31780a2ec, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 0.99290055
+      objectReference: {fileID: 0}
+    - target: {fileID: 2060196414955562904, guid: 801d1000ca6b4874a85a4ca31780a2ec, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2060196414955562904, guid: 801d1000ca6b4874a85a4ca31780a2ec, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2060196414955562904, guid: 801d1000ca6b4874a85a4ca31780a2ec, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0.118947655
+      objectReference: {fileID: 0}
+    - target: {fileID: 2060196414955562904, guid: 801d1000ca6b4874a85a4ca31780a2ec, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: -13.663
+      objectReference: {fileID: 0}
+    - target: {fileID: 2376256412644743413, guid: 801d1000ca6b4874a85a4ca31780a2ec, type: 3}
+      propertyPath: m_FlipX
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3175955352112851437, guid: 801d1000ca6b4874a85a4ca31780a2ec, type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 9100000, guid: f82edd896ba05cd499eb7ff89534224e, type: 2}
     - target: {fileID: 4752332143254669612, guid: 801d1000ca6b4874a85a4ca31780a2ec, type: 3}
       propertyPath: m_Name
       value: player
@@ -1036,6 +1078,11 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 801d1000ca6b4874a85a4ca31780a2ec, type: 3}
+--- !u!95 &3221953863398097267 stripped
+Animator:
+  m_CorrespondingSourceObject: {fileID: 3175955352112851437, guid: 801d1000ca6b4874a85a4ca31780a2ec, type: 3}
+  m_PrefabInstance: {fileID: 3221953863398097266}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

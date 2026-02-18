@@ -3,6 +3,7 @@ using SeekerDungeon.Solana;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
+using System.Text.RegularExpressions;
 
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
@@ -266,6 +267,10 @@ namespace SeekerDungeon.Dungeon
 
                     // ── Execute the on-chain interaction ──
                     var doorResult = await _lgManager.InteractWithDoor((byte)door.Direction);
+                    if (!doorResult.Success)
+                    {
+                        ShowDoorFailureToastIfApplicable(doorResult.Error);
+                    }
 
                     GameplayActionLog.DoorTxResult(
                         door.Direction.ToString(),
@@ -380,6 +385,8 @@ namespace SeekerDungeon.Dungeon
                     var wasAliveBossCenterBeforeInteraction = roomState != null &&
                                                               roomState.CenterType == LGConfig.CENTER_BOSS &&
                                                               !roomState.BossDefeated;
+                    var wasLocalBossFighterBeforeInteraction = dungeonManager != null &&
+                                                               dungeonManager.IsLocalPlayerFightingBoss;
                     var isLootableCenter = roomState != null &&
                         (roomState.CenterType == LGConfig.CENTER_CHEST ||
                          (roomState.CenterType == LGConfig.CENTER_BOSS && roomState.BossDefeated));
@@ -448,6 +455,11 @@ namespace SeekerDungeon.Dungeon
                                 // instead of waiting for background polling to catch up.
                                 if (dungeonManager != null)
                                 {
+                                    if (wasLocalBossFighterBeforeInteraction)
+                                    {
+                                        await WaitForBossStatePropagationAsync(roomState);
+                                    }
+
                                     await dungeonManager.RefreshCurrentRoomSnapshotAsync();
                                 }
                             }
@@ -745,6 +757,103 @@ namespace SeekerDungeon.Dungeon
 #endif
 
             return false;
+        }
+
+        private async UniTask WaitForBossStatePropagationAsync(Chaindepth.Accounts.RoomAccount roomBeforeInteraction)
+        {
+            if (_lgManager == null ||
+                roomBeforeInteraction == null ||
+                roomBeforeInteraction.CenterType != LGConfig.CENTER_BOSS ||
+                roomBeforeInteraction.BossDefeated)
+            {
+                return;
+            }
+
+            const int maxAttempts = 8;
+            const int delayMs = 140;
+            var hpBefore = roomBeforeInteraction.BossCurrentHp;
+
+            for (var attempt = 0; attempt < maxAttempts; attempt += 1)
+            {
+                var refreshedRoom = await _lgManager.FetchRoomState(
+                    roomBeforeInteraction.X,
+                    roomBeforeInteraction.Y,
+                    fireEvent: false);
+                if (refreshedRoom != null)
+                {
+                    if (refreshedRoom.CenterType != LGConfig.CENTER_BOSS ||
+                        refreshedRoom.BossDefeated ||
+                        refreshedRoom.BossCurrentHp < hpBefore)
+                    {
+                        return;
+                    }
+                }
+
+                await UniTask.Delay(delayMs);
+            }
+        }
+
+        private void ShowDoorFailureToastIfApplicable(string error)
+        {
+            if (string.IsNullOrWhiteSpace(error))
+            {
+                return;
+            }
+
+            var isMissingKey =
+                error.IndexOf("Missing required key", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                error.IndexOf("MissingRequiredKey", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                error.IndexOf("InsufficientItemAmount", System.StringComparison.OrdinalIgnoreCase) >= 0;
+            if (!isMissingKey)
+            {
+                return;
+            }
+
+            var keyNameRaw = ExtractRegexGroup(error, @"Missing required key:\s*(.+?)\s*\(for");
+            var doorNameRaw = ExtractRegexGroup(error, @"\(for\s+(.+?)\)");
+            var keyName = HumanizeToken(keyNameRaw);
+            var doorName = HumanizeToken(doorNameRaw);
+
+            var toastMessage = !string.IsNullOrWhiteSpace(keyName) && !string.IsNullOrWhiteSpace(doorName)
+                ? $"You need {keyName} to open {doorName}"
+                : "You need the correct key to open this door";
+
+            if (gameHudUI == null)
+            {
+                gameHudUI = UnityEngine.Object.FindFirstObjectByType<LGGameHudUI>();
+            }
+
+            if (gameHudUI != null)
+            {
+                gameHudUI.ShowCenterToast(toastMessage, 1.5f);
+            }
+        }
+
+        private static string ExtractRegexGroup(string source, string pattern)
+        {
+            if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(pattern))
+            {
+                return string.Empty;
+            }
+
+            var match = Regex.Match(source, pattern);
+            if (!match.Success || match.Groups.Count < 2)
+            {
+                return string.Empty;
+            }
+
+            return match.Groups[1].Value.Trim();
+        }
+
+        private static string HumanizeToken(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var withSpaces = Regex.Replace(value.Trim(), "([a-z])([A-Z])", "$1 $2");
+            return withSpaces.Replace("_", " ");
         }
     }
 }
