@@ -10,7 +10,7 @@ use crate::state::{
 };
 
 #[derive(Accounts)]
-pub struct TickBossFight<'info> {
+pub struct LeaveBossFight<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
 
@@ -86,23 +86,29 @@ pub struct TickBossFight<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<TickBossFight>) -> Result<()> {
+pub fn handler(ctx: Context<LeaveBossFight>) -> Result<()> {
     authorize_player_action(
         &ctx.accounts.authority,
         &ctx.accounts.player,
         ctx.accounts.session_authority.as_mut(),
-        session_instruction_bits::TICK_BOSS_FIGHT,
+        session_instruction_bits::LEAVE_BOSS_FIGHT,
         0,
     )?;
 
     let room = &mut ctx.accounts.room;
     let clock = Clock::get()?;
+
     require!(room.center_type == CENTER_BOSS, ChainDepthError::NoBoss);
-    require!(!room.boss_defeated, ChainDepthError::BossAlreadyDefeated);
-    require!(room.boss_fighter_count > 0, ChainDepthError::NoActiveJob);
+    require!(
+        ctx.accounts
+            .player_account
+            .is_at_room(room.x, room.y),
+        ChainDepthError::NotInRoom
+    );
+    require!(ctx.accounts.boss_fight.is_active, ChainDepthError::NotBossFighter);
 
     apply_boss_damage(room, clock.slot)?;
-    resolve_player_boss_damage(
+    let died = resolve_player_boss_damage(
         room,
         &mut ctx.accounts.player_account,
         &mut ctx.accounts.room_presence,
@@ -111,6 +117,16 @@ pub fn handler(ctx: Context<TickBossFight>) -> Result<()> {
         ctx.accounts.player.key(),
         clock.slot,
     )?;
+
+    if !died && ctx.accounts.boss_fight.is_active {
+        if room.boss_fighter_count > 0 {
+            room.boss_fighter_count = room.boss_fighter_count.saturating_sub(1);
+        }
+        room.boss_total_dps = room.boss_total_dps.saturating_sub(ctx.accounts.boss_fight.dps);
+        ctx.accounts.boss_fight.is_active = false;
+        ctx.accounts.boss_fight.dps = 0;
+        ctx.accounts.room_presence.set_idle();
+    }
 
     emit!(BossTicked {
         room_x: room.x,

@@ -122,6 +122,7 @@ pub fn handler(ctx: Context<LootBoss>) -> Result<()> {
     require!(room.center_type == CENTER_BOSS, ChainDepthError::NoBoss);
     apply_boss_damage(room, clock.slot)?;
     require!(room.boss_defeated, ChainDepthError::BossNotDefeated);
+    require!(ctx.accounts.boss_fight.is_active, ChainDepthError::NotBossFighter);
     require!(
         player_account.is_at_room(room.x, room.y),
         ChainDepthError::NotInRoom
@@ -143,6 +144,12 @@ pub fn handler(ctx: Context<LootBoss>) -> Result<()> {
     // Update room looted count and player stats
     room.looted_count += 1;
     player_account.chests_looted += 1;
+    if room.boss_fighter_count > 0 {
+        room.boss_fighter_count = room.boss_fighter_count.saturating_sub(1);
+    }
+    room.boss_total_dps = room.boss_total_dps.saturating_sub(ctx.accounts.boss_fight.dps);
+    ctx.accounts.boss_fight.is_active = false;
+    ctx.accounts.boss_fight.dps = 0;
     ctx.accounts.room_presence.set_idle();
 
     let loot_hash = generate_loot_hash(clock.slot, &player_key, room.center_id);

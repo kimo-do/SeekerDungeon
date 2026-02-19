@@ -7,6 +7,8 @@ pub struct BossFightAccount {
     pub room: Pubkey,
     pub dps: u64,
     pub joined_slot: u64,
+    pub last_damage_slot: u64,
+    pub is_active: bool,
     pub bump: u8,
 }
 

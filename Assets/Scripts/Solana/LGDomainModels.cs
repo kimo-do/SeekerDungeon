@@ -187,6 +187,8 @@ namespace SeekerDungeon.Solana
         public ulong TotalScore { get; init; }
         public ulong RunsExtracted { get; init; }
         public bool InDungeon { get; init; }
+        public ushort CurrentHp { get; init; }
+        public ushort MaxHp { get; init; }
         public ItemId EquippedItemId { get; init; }
         public int SkinId { get; init; }
         public string DisplayName { get; init; }
@@ -300,6 +302,8 @@ namespace SeekerDungeon.Solana
                 TotalScore = player.TotalScore,
                 RunsExtracted = player.RunsExtracted,
                 InDungeon = player.InDungeon,
+                CurrentHp = player.CurrentHp,
+                MaxHp = player.MaxHp,
                 EquippedItemId = ToItemId(player.EquippedItemId),
                 SkinId = profile != null ? profile.SkinId : defaultSkinId,
                 DisplayName = profile?.DisplayName ?? string.Empty,

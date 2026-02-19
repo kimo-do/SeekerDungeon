@@ -115,6 +115,17 @@ pub struct DungeonExitItemScored {
     pub stack_score: u64,
 }
 
+/// Emitted when a player is force-exited on death.
+#[event]
+pub struct DungeonDeathExited {
+    pub player: Pubkey,
+    pub lost_item_stacks: u32,
+    pub lost_item_units: u32,
+    pub run_score: u64,
+    pub total_score: u64,
+    pub run_duration_slots: u64,
+}
+
 /// Emitted when global state is initialized
 #[event]
 pub struct GlobalInitialized {
@@ -180,6 +191,27 @@ pub struct BossLooted {
     pub player: Pubkey,
     pub item_type: u8,
     pub item_amount: u8,
+}
+
+#[event]
+pub struct PlayerDamaged {
+    pub player: Pubkey,
+    pub room_x: i8,
+    pub room_y: i8,
+    pub boss_id: u16,
+    pub damage: u16,
+    pub current_hp: u16,
+    pub max_hp: u16,
+}
+
+#[event]
+pub struct PlayerDied {
+    pub player: Pubkey,
+    pub room_x: i8,
+    pub room_y: i8,
+    pub boss_id: u16,
+    pub lost_item_stacks: u32,
+    pub lost_item_units: u32,
 }
 
 /// Item types for loot

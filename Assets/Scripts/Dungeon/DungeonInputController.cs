@@ -719,6 +719,32 @@ namespace SeekerDungeon.Dungeon
             await LoadExitSceneAsync();
         }
 
+        public async UniTask ForceExitOnDeathAsync()
+        {
+            var sceneLoadController = SceneLoadController.GetOrCreate();
+            if (sceneLoadController != null)
+            {
+                sceneLoadController.SetTransitionText("You died...");
+                await sceneLoadController.FadeToBlackAsync();
+            }
+
+            var exitResult = await _lgManager.ForceExitOnDeath();
+            if (!exitResult.Success)
+            {
+                Debug.LogWarning($"[DungeonInput] Force-exit on death failed: {exitResult.Error}");
+                if (sceneLoadController != null)
+                {
+                    sceneLoadController.ClearTransitionText();
+                    await sceneLoadController.FadeFromBlackAsync();
+                }
+
+                return;
+            }
+
+            await _lgManager.RefreshAllState();
+            await LoadExitSceneAsync();
+        }
+
         private static bool TryGetPointerDownPosition(out Vector2 position, out int pointerId)
         {
             position = default;

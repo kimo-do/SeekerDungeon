@@ -1602,6 +1602,18 @@ namespace SeekerDungeon.Solana
 
             try
             {
+                var leaveBossResult = await EnsureBossFightExitedForNonBossAction("MovePlayer");
+                if (!leaveBossResult.Success)
+                {
+                    return leaveBossResult;
+                }
+
+                var stopJobsResult = await StopActiveJobsBeforeRunTransition("MovePlayer");
+                if (!stopJobsResult.Success)
+                {
+                    return stopJobsResult;
+                }
+
                 var result = await ExecuteGameplayActionAsync(
                     "MovePlayer",
                     (context) =>
@@ -1682,6 +1694,12 @@ namespace SeekerDungeon.Solana
 
             try
             {
+                var stopJobsResult = await StopActiveJobsBeforeRunTransition("ExitDungeon");
+                if (!stopJobsResult.Success)
+                {
+                    return stopJobsResult;
+                }
+
                 // Force fresh pre-exit snapshots so extraction summary does not rely on stale cache.
                 var playerBefore = await FetchPlayerState();
                 var totalScoreBefore = playerBefore?.TotalScore ?? CurrentPlayerState?.TotalScore ?? 0UL;
@@ -1777,7 +1795,8 @@ namespace SeekerDungeon.Solana
                         inventoryBefore,
                         CurrentInventoryState,
                         totalScoreBefore,
-                        CurrentPlayerState?.TotalScore ?? totalScoreBefore);
+                        CurrentPlayerState?.TotalScore ?? totalScoreBefore,
+                        DungeonRunEndReason.Extraction);
                     DungeonExtractionSummaryStore.SetPending(extractionSummary);
                     Log(
                         $"Extraction summary prepared: items={extractionSummary.Items.Count} " +
@@ -1791,6 +1810,97 @@ namespace SeekerDungeon.Solana
             catch (Exception e)
             {
                 LogError($"ExitDungeon failed: {e.Message}");
+                return TxResult.Fail(e.Message);
+            }
+        }
+
+        /// <summary>
+        /// Force-end current run on death, remove death-loss items, and award no score.
+        /// </summary>
+        public async UniTask<TxResult> ForceExitOnDeath()
+        {
+            if (Web3.Wallet == null)
+            {
+                LogError("Wallet not connected");
+                return TxResult.Fail("Wallet not connected");
+            }
+
+            if (CurrentPlayerState == null || CurrentGlobalState == null)
+            {
+                LogError("Player or global state not loaded");
+                return TxResult.Fail("Player or global state not loaded");
+            }
+
+            Log("Force-exiting run on death...");
+
+            try
+            {
+                var playerBefore = await FetchPlayerState();
+                var totalScoreBefore = playerBefore?.TotalScore ?? CurrentPlayerState?.TotalScore ?? 0UL;
+                var inventoryBefore = CloneInventorySnapshot(await FetchInventory());
+                Log($"ForceExitOnDeath pre-loss inventory: {BuildScoredLootDebugSummary(inventoryBefore)}");
+
+                var result = await ExecuteGameplayActionAsync(
+                    "ForceExitOnDeath",
+                    (context) =>
+                    {
+                        var playerPda = DerivePlayerPda(context.Player);
+                        var roomPda = DeriveRoomPda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY);
+                        var inventoryPda = DeriveInventoryPda(context.Player);
+                        var roomPresencePda = DeriveRoomPresencePda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY,
+                            context.Player);
+
+                        return ChaindepthProgram.ForceExitOnDeath(
+                            new ForceExitOnDeathAccounts
+                            {
+                                Authority = context.Authority,
+                                Player = context.Player,
+                                Global = _globalPda,
+                                PlayerAccount = playerPda,
+                                Room = roomPda,
+                                Inventory = inventoryPda,
+                                RoomPresence = roomPresencePda,
+                                SessionAuthority = context.SessionAuthority,
+                                SystemProgram = SystemProgram.ProgramIdKey
+                            },
+                            _programId
+                        );
+                    },
+                    ensureSessionIfPossible: false,
+                    useSessionSignerIfPossible: false);
+
+                if (result.Success)
+                {
+                    await FetchPlayerState();
+                    await FetchInventory();
+                    Log($"ForceExitOnDeath post-loss inventory: {BuildScoredLootDebugSummary(CurrentInventoryState)}");
+                    var walletKey = Web3.Wallet?.Account?.PublicKey?.Key;
+                    DungeonRunResumeStore.ClearRun(walletKey);
+                    var deathSummary = BuildExtractionSummary(
+                        inventoryBefore,
+                        CurrentInventoryState,
+                        totalScoreBefore,
+                        CurrentPlayerState?.TotalScore ?? totalScoreBefore,
+                        DungeonRunEndReason.Death);
+                    DungeonExtractionSummaryStore.SetPending(deathSummary);
+                    Log(
+                        $"Death summary prepared: items={deathSummary.Items.Count} " +
+                        $"loot={deathSummary.LootScore} time={deathSummary.TimeScore} " +
+                        $"run={deathSummary.RunScore} total={deathSummary.TotalScoreAfterRun}");
+                    Log($"ForceExitOnDeath successful. TX: {result.Signature}");
+                }
+
+                return result;
+            }
+            catch (Exception e)
+            {
+                LogError($"ForceExitOnDeath failed: {e.Message}");
                 return TxResult.Fail(e.Message);
             }
         }
@@ -1885,6 +1995,12 @@ namespace SeekerDungeon.Solana
 
             try
             {
+                var leaveBossResult = await EnsureBossFightExitedForNonBossAction("JoinJob");
+                if (!leaveBossResult.Success)
+                {
+                    return leaveBossResult;
+                }
+
                 var playerTokenAccount = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(
                     Web3.Wallet.Account.PublicKey,
                     CurrentGlobalState.SkrMint
@@ -2106,64 +2222,13 @@ namespace SeekerDungeon.Solana
             }
 
             Log($"Abandoning job in direction {LGConfig.GetDirectionName(direction)}...");
-
-            try
+            var result = await AbandonJobAt(CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY, direction);
+            if (result.Success)
             {
-                var result = await ExecuteGameplayActionAsync(
-                    "AbandonJob",
-                    (context) =>
-                    {
-                        var playerPda = DerivePlayerPda(context.Player);
-                        var roomPda = DeriveRoomPda(
-                            CurrentGlobalState.SeasonSeed,
-                            CurrentPlayerState.CurrentRoomX,
-                            CurrentPlayerState.CurrentRoomY);
-                        var escrowPda = DeriveEscrowPda(roomPda, direction);
-                        var helperStakePda = DeriveHelperStakePda(roomPda, direction, context.Player);
-                        var roomPresencePda = DeriveRoomPresencePda(
-                            CurrentGlobalState.SeasonSeed,
-                            CurrentPlayerState.CurrentRoomX,
-                            CurrentPlayerState.CurrentRoomY,
-                            context.Player
-                        );
-                        var playerTokenAccount = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(
-                            context.Player,
-                            CurrentGlobalState.SkrMint
-                        );
-
-                        return ChaindepthProgram.AbandonJob(
-                            new AbandonJobAccounts
-                            {
-                                Authority = context.Authority,
-                                Player = context.Player,
-                                Global = _globalPda,
-                                PlayerAccount = playerPda,
-                                Room = roomPda,
-                                RoomPresence = roomPresencePda,
-                                Escrow = escrowPda,
-                                HelperStake = helperStakePda,
-                                PrizePool = CurrentGlobalState.PrizePool,
-                                PlayerTokenAccount = playerTokenAccount,
-                                SessionAuthority = context.SessionAuthority,
-                                TokenProgram = TokenProgram.ProgramIdKey
-                            },
-                            direction,
-                            _programId
-                        );
-                    });
-
-                if (result.Success)
-                {
-                    Log($"Job abandoned! TX: {result.Signature}");
-                }
-
-                return result;
+                Log($"Job abandoned! TX: {result.Signature}");
             }
-            catch (Exception e)
-            {
-                LogError($"AbandonJob failed: {e.Message}");
-                return TxResult.Fail(e.Message);
-            }
+
+            return result;
         }
 
         private static bool TryGetMoveDirection(
@@ -2218,19 +2283,76 @@ namespace SeekerDungeon.Solana
             }
 
             Log($"Claiming reward for direction {LGConfig.GetDirectionName(direction)}...");
+            var result = await ClaimJobRewardAt(CurrentPlayerState.CurrentRoomX, CurrentPlayerState.CurrentRoomY, direction);
+            if (result.Success)
+            {
+                Log($"Job reward claimed! TX: {result.Signature}");
+            }
 
+            return result;
+        }
+
+        private async UniTask<TxResult> AbandonJobAt(int roomX, int roomY, byte direction)
+        {
             try
             {
-                var result = await ExecuteGameplayActionAsync(
+                return await ExecuteGameplayActionAsync(
+                    "AbandonJob",
+                    (context) =>
+                    {
+                        var playerPda = DerivePlayerPda(context.Player);
+                        var roomPda = DeriveRoomPda(CurrentGlobalState.SeasonSeed, roomX, roomY);
+                        var escrowPda = DeriveEscrowPda(roomPda, direction);
+                        var helperStakePda = DeriveHelperStakePda(roomPda, direction, context.Player);
+                        var roomPresencePda = DeriveRoomPresencePda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY,
+                            context.Player
+                        );
+                        var playerTokenAccount = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(
+                            context.Player,
+                            CurrentGlobalState.SkrMint
+                        );
+
+                        return ChaindepthProgram.AbandonJob(
+                            new AbandonJobAccounts
+                            {
+                                Authority = context.Authority,
+                                Player = context.Player,
+                                Global = _globalPda,
+                                PlayerAccount = playerPda,
+                                Room = roomPda,
+                                RoomPresence = roomPresencePda,
+                                Escrow = escrowPda,
+                                HelperStake = helperStakePda,
+                                PrizePool = CurrentGlobalState.PrizePool,
+                                PlayerTokenAccount = playerTokenAccount,
+                                SessionAuthority = context.SessionAuthority,
+                                TokenProgram = TokenProgram.ProgramIdKey
+                            },
+                            direction,
+                            _programId
+                        );
+                    });
+            }
+            catch (Exception error)
+            {
+                LogError($"AbandonJob failed: {error.Message}");
+                return TxResult.Fail(error.Message);
+            }
+        }
+
+        private async UniTask<TxResult> ClaimJobRewardAt(int roomX, int roomY, byte direction)
+        {
+            try
+            {
+                return await ExecuteGameplayActionAsync(
                     "ClaimJobReward",
                     (context) =>
                     {
                         var playerPda = DerivePlayerPda(context.Player);
-                        var roomPda = DeriveRoomPda(
-                            CurrentGlobalState.SeasonSeed,
-                            CurrentPlayerState.CurrentRoomX,
-                            CurrentPlayerState.CurrentRoomY
-                        );
+                        var roomPda = DeriveRoomPda(CurrentGlobalState.SeasonSeed, roomX, roomY);
                         var escrowPda = DeriveEscrowPda(roomPda, direction);
                         var helperStakePda = DeriveHelperStakePda(roomPda, direction, context.Player);
                         var roomPresencePda = DeriveRoomPresencePda(
@@ -2263,18 +2385,11 @@ namespace SeekerDungeon.Solana
                             _programId
                         );
                     });
-
-                if (result.Success)
-                {
-                    Log($"Job reward claimed! TX: {result.Signature}");
-                }
-
-                return result;
             }
-            catch (Exception e)
+            catch (Exception error)
             {
-                LogError($"ClaimJobReward failed: {e.Message}");
-                return TxResult.Fail(e.Message);
+                LogError($"ClaimJobReward failed: {error.Message}");
+                return TxResult.Fail(error.Message);
             }
         }
 
@@ -2600,6 +2715,7 @@ namespace SeekerDungeon.Solana
                             context.Player
                         );
                         var bossFightPda = DeriveBossFightPda(roomPda, context.Player);
+                        var inventoryPda = DeriveInventoryPda(context.Player);
 
                         return ChaindepthProgram.JoinBossFight(
                             new JoinBossFightAccounts
@@ -2612,6 +2728,7 @@ namespace SeekerDungeon.Solana
                                 Room = roomPda,
                                 RoomPresence = roomPresencePda,
                                 BossFight = bossFightPda,
+                                Inventory = inventoryPda,
                                 SessionAuthority = context.SessionAuthority,
                                 SystemProgram = SystemProgram.ProgramIdKey
                             },
@@ -2658,18 +2775,34 @@ namespace SeekerDungeon.Solana
                     "TickBossFight",
                     (context) =>
                     {
+                        var playerPda = DerivePlayerPda(context.Player);
                         var roomPda = DeriveRoomPda(
                             CurrentGlobalState.SeasonSeed,
                             CurrentPlayerState.CurrentRoomX,
                             CurrentPlayerState.CurrentRoomY
                         );
+                        var roomPresencePda = DeriveRoomPresencePda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY,
+                            context.Player
+                        );
+                        var bossFightPda = DeriveBossFightPda(roomPda, context.Player);
+                        var inventoryPda = DeriveInventoryPda(context.Player);
 
                         return ChaindepthProgram.TickBossFight(
                             new TickBossFightAccounts
                             {
-                                Caller = context.Authority,
+                                Authority = context.Authority,
+                                Player = context.Player,
                                 Global = _globalPda,
-                                Room = roomPda
+                                PlayerAccount = playerPda,
+                                Room = roomPda,
+                                RoomPresence = roomPresencePda,
+                                BossFight = bossFightPda,
+                                Inventory = inventoryPda,
+                                SessionAuthority = context.SessionAuthority,
+                                SystemProgram = SystemProgram.ProgramIdKey
                             },
                             _programId
                         );
@@ -2678,6 +2811,7 @@ namespace SeekerDungeon.Solana
                 if (result.Success)
                 {
                     Log($"Boss ticked! TX: {result.Signature}");
+                    await FetchPlayerState();
                 }
 
                 return result;
@@ -2948,6 +3082,73 @@ namespace SeekerDungeon.Solana
             context.SessionAuthority = sessionAuthority;
             context.UsesSessionSigner = true;
             return context;
+        }
+
+        public async UniTask<TxResult> LeaveBossFight()
+        {
+            if (Web3.Wallet == null)
+            {
+                LogError("Wallet not connected");
+                return TxResult.Fail("Wallet not connected");
+            }
+
+            if (CurrentPlayerState == null || CurrentGlobalState == null)
+            {
+                LogError("Player or global state not loaded");
+                return TxResult.Fail("Player or global state not loaded");
+            }
+
+            try
+            {
+                var result = await ExecuteGameplayActionAsync(
+                    "LeaveBossFight",
+                    (context) =>
+                    {
+                        var playerPda = DerivePlayerPda(context.Player);
+                        var roomPda = DeriveRoomPda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY
+                        );
+                        var roomPresencePda = DeriveRoomPresencePda(
+                            CurrentGlobalState.SeasonSeed,
+                            CurrentPlayerState.CurrentRoomX,
+                            CurrentPlayerState.CurrentRoomY,
+                            context.Player
+                        );
+                        var bossFightPda = DeriveBossFightPda(roomPda, context.Player);
+                        var inventoryPda = DeriveInventoryPda(context.Player);
+
+                        return ChaindepthProgram.LeaveBossFight(
+                            new LeaveBossFightAccounts
+                            {
+                                Authority = context.Authority,
+                                Player = context.Player,
+                                Global = _globalPda,
+                                PlayerAccount = playerPda,
+                                Room = roomPda,
+                                RoomPresence = roomPresencePda,
+                                BossFight = bossFightPda,
+                                Inventory = inventoryPda,
+                                SessionAuthority = context.SessionAuthority,
+                                SystemProgram = SystemProgram.ProgramIdKey
+                            },
+                            _programId
+                        );
+                    });
+
+                if (result.Success)
+                {
+                    await FetchPlayerState();
+                }
+
+                return result;
+            }
+            catch (Exception error)
+            {
+                LogError($"LeaveBossFight failed: {error.Message}");
+                return TxResult.Fail(error.Message);
+            }
         }
 
         private GameplaySigningContext BuildWalletOnlySigningContext()
@@ -3489,7 +3690,8 @@ namespace SeekerDungeon.Solana
                     inventoryBefore,
                     CurrentInventoryState,
                     totalScoreBefore,
-                    CurrentPlayerState?.TotalScore ?? totalScoreBefore);
+                    CurrentPlayerState?.TotalScore ?? totalScoreBefore,
+                    DungeonRunEndReason.Extraction);
 
                 var scoreAdvanced = (CurrentPlayerState?.TotalScore ?? totalScoreBefore) > totalScoreBefore;
                 var hasRunScore = summaryCandidate.RunScore > 0;
@@ -3519,7 +3721,8 @@ namespace SeekerDungeon.Solana
             InventoryAccount inventoryBefore,
             InventoryAccount inventoryAfter,
             ulong totalScoreBefore,
-            ulong totalScoreAfter)
+            ulong totalScoreAfter,
+            DungeonRunEndReason runEndReason)
         {
             var amountBeforeByItemId = BuildAmountByItemId(inventoryBefore);
             var amountAfterByItemId = BuildAmountByItemId(inventoryAfter);
@@ -3530,7 +3733,7 @@ namespace SeekerDungeon.Solana
             foreach (var pair in amountBeforeByItemId)
             {
                 var itemIdRaw = pair.Key;
-                if (!ExtractionScoreTable.IsScoredLoot(itemIdRaw))
+                if (!IsDeathLossItem(itemIdRaw))
                 {
                     continue;
                 }
@@ -3543,9 +3746,14 @@ namespace SeekerDungeon.Solana
                 }
 
                 var extractedAmount = beforeAmount - afterAmount;
-                var unitScore = ExtractionScoreTable.ScoreValueForItem(itemIdRaw);
+                var unitScore = runEndReason == DungeonRunEndReason.Extraction
+                    ? ExtractionScoreTable.ScoreValueForItem(itemIdRaw)
+                    : 0UL;
                 var stackScore = unitScore * extractedAmount;
-                lootScore += stackScore;
+                if (runEndReason == DungeonRunEndReason.Extraction)
+                {
+                    lootScore += stackScore;
+                }
 
                 extractedItems.Add(new DungeonExtractionItemSummary
                 {
@@ -3558,10 +3766,11 @@ namespace SeekerDungeon.Solana
 
             extractedItems.Sort((left, right) => right.StackScore.CompareTo(left.StackScore));
 
-            var runScore = totalScoreAfter >= totalScoreBefore
+            var runScore = runEndReason == DungeonRunEndReason.Extraction &&
+                           totalScoreAfter >= totalScoreBefore
                 ? totalScoreAfter - totalScoreBefore
                 : 0UL;
-            var timeScore = runScore >= lootScore
+            var timeScore = runEndReason == DungeonRunEndReason.Extraction && runScore >= lootScore
                 ? runScore - lootScore
                 : 0UL;
 
@@ -3571,8 +3780,14 @@ namespace SeekerDungeon.Solana
                 LootScore = lootScore,
                 TimeScore = timeScore,
                 RunScore = runScore,
-                TotalScoreAfterRun = totalScoreAfter
+                TotalScoreAfterRun = totalScoreAfter,
+                RunEndReason = runEndReason
             };
+        }
+
+        private static bool IsDeathLossItem(ushort itemId)
+        {
+            return ExtractionScoreTable.IsScoredLoot(itemId);
         }
 
         private static Dictionary<ushort, uint> BuildAmountByItemId(InventoryAccount inventory)
@@ -3826,6 +4041,18 @@ namespace SeekerDungeon.Solana
                    _lastProgramErrorCode.Value == (uint)Chaindepth.Errors.ChaindepthErrorKind.AlreadyJoined;
         }
 
+        private bool IsJobAlreadyCompletedError()
+        {
+            return _lastProgramErrorCode.HasValue &&
+                   _lastProgramErrorCode.Value == (uint)Chaindepth.Errors.ChaindepthErrorKind.JobAlreadyCompleted;
+        }
+
+        private bool IsNotBossFighterError()
+        {
+            return _lastProgramErrorCode.HasValue &&
+                   _lastProgramErrorCode.Value == (uint)Chaindepth.Errors.ChaindepthErrorKind.NotBossFighter;
+        }
+
         private bool IsFrameworkAccountNotInitializedError()
         {
             return _lastProgramErrorCode.HasValue && _lastProgramErrorCode.Value == 3012;
@@ -3841,6 +4068,163 @@ namespace SeekerDungeon.Solana
         {
             return _lastProgramErrorCode.HasValue &&
                    _lastProgramErrorCode.Value == (uint)Chaindepth.Errors.ChaindepthErrorKind.InsufficientItemAmount;
+        }
+
+        private async UniTask<TxResult> StopActiveJobsBeforeRunTransition(string sourceAction)
+        {
+            if (CurrentGlobalState == null)
+            {
+                await FetchGlobalState();
+                if (CurrentGlobalState == null)
+                {
+                    return TxResult.Fail("Global state not loaded");
+                }
+            }
+
+            await FetchPlayerState();
+            if (CurrentPlayerState?.ActiveJobs == null || CurrentPlayerState.ActiveJobs.Length == 0)
+            {
+                return TxResult.Ok("no-active-jobs");
+            }
+
+            var jobsToStop = new List<(int RoomX, int RoomY, byte Direction)>();
+            for (var jobIndex = 0; jobIndex < CurrentPlayerState.ActiveJobs.Length; jobIndex += 1)
+            {
+                var job = CurrentPlayerState.ActiveJobs[jobIndex];
+                if (job == null)
+                {
+                    continue;
+                }
+
+                var jobDirection = (byte)job.Direction;
+                if (jobsToStop.Any(existing =>
+                        existing.RoomX == job.RoomX &&
+                        existing.RoomY == job.RoomY &&
+                        existing.Direction == jobDirection))
+                {
+                    continue;
+                }
+
+                jobsToStop.Add((job.RoomX, job.RoomY, jobDirection));
+            }
+
+            if (jobsToStop.Count == 0)
+            {
+                return TxResult.Ok("no-active-jobs");
+            }
+
+            Log($"{sourceAction}: stopping {jobsToStop.Count} active job(s) before transition.");
+            for (var jobIndex = 0; jobIndex < jobsToStop.Count; jobIndex += 1)
+            {
+                var job = jobsToStop[jobIndex];
+                var isCompleted = await IsJobCompletedAt(job.RoomX, job.RoomY, job.Direction);
+                TxResult stopResult = isCompleted
+                    ? await ClaimJobRewardAt(job.RoomX, job.RoomY, job.Direction)
+                    : await AbandonJobAt(job.RoomX, job.RoomY, job.Direction);
+
+                if (!stopResult.Success && !isCompleted && IsJobAlreadyCompletedError())
+                {
+                    stopResult = await ClaimJobRewardAt(job.RoomX, job.RoomY, job.Direction);
+                }
+
+                if (!stopResult.Success)
+                {
+                    LogError(
+                        $"{sourceAction}: failed stopping active job " +
+                        $"({job.RoomX},{job.RoomY}) {LGConfig.GetDirectionName(job.Direction)}: {stopResult.Error}");
+                    return TxResult.Fail(stopResult.Error ?? "Failed stopping active jobs");
+                }
+            }
+
+            await FetchPlayerState();
+            return TxResult.Ok("stopped-active-jobs");
+        }
+
+        private async UniTask<TxResult> EnsureBossFightExitedForNonBossAction(string sourceAction)
+        {
+            var activeBossFight = await IsBossFightActiveInCurrentRoom();
+            if (!activeBossFight)
+            {
+                return TxResult.Ok("boss-fight-not-active");
+            }
+
+            Log($"{sourceAction}: active boss fight detected. Leaving boss fight first.");
+            var leaveResult = await LeaveBossFight();
+            if (!leaveResult.Success && IsNotBossFighterError())
+            {
+                return TxResult.Ok("boss-fight-already-cleared");
+            }
+            if (!leaveResult.Success)
+            {
+                LogError($"{sourceAction}: failed to leave boss fight: {leaveResult.Error}");
+                return TxResult.Fail(leaveResult.Error ?? "Failed to leave boss fight");
+            }
+
+            return leaveResult;
+        }
+
+        private async UniTask<bool> IsBossFightActiveInCurrentRoom()
+        {
+            if (Web3.Wallet?.Account?.PublicKey == null || CurrentPlayerState == null || CurrentGlobalState == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                var roomPda = DeriveRoomPda(
+                    CurrentGlobalState.SeasonSeed,
+                    CurrentPlayerState.CurrentRoomX,
+                    CurrentPlayerState.CurrentRoomY);
+                if (roomPda == null)
+                {
+                    return false;
+                }
+
+                var bossFightPda = DeriveBossFightPda(roomPda, Web3.Wallet.Account.PublicKey);
+                if (bossFightPda == null || !await AccountHasData(bossFightPda))
+                {
+                    return false;
+                }
+
+                var accountResult = await _client.GetBossFightAccountAsync(bossFightPda.Key, Commitment.Confirmed);
+                return accountResult.WasSuccessful &&
+                       accountResult.ParsedResult != null &&
+                       accountResult.ParsedResult.IsActive;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private async UniTask<bool> IsJobCompletedAt(int roomX, int roomY, byte direction)
+        {
+            try
+            {
+                var roomPda = DeriveRoomPda(CurrentGlobalState.SeasonSeed, roomX, roomY);
+                if (roomPda == null || !await AccountHasData(roomPda))
+                {
+                    return false;
+                }
+
+                var roomResult = await _client.GetRoomAccountAsync(roomPda.Key, Commitment.Confirmed);
+                if (!roomResult.WasSuccessful || roomResult.ParsedResult?.JobCompleted == null)
+                {
+                    return false;
+                }
+
+                if (direction >= roomResult.ParsedResult.JobCompleted.Length)
+                {
+                    return false;
+                }
+
+                return roomResult.ParsedResult.JobCompleted[direction];
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private string GetRequiredKeyDisplayNameForDoor(byte direction)

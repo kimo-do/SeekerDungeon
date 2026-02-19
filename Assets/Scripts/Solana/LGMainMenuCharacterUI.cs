@@ -58,6 +58,7 @@ namespace SeekerDungeon.Solana
         private Label _loadingLabel;
         private VisualElement _extractionSummaryOverlay;
         private VisualElement _extractionSummaryItemsContainer;
+        private Label _extractionSummaryTitleLabel;
         private Label _extractionSummarySubtitleLabel;
         private Label _extractionSummaryLootPointsLabel;
         private Label _extractionSummaryTimePointsLabel;
@@ -161,6 +162,7 @@ namespace SeekerDungeon.Solana
             _loadingLabel = root.Q<Label>("loading-label");
             _extractionSummaryOverlay = root.Q<VisualElement>("extraction-summary-overlay");
             _extractionSummaryItemsContainer = root.Q<VisualElement>("extraction-summary-items");
+            _extractionSummaryTitleLabel = root.Q<Label>("extraction-summary-title");
             _extractionSummarySubtitleLabel = root.Q<Label>("extraction-summary-subtitle");
             _extractionSummaryLootPointsLabel = root.Q<Label>("extraction-summary-loot-points");
             _extractionSummaryTimePointsLabel = root.Q<Label>("extraction-summary-time-points");
@@ -880,7 +882,11 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
-            GameAudioManager.Instance?.PlayStinger(StingerSfxId.ExtractionSuccess);
+            var isDeathRun = summary != null && summary.RunEndReason == DungeonRunEndReason.Death;
+            if (!isDeathRun)
+            {
+                GameAudioManager.Instance?.PlayStinger(StingerSfxId.ExtractionSuccess);
+            }
 
             _isShowingExtractionSummary = true;
             _extractionSummaryOverlay.style.display = DisplayStyle.Flex;
@@ -890,7 +896,12 @@ namespace SeekerDungeon.Solana
                 _extractionSummaryContinueButton.style.display = DisplayStyle.None;
             }
 
-            SetLabelText(_extractionSummarySubtitleLabel, "Cashing in recovered loot...");
+            SetLabelText(
+                _extractionSummaryTitleLabel,
+                isDeathRun ? "YOU DIED" : "YOU MADE IT OUT ALIVE!");
+            SetLabelText(
+                _extractionSummarySubtitleLabel,
+                isDeathRun ? "Recovering after a failed run..." : "Cashing in recovered loot...");
             SetLabelText(_extractionSummaryLootPointsLabel, "+0");
             SetLabelText(_extractionSummaryTimePointsLabel, "+0");
             SetLabelText(_extractionSummaryRunPointsLabel, "+0");
@@ -933,7 +944,7 @@ namespace SeekerDungeon.Solana
                 amountLabel.AddToClassList("extraction-summary-item-amount");
                 row.Add(amountLabel);
 
-                var pointsLabel = new Label("+0");
+                var pointsLabel = new Label(isDeathRun ? "LOST" : "+0");
                 pointsLabel.AddToClassList("extraction-summary-item-points");
                 row.Add(pointsLabel);
 
@@ -948,7 +959,10 @@ namespace SeekerDungeon.Solana
                 var emptyRow = new VisualElement();
                 emptyRow.AddToClassList("extraction-summary-item-row");
 
-                var emptyLabel = new Label("No scored loot extracted this run.");
+                var emptyLabel = new Label(
+                    isDeathRun
+                        ? "No death-loss loot was carried."
+                        : "No scored loot extracted this run.");
                 emptyLabel.AddToClassList("extraction-summary-item-name");
                 emptyLabel.style.flexGrow = 1f;
                 emptyLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
@@ -967,9 +981,12 @@ namespace SeekerDungeon.Solana
                     rowVisual.style.opacity = 1f;
                 }
 
-                await AnimateNumberLabelAsync(rowPointsLabels[rowIndex], 0, itemStackScores[rowIndex], "+");
-                runningLootScore += itemStackScores[rowIndex];
-                SetLabelText(_extractionSummaryLootPointsLabel, $"+{runningLootScore}");
+                if (!isDeathRun)
+                {
+                    await AnimateNumberLabelAsync(rowPointsLabels[rowIndex], 0, itemStackScores[rowIndex], "+");
+                    runningLootScore += itemStackScores[rowIndex];
+                    SetLabelText(_extractionSummaryLootPointsLabel, $"+{runningLootScore}");
+                }
                 await UniTask.Delay(TimeSpan.FromMilliseconds(90));
             }
 
@@ -982,9 +999,11 @@ namespace SeekerDungeon.Solana
 
             SetLabelText(
                 _extractionSummarySubtitleLabel,
-                summary.RunScore > 0
-                    ? "Run complete. Your score has been updated."
-                    : "Run complete. No score gained this run.");
+                isDeathRun
+                    ? "Run failed. Loot lost. No score gained."
+                    : summary.RunScore > 0
+                        ? "Run complete. Your score has been updated."
+                        : "Run complete. No score gained this run.");
             if (_extractionSummaryContinueButton != null)
             {
                 _extractionSummaryContinueButton.style.display = DisplayStyle.Flex;

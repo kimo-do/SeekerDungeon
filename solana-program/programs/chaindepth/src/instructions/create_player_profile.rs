@@ -105,6 +105,13 @@ pub fn handler(ctx: Context<CreatePlayerProfile>, skin_id: u16, display_name: St
         inventory.bump = ctx.bumps.inventory;
     }
 
+    if player_account.max_hp == 0 {
+        player_account.max_hp = crate::state::DEFAULT_PLAYER_MAX_HP;
+    }
+    if player_account.current_hp == 0 {
+        player_account.current_hp = player_account.max_hp;
+    }
+
     profile.skin_id = skin_id;
     profile.display_name = display_name;
 

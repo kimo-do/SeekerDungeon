@@ -101,6 +101,9 @@ pub enum ChainDepthError {
     #[msg("Player is not a fighter for this boss")]
     NotBossFighter,
 
+    #[msg("Player has no HP and must recover before fighting")]
+    PlayerDead,
+
     #[msg("Invalid center type")]
     InvalidCenterType,
 

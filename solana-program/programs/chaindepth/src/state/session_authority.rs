@@ -34,4 +34,7 @@ pub mod session_instruction_bits {
     pub const LOOT_BOSS: u64 = 1 << 12;
     pub const UNLOCK_DOOR: u64 = 1 << 13;
     pub const EXIT_DUNGEON: u64 = 1 << 14;
+    pub const FORCE_EXIT_ON_DEATH: u64 = 1 << 15;
+    pub const TICK_BOSS_FIGHT: u64 = 1 << 16;
+    pub const LEAVE_BOSS_FIGHT: u64 = 1 << 17;
 }

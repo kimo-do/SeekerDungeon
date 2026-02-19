@@ -3,6 +3,12 @@ using System.Collections.Generic;
 
 namespace SeekerDungeon.Solana
 {
+    public enum DungeonRunEndReason : byte
+    {
+        Extraction = 0,
+        Death = 1
+    }
+
     [Serializable]
     public sealed class DungeonExtractionItemSummary
     {
@@ -20,6 +26,7 @@ namespace SeekerDungeon.Solana
         public ulong TimeScore;
         public ulong RunScore;
         public ulong TotalScoreAfterRun;
+        public DungeonRunEndReason RunEndReason;
     }
 
     public static class DungeonExtractionSummaryStore

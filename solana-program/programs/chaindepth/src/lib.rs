@@ -90,6 +90,11 @@ pub mod chaindepth {
         instructions::exit_dungeon::handler(ctx)
     }
 
+    /// Force-end run on death and remove death-loss items without awarding score.
+    pub fn force_exit_on_death(ctx: Context<ForceExitOnDeath>) -> Result<()> {
+        instructions::force_exit_on_death::handler(ctx)
+    }
+
     /// Join a job to clear rubble (stakes SKR)
     pub fn join_job(ctx: Context<JoinJob>, direction: u8) -> Result<()> {
         instructions::join_job::handler(ctx, direction)
@@ -165,6 +170,11 @@ pub mod chaindepth {
     /// Tick boss fight progress.
     pub fn tick_boss_fight(ctx: Context<TickBossFight>) -> Result<()> {
         instructions::tick_boss_fight::handler(ctx)
+    }
+
+    /// Leave active boss fight in the current room.
+    pub fn leave_boss_fight(ctx: Context<LeaveBossFight>) -> Result<()> {
+        instructions::leave_boss_fight::handler(ctx)
     }
 
     /// Add items to player's inventory (utility/admin-like action for testing flows)

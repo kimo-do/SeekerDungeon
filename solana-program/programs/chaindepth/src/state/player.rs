@@ -2,6 +2,7 @@ use anchor_lang::prelude::*;
 
 /// Maximum number of active jobs a player can have at once
 pub const MAX_ACTIVE_JOBS: usize = 4;
+pub const DEFAULT_PLAYER_MAX_HP: u16 = 100;
 
 /// Player account - one per wallet
 /// PDA seeds: ["player", user_pubkey]
@@ -45,6 +46,12 @@ pub struct PlayerAccount {
     /// Set true on first successful in-dungeon action and false on successful extraction.
     pub in_dungeon: bool,
 
+    /// Current hit points.
+    pub current_hp: u16,
+
+    /// Maximum hit points.
+    pub max_hp: u16,
+
     /// Version of the player account data layout/semantics.
     pub data_version: u16,
 
@@ -65,7 +72,7 @@ pub struct ActiveJob {
 
 impl PlayerAccount {
     pub const SEED_PREFIX: &'static [u8] = b"player";
-    pub const CURRENT_DATA_VERSION: u16 = 1;
+    pub const CURRENT_DATA_VERSION: u16 = 2;
 
     /// Check if player is at the given room
     pub fn is_at_room(&self, x: i8, y: i8) -> bool {

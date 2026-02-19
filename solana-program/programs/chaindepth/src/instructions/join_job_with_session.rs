@@ -139,8 +139,16 @@ pub fn handler(ctx: Context<JoinJobWithSession>, direction: u8) -> Result<()> {
         ChainDepthError::AlreadyJoined
     );
     require!(
+        player_account.active_jobs.is_empty(),
+        ChainDepthError::TooManyActiveJobs
+    );
+    require!(
         !room.job_completed[direction_index],
         ChainDepthError::JobAlreadyCompleted
+    );
+    require!(
+        ctx.accounts.room_presence.activity != RoomPresence::ACTIVITY_BOSS_FIGHT,
+        ChainDepthError::AlreadyFightingBoss
     );
 
     if room.helper_counts[direction_index] == 0 {
