@@ -31,6 +31,7 @@ namespace SeekerDungeon.Solana
         public const string ESCROW_SEED = "escrow";
         public const string STAKE_SEED = "stake";
         public const string INVENTORY_SEED = "inventory";
+        public const string STORAGE_SEED = "storage";
         public const string BOSS_FIGHT_SEED = "boss_fight";
         public const string PROFILE_SEED = "profile";
         public const string PRESENCE_SEED = "presence";

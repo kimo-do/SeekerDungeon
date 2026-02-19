@@ -19,7 +19,7 @@ MonoBehaviour:
   loops:
   - id: 0
     clip: {fileID: 8300000, guid: 69c600b00c0a26c46abf51b06f3f5159, type: 3}
-    volume: 0.341
+    volume: 0.18
     spatialized: 0
     spatialBlend: 0
     minDistance: 0
@@ -27,14 +27,14 @@ MonoBehaviour:
   - id: 1
     clip: {fileID: 8300000, guid: 6f7acced3938c204780cae57a43c11f0, type: 3}
     volume: 0.341
-    spatialized: 1
+    spatialized: 0
     spatialBlend: 0.525
     minDistance: 0
     maxDistance: 5
   - id: 2
     clip: {fileID: 8300000, guid: b7da57747b4827f48a2190c9a4d39e73, type: 3}
     volume: 0.198
-    spatialized: 1
+    spatialized: 0
     spatialBlend: 0.525
     minDistance: 0
     maxDistance: 5
@@ -44,12 +44,12 @@ MonoBehaviour:
     - {fileID: 8300000, guid: d046148ada55bc947ab3c05bafec6e10, type: 3}
     - {fileID: 8300000, guid: 50c95ff6fbee3524d895d448816578ab, type: 3}
     - {fileID: 8300000, guid: 02bacdebaef8f884584bf94f1772841e, type: 3}
-    volume: 0.693
+    volume: 0.538
     pitchRange: {x: 0, y: 1}
   - category: 1
     clips:
     - {fileID: 8300000, guid: 1bf11803964e60a469be72443d993247, type: 3}
-    volume: 0.693
+    volume: 0.438
     pitchRange: {x: 0, y: 1}
   stingers:
   - id: 0
@@ -64,7 +64,7 @@ MonoBehaviour:
     - {fileID: 8300000, guid: ce61840e00751924683a1f8cd501ae21, type: 3}
     volume: 0.429
     pitchRange: {x: 0, y: 0}
-    spatialized: 1
+    spatialized: 0
     spatialBlend: 0
     minDistance: 0
     maxDistance: 0
@@ -146,7 +146,7 @@ MonoBehaviour:
   - monsterId: 1
     loopClip: {fileID: 8300000, guid: 1bca67ef2c4f65e47ac0c9cb34bc842f, type: 3}
     loopVolume: 0.478
-    loopSpatialized: 1
+    loopSpatialized: 0
     loopSpatialBlend: 0.304
     oneShotClips: []
     oneShotVolume: 0

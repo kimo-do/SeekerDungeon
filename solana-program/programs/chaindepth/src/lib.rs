@@ -85,7 +85,7 @@ pub mod chaindepth {
         instructions::unlock_door::handler(ctx, direction)
     }
 
-    /// Extract at entrance stairs and convert carried loot into score.
+    /// Extract at entrance stairs, bank carried valuables into storage, and award run score.
     pub fn exit_dungeon(ctx: Context<ExitDungeon>) -> Result<()> {
         instructions::exit_dungeon::handler(ctx)
     }

@@ -1,5 +1,4 @@
 using System;
-using System;
 using System.Collections.Generic;
 using System.Text;
 using Cysharp.Threading.Tasks;
@@ -24,6 +23,7 @@ namespace SeekerDungeon.Solana
         [SerializeField] private float firstDrinkDelaySeconds = 2f;
         [SerializeField] private float drinkIntervalMinSeconds = 8f;
         [SerializeField] private float drinkIntervalMaxSeconds = 15f;
+        [SerializeField] private Sprite settingsCogSprite;
         [SerializeField] private Sprite audioMutedSprite;
         [SerializeField] private Sprite audioUnmutedSprite;
 
@@ -41,6 +41,9 @@ namespace SeekerDungeon.Solana
         private Label _statusLabel;
         private Label _existingNameLabel;
         private Label _menuTotalScoreLabel;
+        private VisualElement _menuStoragePanel;
+        private VisualElement _menuStorageItemsContainer;
+        private Label _menuStorageEmptyLabel;
         private Label _pickCharacterTitleLabel;
         private Label _walletSolBalanceLabel;
         private Label _walletSkrBalanceLabel;
@@ -48,6 +51,8 @@ namespace SeekerDungeon.Solana
         private VisualElement _lowBalanceModalOverlay;
         private VisualElement _sessionSetupOverlay;
         private VisualElement _legacyResetOverlay;
+        private VisualElement _settingsOverlay;
+        private VisualElement _resetConfirmOverlay;
         private Label _sessionSetupMessageLabel;
         private Label _legacyResetMessageLabel;
         private Label _lowBalanceModalMessageLabel;
@@ -71,14 +76,23 @@ namespace SeekerDungeon.Solana
         private Button _nextSkinButton;
         private Button _confirmCreateButton;
         private Button _enterDungeonButton;
-        private Button _disconnectButton;
+        private Button _openSettingsButton;
         private Button _sessionPillButton;
         private Button _sessionSetupActivateButton;
         private Button _legacyResetButton;
         private Button _lowBalanceModalDismissButton;
         private Button _lowBalanceTopUpButton;
         private Button _extractionSummaryContinueButton;
-        private Button _audioToggleButton;
+        private Button _settingsCloseButton;
+        private Button _settingsDisconnectButton;
+        private Button _settingsResetAccountButton;
+        private Button _settingsMusicMuteButton;
+        private Button _settingsSfxMuteButton;
+        private Button _resetConfirmCancelButton;
+        private Button _resetConfirmConfirmButton;
+        private Slider _settingsMusicSlider;
+        private Slider _settingsSfxSlider;
+        private bool _isApplyingAudioSettings;
         private TouchScreenKeyboard _mobileKeyboard;
         private bool _isApplyingKeyboardText;
         private VisualElement _boundRoot;
@@ -122,6 +136,7 @@ namespace SeekerDungeon.Solana
         private void OnDisable()
         {
             _stopDrinkLoop = true;
+            ShowSettingsOverlay(false);
             UnbindUiHandlers();
             _isShowingExtractionSummary = false;
             _txIndicatorController?.Dispose();
@@ -175,6 +190,9 @@ namespace SeekerDungeon.Solana
             _displayNameInput = root.Q<TextField>("display-name-input");
             _statusLabel = root.Q<Label>("menu-status-label");
             _menuTotalScoreLabel = root.Q<Label>("menu-total-score-label");
+            _menuStoragePanel = root.Q<VisualElement>("menu-storage-panel");
+            _menuStorageItemsContainer = root.Q<VisualElement>("menu-storage-items");
+            _menuStorageEmptyLabel = root.Q<Label>("menu-storage-empty");
             _existingNameLabel = root.Q<Label>("existing-display-name-label");
             _pickCharacterTitleLabel = root.Q<Label>("pick-character-title-label");
             _walletSolBalanceLabel = root.Q<Label>("wallet-sol-balance-label");
@@ -183,6 +201,8 @@ namespace SeekerDungeon.Solana
             _lowBalanceModalOverlay = root.Q<VisualElement>("low-balance-modal-overlay");
             _sessionSetupOverlay = root.Q<VisualElement>("session-setup-overlay");
             _legacyResetOverlay = root.Q<VisualElement>("legacy-reset-overlay");
+            _settingsOverlay = root.Q<VisualElement>("settings-overlay");
+            _resetConfirmOverlay = root.Q<VisualElement>("reset-confirm-overlay");
             _sessionSetupMessageLabel = root.Q<Label>("session-setup-message");
             _legacyResetMessageLabel = root.Q<Label>("legacy-reset-message");
             _lowBalanceModalMessageLabel = root.Q<Label>("low-balance-modal-message");
@@ -192,14 +212,22 @@ namespace SeekerDungeon.Solana
             _nextSkinButton = root.Q<Button>("btn-next-skin");
             _confirmCreateButton = root.Q<Button>("btn-create-character");
             _enterDungeonButton = root.Q<Button>("btn-enter-dungeon");
-            _disconnectButton = root.Q<Button>("btn-disconnect-wallet");
+            _openSettingsButton = root.Q<Button>("btn-open-settings");
             _sessionPillButton = root.Q<Button>("btn-session-pill");
             _sessionSetupActivateButton = root.Q<Button>("btn-session-setup-activate");
             _legacyResetButton = root.Q<Button>("btn-legacy-reset");
             _lowBalanceModalDismissButton = root.Q<Button>("btn-low-balance-dismiss");
             _lowBalanceTopUpButton = root.Q<Button>("btn-low-balance-topup");
             _extractionSummaryContinueButton = root.Q<Button>("btn-extraction-summary-continue");
-            _audioToggleButton = root.Q<Button>("btn-audio-toggle");
+            _settingsCloseButton = root.Q<Button>("btn-settings-close");
+            _settingsDisconnectButton = root.Q<Button>("btn-settings-disconnect");
+            _settingsResetAccountButton = root.Q<Button>("btn-settings-reset-account");
+            _settingsMusicMuteButton = root.Q<Button>("btn-settings-music-mute");
+            _settingsSfxMuteButton = root.Q<Button>("btn-settings-sfx-mute");
+            _resetConfirmCancelButton = root.Q<Button>("btn-reset-confirm-cancel");
+            _resetConfirmConfirmButton = root.Q<Button>("btn-reset-confirm-confirm");
+            _settingsMusicSlider = root.Q<Slider>("settings-music-slider");
+            _settingsSfxSlider = root.Q<Slider>("settings-sfx-slider");
 
             if (_previousSkinButton != null)
             {
@@ -221,9 +249,9 @@ namespace SeekerDungeon.Solana
                 _enterDungeonButton.clicked += HandleEnterDungeonClicked;
             }
 
-            if (_disconnectButton != null)
+            if (_openSettingsButton != null)
             {
-                _disconnectButton.clicked += HandleDisconnectWalletClicked;
+                _openSettingsButton.clicked += HandleOpenSettingsClicked;
             }
 
             if (_sessionPillButton != null)
@@ -256,9 +284,49 @@ namespace SeekerDungeon.Solana
                 _extractionSummaryContinueButton.clicked += HandleExtractionSummaryContinueClicked;
             }
 
-            if (_audioToggleButton != null)
+            if (_settingsCloseButton != null)
             {
-                _audioToggleButton.clicked += HandleAudioToggleClicked;
+                _settingsCloseButton.clicked += HandleSettingsCloseClicked;
+            }
+
+            if (_settingsDisconnectButton != null)
+            {
+                _settingsDisconnectButton.clicked += HandleSettingsDisconnectClicked;
+            }
+
+            if (_settingsResetAccountButton != null)
+            {
+                _settingsResetAccountButton.clicked += HandleSettingsResetAccountClicked;
+            }
+
+            if (_settingsMusicMuteButton != null)
+            {
+                _settingsMusicMuteButton.clicked += HandleSettingsMusicMuteClicked;
+            }
+
+            if (_settingsSfxMuteButton != null)
+            {
+                _settingsSfxMuteButton.clicked += HandleSettingsSfxMuteClicked;
+            }
+
+            if (_resetConfirmCancelButton != null)
+            {
+                _resetConfirmCancelButton.clicked += HandleResetConfirmCancelClicked;
+            }
+
+            if (_resetConfirmConfirmButton != null)
+            {
+                _resetConfirmConfirmButton.clicked += HandleResetConfirmConfirmClicked;
+            }
+
+            if (_settingsMusicSlider != null)
+            {
+                _settingsMusicSlider.RegisterValueChangedCallback(HandleMusicSliderChanged);
+            }
+
+            if (_settingsSfxSlider != null)
+            {
+                _settingsSfxSlider.RegisterValueChangedCallback(HandleSfxSliderChanged);
             }
 
             if (_displayNameInput != null)
@@ -271,7 +339,8 @@ namespace SeekerDungeon.Solana
             _isHandlersBound = true;
             _txIndicatorController ??= new TxIndicatorVisualController();
             _txIndicatorController.Bind(root);
-            UpdateAudioToggleButtonVisual();
+            ApplySettingsButtonVisual();
+            RefreshAudioSettingsUiFromManager();
         }
 
         private void UnbindUiHandlers()
@@ -296,9 +365,9 @@ namespace SeekerDungeon.Solana
                 _enterDungeonButton.clicked -= HandleEnterDungeonClicked;
             }
 
-            if (_disconnectButton != null)
+            if (_openSettingsButton != null)
             {
-                _disconnectButton.clicked -= HandleDisconnectWalletClicked;
+                _openSettingsButton.clicked -= HandleOpenSettingsClicked;
             }
 
             if (_sessionPillButton != null)
@@ -331,9 +400,49 @@ namespace SeekerDungeon.Solana
                 _extractionSummaryContinueButton.clicked -= HandleExtractionSummaryContinueClicked;
             }
 
-            if (_audioToggleButton != null)
+            if (_settingsCloseButton != null)
             {
-                _audioToggleButton.clicked -= HandleAudioToggleClicked;
+                _settingsCloseButton.clicked -= HandleSettingsCloseClicked;
+            }
+
+            if (_settingsDisconnectButton != null)
+            {
+                _settingsDisconnectButton.clicked -= HandleSettingsDisconnectClicked;
+            }
+
+            if (_settingsResetAccountButton != null)
+            {
+                _settingsResetAccountButton.clicked -= HandleSettingsResetAccountClicked;
+            }
+
+            if (_settingsMusicMuteButton != null)
+            {
+                _settingsMusicMuteButton.clicked -= HandleSettingsMusicMuteClicked;
+            }
+
+            if (_settingsSfxMuteButton != null)
+            {
+                _settingsSfxMuteButton.clicked -= HandleSettingsSfxMuteClicked;
+            }
+
+            if (_resetConfirmCancelButton != null)
+            {
+                _resetConfirmCancelButton.clicked -= HandleResetConfirmCancelClicked;
+            }
+
+            if (_resetConfirmConfirmButton != null)
+            {
+                _resetConfirmConfirmButton.clicked -= HandleResetConfirmConfirmClicked;
+            }
+
+            if (_settingsMusicSlider != null)
+            {
+                _settingsMusicSlider.UnregisterValueChangedCallback(HandleMusicSliderChanged);
+            }
+
+            if (_settingsSfxSlider != null)
+            {
+                _settingsSfxSlider.UnregisterValueChangedCallback(HandleSfxSliderChanged);
             }
 
             if (_displayNameInput != null)
@@ -372,10 +481,11 @@ namespace SeekerDungeon.Solana
             characterManager?.EnterDungeon();
         }
 
-        private void HandleDisconnectWalletClicked()
+        private void HandleOpenSettingsClicked()
         {
-            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Danger);
-            characterManager?.DisconnectWallet();
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Secondary);
+            ShowSettingsOverlay(true);
+            RefreshAudioSettingsUiFromManager();
         }
 
         private void HandleEnableSessionClicked()
@@ -402,7 +512,97 @@ namespace SeekerDungeon.Solana
             characterManager?.RequestLegacyAccountResetFromMenu();
         }
 
-        private void HandleAudioToggleClicked()
+        private void HandleSettingsCloseClicked()
+        {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Secondary);
+            ShowSettingsOverlay(false);
+        }
+
+        private void HandleSettingsDisconnectClicked()
+        {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Danger);
+            ShowSettingsOverlay(false);
+            characterManager?.DisconnectWallet();
+        }
+
+        private void HandleSettingsResetAccountClicked()
+        {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Danger);
+            ShowResetConfirmOverlay(true);
+        }
+
+        private void HandleResetConfirmCancelClicked()
+        {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Secondary);
+            ShowResetConfirmOverlay(false);
+        }
+
+        private void HandleResetConfirmConfirmClicked()
+        {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Danger);
+            ShowResetConfirmOverlay(false);
+            ShowSettingsOverlay(false);
+            characterManager?.RequestLegacyAccountResetFromMenu();
+            characterManager?.RequestLegacyAccountResetFromMenu();
+        }
+
+        private void HandleSettingsMusicMuteClicked()
+        {
+            if (_isApplyingAudioSettings)
+            {
+                return;
+            }
+
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Secondary);
+            var audioManager = GameAudioManager.Instance;
+            if (audioManager == null)
+            {
+                return;
+            }
+
+            audioManager.SetMusicEnabled(!audioManager.IsMusicEnabled);
+            RefreshAudioSettingsUiFromManager();
+        }
+
+        private void HandleSettingsSfxMuteClicked()
+        {
+            if (_isApplyingAudioSettings)
+            {
+                return;
+            }
+
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Secondary);
+            var audioManager = GameAudioManager.Instance;
+            if (audioManager == null)
+            {
+                return;
+            }
+
+            audioManager.SetSfxEnabled(!audioManager.IsSfxEnabled);
+            RefreshAudioSettingsUiFromManager();
+        }
+
+        private void HandleMusicSliderChanged(ChangeEvent<float> changeEvent)
+        {
+            if (_isApplyingAudioSettings)
+            {
+                return;
+            }
+
+            GameAudioManager.Instance?.SetMusicVolume(changeEvent.newValue);
+        }
+
+        private void HandleSfxSliderChanged(ChangeEvent<float> changeEvent)
+        {
+            if (_isApplyingAudioSettings)
+            {
+                return;
+            }
+
+            GameAudioManager.Instance?.SetSfxVolume(changeEvent.newValue);
+        }
+
+        private void RefreshAudioSettingsUiFromManager()
         {
             var audioManager = GameAudioManager.Instance;
             if (audioManager == null)
@@ -410,30 +610,76 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
-            var wasMuted = audioManager.IsMuted;
-            var isMuted = audioManager.ToggleMute();
-            if (wasMuted && !isMuted)
+            _isApplyingAudioSettings = true;
+            try
             {
-                audioManager.PlayButton(ButtonSfxCategory.Secondary);
-            }
+                _settingsMusicSlider?.SetValueWithoutNotify(audioManager.MusicVolume);
+                _settingsSfxSlider?.SetValueWithoutNotify(audioManager.SfxVolume);
 
-            UpdateAudioToggleButtonVisual();
+                _settingsMusicSlider?.SetEnabled(audioManager.IsMusicEnabled);
+                _settingsSfxSlider?.SetEnabled(audioManager.IsSfxEnabled);
+                ApplyAudioToggleButtonVisual(_settingsMusicMuteButton, audioManager.IsMusicEnabled, "Music");
+                ApplyAudioToggleButtonVisual(_settingsSfxMuteButton, audioManager.IsSfxEnabled, "SFX");
+            }
+            finally
+            {
+                _isApplyingAudioSettings = false;
+            }
         }
 
-        private void UpdateAudioToggleButtonVisual()
+        private void ShowSettingsOverlay(bool show)
         {
-            if (_audioToggleButton == null)
+            if (_settingsOverlay != null)
+            {
+                _settingsOverlay.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
+                _settingsOverlay.style.visibility = show ? Visibility.Visible : Visibility.Hidden;
+                _settingsOverlay.style.opacity = show ? 1f : 0f;
+            }
+
+            if (!show)
+            {
+                ShowResetConfirmOverlay(false);
+            }
+        }
+
+        private void ShowResetConfirmOverlay(bool show)
+        {
+            if (_resetConfirmOverlay != null)
+            {
+                _resetConfirmOverlay.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
+                _resetConfirmOverlay.style.visibility = show ? Visibility.Visible : Visibility.Hidden;
+                _resetConfirmOverlay.style.opacity = show ? 1f : 0f;
+            }
+        }
+
+        private void ApplySettingsButtonVisual()
+        {
+            if (_openSettingsButton == null)
             {
                 return;
             }
 
-            var audioManager = GameAudioManager.Instance;
-            var isMuted = audioManager != null && audioManager.IsMuted;
-            var sprite = isMuted ? audioMutedSprite : audioUnmutedSprite;
-            _audioToggleButton.style.backgroundImage = sprite != null
-                ? new StyleBackground(sprite)
+            _openSettingsButton.style.backgroundImage = settingsCogSprite != null
+                ? new StyleBackground(settingsCogSprite)
                 : new StyleBackground((Sprite)null);
-            _audioToggleButton.tooltip = isMuted ? "Audio Muted" : "Audio On";
+            _openSettingsButton.tooltip = "Settings";
+        }
+
+        private void ApplyAudioToggleButtonVisual(Button button, bool isEnabled, string channelName)
+        {
+            if (button == null)
+            {
+                return;
+            }
+
+            var icon = isEnabled ? audioUnmutedSprite : audioMutedSprite;
+            button.style.backgroundImage = icon != null
+                ? new StyleBackground(icon)
+                : new StyleBackground((Sprite)null);
+            button.text = icon == null ? (isEnabled ? "On" : "Off") : string.Empty;
+            button.tooltip = isEnabled
+                ? $"{channelName} enabled (tap to mute)"
+                : $"{channelName} muted (tap to unmute)";
         }
 
         private void HandleDisplayNameChanged(ChangeEvent<string> changeEvent)
@@ -598,6 +844,12 @@ namespace SeekerDungeon.Solana
             }
 
             var isLockedProfile = state.HasProfile && !state.HasUnsavedProfileChanges;
+            if (_menuStoragePanel != null)
+            {
+                _menuStoragePanel.style.display = isLockedProfile ? DisplayStyle.Flex : DisplayStyle.None;
+            }
+            RefreshStoredCollection(state.StoredCollectionItems);
+
             var previewController = characterManager?.PreviewPlayerController;
             previewController?.SetDisplayName(state.PlayerDisplayName);
             previewController?.SetDisplayNameVisible(state.IsReady);
@@ -771,7 +1023,7 @@ namespace SeekerDungeon.Solana
                 !state.IsLegacyResetRequired &&
                 (!state.HasProfile || state.HasUnsavedProfileChanges));
             _enterDungeonButton?.SetEnabled(canEnter && !state.IsLegacyResetRequired);
-            _disconnectButton?.SetEnabled(!state.IsBusy);
+            _openSettingsButton?.SetEnabled(!state.IsBusy);
             if (_sessionPillButton != null)
             {
                 _sessionPillButton.style.display = state.HasProfile ? DisplayStyle.Flex : DisplayStyle.None;
@@ -787,10 +1039,66 @@ namespace SeekerDungeon.Solana
                 state.CanSelfResetLegacyAccount &&
                 !state.IsResettingLegacyAccount &&
                 !state.IsBusy);
+            _settingsDisconnectButton?.SetEnabled(!state.IsBusy);
+            _settingsResetAccountButton?.SetEnabled(!state.IsBusy);
+            _settingsCloseButton?.SetEnabled(true);
+            _resetConfirmCancelButton?.SetEnabled(true);
+            _resetConfirmConfirmButton?.SetEnabled(!state.IsBusy);
             _lowBalanceModalDismissButton?.SetEnabled(!state.IsRequestingDevnetTopUp);
             _lowBalanceTopUpButton?.SetEnabled(!state.IsRequestingDevnetTopUp && !state.IsBusy);
 
             TryShowPendingExtractionSummary();
+        }
+
+        private void RefreshStoredCollection(IReadOnlyList<CollectionItemView> collectionItems)
+        {
+            if (_menuStorageItemsContainer == null)
+            {
+                return;
+            }
+
+            _menuStorageItemsContainer.Clear();
+            var hasItems = collectionItems != null && collectionItems.Count > 0;
+            if (_menuStorageEmptyLabel != null)
+            {
+                _menuStorageEmptyLabel.style.display = hasItems ? DisplayStyle.None : DisplayStyle.Flex;
+            }
+
+            if (!hasItems)
+            {
+                return;
+            }
+
+            for (var itemIndex = 0; itemIndex < collectionItems.Count; itemIndex += 1)
+            {
+                var collectionItem = collectionItems[itemIndex];
+                if (collectionItem == null || collectionItem.Amount == 0)
+                {
+                    continue;
+                }
+
+                var row = new VisualElement();
+                row.AddToClassList("menu-storage-row");
+
+                var icon = new VisualElement();
+                icon.AddToClassList("menu-storage-item-icon");
+                var iconSprite = ResolveItemIcon(collectionItem.ItemId);
+                if (iconSprite != null)
+                {
+                    icon.style.backgroundImage = new StyleBackground(iconSprite);
+                }
+                row.Add(icon);
+
+                var itemNameLabel = new Label(ResolveItemDisplayName(collectionItem.ItemId));
+                itemNameLabel.AddToClassList("menu-storage-item-name");
+                row.Add(itemNameLabel);
+
+                var countLabel = new Label($"x{collectionItem.Amount}");
+                countLabel.AddToClassList("menu-storage-item-count");
+                row.Add(countLabel);
+
+                _menuStorageItemsContainer.Add(row);
+            }
         }
 
         private void StartDrinkLoopIfNeeded()

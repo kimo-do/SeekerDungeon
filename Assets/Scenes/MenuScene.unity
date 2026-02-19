@@ -745,6 +745,7 @@ MonoBehaviour:
   firstDrinkDelaySeconds: 2
   drinkIntervalMinSeconds: 8
   drinkIntervalMaxSeconds: 15
+  settingsCogSprite: {fileID: 4084474913738167913, guid: 2176ad9be2700b545992cd21fb2823a6, type: 3}
   audioMutedSprite: {fileID: 5414932353977812973, guid: b04a6b3834b653248ab9089b53092287, type: 3}
   audioUnmutedSprite: {fileID: 3015481554657215941, guid: b04a6b3834b653248ab9089b53092287, type: 3}
 --- !u!114 &956339299

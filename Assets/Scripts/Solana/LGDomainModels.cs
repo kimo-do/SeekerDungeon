@@ -173,6 +173,12 @@ namespace SeekerDungeon.Solana
         public ushort Durability { get; init; }
     }
 
+    public sealed class CollectionItemView
+    {
+        public ItemId ItemId { get; init; }
+        public uint Amount { get; init; }
+    }
+
     public sealed class LootResult
     {
         public IReadOnlyList<InventoryItemView> Items { get; init; }
@@ -401,6 +407,47 @@ namespace SeekerDungeon.Solana
                     ItemId = ToItemId(item.ItemId),
                     Amount = item.Amount,
                     Durability = item.Durability
+                })
+                .ToArray();
+        }
+
+        public static IReadOnlyList<CollectionItemView> ToCollectionItemViews(this StorageAccount storage)
+        {
+            if (storage?.Items == null || storage.Items.Length == 0)
+            {
+                return Array.Empty<CollectionItemView>();
+            }
+
+            var amountsByItemId = new Dictionary<ushort, uint>();
+            foreach (var item in storage.Items)
+            {
+                if (item == null || item.Amount == 0)
+                {
+                    continue;
+                }
+
+                if (!ExtractionScoreTable.IsScoredLoot(item.ItemId))
+                {
+                    continue;
+                }
+
+                if (amountsByItemId.TryGetValue(item.ItemId, out var existingAmount))
+                {
+                    amountsByItemId[item.ItemId] = existingAmount + item.Amount;
+                }
+                else
+                {
+                    amountsByItemId[item.ItemId] = item.Amount;
+                }
+            }
+
+            return amountsByItemId
+                .OrderByDescending(entry => entry.Value)
+                .ThenBy(entry => entry.Key)
+                .Select(entry => new CollectionItemView
+                {
+                    ItemId = ToItemId(entry.Key),
+                    Amount = entry.Value
                 })
                 .ToArray();
         }

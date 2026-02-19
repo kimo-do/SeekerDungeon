@@ -71,9 +71,9 @@ Solana CLI and Phantom use different derivation paths from seed phrases:
 
 Use JSON keypair files (`devnet-wallet.json`) to avoid confusion.
 
-### 7. Inventory PDA Model (Onchain)
+### 7. Inventory + Storage PDA Model (Onchain)
 
-Inventory is now stored onchain in a dedicated PDA per player:
+Run inventory is stored onchain in a dedicated PDA per player:
 
 - `InventoryAccount` PDA seeds: `["inventory", player]`
 - `InventoryItem` fields:
@@ -82,10 +82,18 @@ Inventory is now stored onchain in a dedicated PDA per player:
   - `durability: u16`
 - Max inventory stacks per player: `64`
 
+Long-term storage is a separate per-player PDA:
+
+- `StorageAccount` PDA seeds: `["storage", player]`
+- Uses the same `InventoryItem` stack shape (`item_id`, `amount`, `durability`)
+- Max storage stacks per player: `64`
+
 Behavior:
 - `loot_chest` now writes directly to `InventoryAccount` (init-if-needed).
 - `add_inventory_item(item_id, amount, durability)` stacks by `(item_id, durability)`.
 - `remove_inventory_item(item_id, amount)` removes across all stacks of the same `item_id`.
+- `exit_dungeon` scores run valuables, transfers scored loot stacks from run inventory into storage, and keeps non-scored items in run inventory.
+- `force_exit_on_death` only removes scored loot from run inventory; storage remains untouched.
 
 Current item ids used by chest loot:
 - `1` = Ore
@@ -257,7 +265,8 @@ wsl -d Ubuntu -- bash scripts/wsl/run.sh "export ANCHOR_PROVIDER_URL=https://api
 - Helpers claim stake + bonus with `claim_job_reward`
 - Rooms track discovery metadata with `created_by` and `created_slot`
 - Prize pool is a token account owned by global PDA
-- Player inventory is a dedicated PDA keyed by `[inventory, player]`
+- Player run inventory is a dedicated PDA keyed by `[inventory, player]`
+- Player long-term storage is a dedicated PDA keyed by `[storage, player]`
 
 ## Unity Integration
 

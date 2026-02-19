@@ -2,7 +2,7 @@
     <Style src="project://database/Assets/Scripts/Solana/UI/LGMainMenuCharacterUI.uss?fileID=7433441132597879392&amp;guid=ddafedc00b875714d8f9ebdadf077410&amp;type=3#LGMainMenuCharacterUI"/>
     <ui:VisualElement name="menu-root" class="menu-root" style="-unity-font-style: bold; -unity-font-definition: url(&quot;project://database/Assets/OpenSans-Bold.ttf?fileID=12800000&amp;guid=540b7a85944effe4fb9eb3de0c29d37a&amp;type=3#OpenSans-Bold&quot;);">
         <ui:VisualElement name="top-left-actions" class="top-left-actions">
-            <ui:Button name="btn-disconnect-wallet" text="Disconnect" class="disconnect-button" style="font-size: 30px; margin-top: 13px; margin-bottom: 13px; padding-bottom: 35px; padding-top: 35px; padding-left: 28px; padding-right: 28px;"/>
+            <ui:Button name="btn-open-settings" text="" class="settings-cog-button"/>
         </ui:VisualElement>
         <ui:VisualElement name="top-right-actions" class="top-right-actions">
             <ui:VisualElement name="wallet-pill-stack" class="wallet-pill-stack">
@@ -19,7 +19,6 @@
                 <ui:VisualElement name="wallet-session-icon-active" class="wallet-session-gem wallet-session-gem-active session-status-gem" style="display: none;"/>
                 <ui:Label name="wallet-session-action-label" text="Session Inactive" class="session-status-label"/>
             </ui:Button>
-            <ui:Button name="btn-audio-toggle" text="" class="audio-toggle-button"/>
             <ui:VisualElement name="tx-indicator" class="tx-indicator" style="display: none;">
                 <ui:VisualElement name="tx-indicator-success" class="tx-indicator-success"/>
                 <ui:VisualElement name="tx-indicator-ring" class="tx-indicator-ring"/>
@@ -37,6 +36,13 @@
         <ui:VisualElement name="bottom-center-layer" class="bottom-center-layer">
             <ui:Label name="menu-status-label" text="Loading..." class="status-label" style="font-size: 35px;"/>
             <ui:Label name="menu-total-score-label" text="Total Score: 0" class="existing-total-score-label" style="display: none;"/>
+            <ui:VisualElement name="menu-storage-panel" class="menu-storage-panel" style="display: none;">
+                <ui:Label name="menu-storage-title" text="Collection" class="menu-storage-title"/>
+                <ui:ScrollView name="menu-storage-scroll" mode="Vertical" class="menu-storage-scroll">
+                    <ui:VisualElement name="menu-storage-items" class="menu-storage-items"/>
+                </ui:ScrollView>
+                <ui:Label name="menu-storage-empty" text="No valuables banked yet." class="menu-storage-empty" style="display: none;"/>
+            </ui:VisualElement>
             <ui:VisualElement name="create-identity-panel" class="floating-panel identity-panel" style="margin-bottom: 66px;">
                 <ui:TextField name="display-name-input" label="" value="Name" class="name-input" style="font-size: 34px; color: rgb(255, 255, 255); background-image: url(&quot;project://database/Assets/Sprites/inputfield.png?fileID=2800000&amp;guid=b83acef540c7dbe49a2cb7fbbc4de7e7&amp;type=3#inputfield&quot;); -unity-background-image-tint-color: rgb(255, 255, 255); -unity-background-scale-mode: scale-to-fit; height: 85px; width: 561px;"/>
             </ui:VisualElement>
@@ -68,6 +74,40 @@
                 <ui:Label name="legacy-reset-title" text="ACCOUNT OUTDATED" class="session-setup-title"/>
                 <ui:Label name="legacy-reset-message" text="Your account data is outdated and must be reset." class="session-setup-message"/>
                 <ui:Button name="btn-legacy-reset" text="RESET ACCOUNT" class="action-button modal-action-button modal-longbtn session-setup-button"/>
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement name="settings-overlay" class="modal-overlay" style="display: none; -unity-material: url(&quot;project://database/Assets/Sprites/Materials/BgMat.mat?fileID=2100000&amp;guid=859fd8fa6f851ee4bbc894344994ba9a&amp;type=2#BgMat&quot;); background-color: rgba(8, 10, 16, 0.83);">
+            <ui:VisualElement name="settings-card" class="modal-card settings-card" style="-unity-material: url(&quot;&quot;);">
+                <ui:Button name="btn-settings-close" text="X" class="settings-close-button"/>
+                <ui:Label name="settings-title" text="SETTINGS" class="modal-title"/>
+                <ui:VisualElement class="settings-row">
+                    <ui:Label text="Music" class="settings-row-label"/>
+                    <ui:VisualElement class="settings-slider-row">
+                        <ui:Button name="btn-settings-music-mute" text="" class="settings-audio-toggle-button"/>
+                        <ui:Slider name="settings-music-slider" low-value="0" high-value="1" value="1" class="settings-slider"/>
+                    </ui:VisualElement>
+                </ui:VisualElement>
+                <ui:VisualElement class="settings-row">
+                    <ui:Label text="SFX" class="settings-row-label"/>
+                    <ui:VisualElement class="settings-slider-row">
+                        <ui:Button name="btn-settings-sfx-mute" text="" class="settings-audio-toggle-button"/>
+                        <ui:Slider name="settings-sfx-slider" low-value="0" high-value="1" value="1" class="settings-slider"/>
+                    </ui:VisualElement>
+                </ui:VisualElement>
+                <ui:VisualElement name="settings-button-row" class="modal-action-row settings-button-row">
+                    <ui:Button name="btn-settings-disconnect" text="Disconnect Wallet" class="action-button modal-action-button modal-longbtn"/>
+                    <ui:Button name="btn-settings-reset-account" text="Reset Account" class="action-button modal-action-button modal-longbtn settings-danger-button settings-reset-button"/>
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement name="reset-confirm-overlay" class="modal-overlay" style="display: none; -unity-material: url(&quot;project://database/Assets/Sprites/Materials/BgMat.mat?fileID=2100000&amp;guid=859fd8fa6f851ee4bbc894344994ba9a&amp;type=2#BgMat&quot;); background-color: rgba(8, 10, 16, 0.83);">
+            <ui:VisualElement name="reset-confirm-card" class="modal-card settings-danger-card" style="-unity-material: url(&quot;&quot;);">
+                <ui:Label name="reset-confirm-title" text="RESET ACCOUNT?" class="modal-title"/>
+                <ui:Label name="reset-confirm-message" text="This action is dangerous and cannot be undone. Are you sure you want to reset your account?" class="modal-message"/>
+                <ui:VisualElement name="reset-confirm-button-row" class="modal-action-row settings-button-row">
+                    <ui:Button name="btn-reset-confirm-cancel" text="Cancel" class="action-button modal-action-button modal-longbtn"/>
+                    <ui:Button name="btn-reset-confirm-confirm" text="Confirm Reset" class="action-button modal-action-button modal-longbtn settings-danger-button settings-danger-confirm-button"/>
+                </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
         <ui:VisualElement name="extraction-summary-overlay" class="extraction-summary-overlay" style="display: none;">

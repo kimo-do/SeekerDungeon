@@ -655,6 +655,45 @@ namespace Chaindepth
                 return result;
             }
         }
+
+        public partial class StorageAccount
+        {
+            public static ulong ACCOUNT_DISCRIMINATOR => 16991321729293299753UL;
+            public static ReadOnlySpan<byte> ACCOUNT_DISCRIMINATOR_BYTES => new byte[]{41, 48, 231, 194, 22, 77, 205, 235};
+            public static string ACCOUNT_DISCRIMINATOR_B58 => "7tc53amxRvJ";
+            public PublicKey Owner { get; set; }
+
+            public InventoryItem[] Items { get; set; }
+
+            public byte Bump { get; set; }
+
+            public static StorageAccount Deserialize(ReadOnlySpan<byte> _data)
+            {
+                int offset = 0;
+                ulong accountHashValue = _data.GetU64(offset);
+                offset += 8;
+                if (accountHashValue != ACCOUNT_DISCRIMINATOR)
+                {
+                    return null;
+                }
+
+                StorageAccount result = new StorageAccount();
+                result.Owner = _data.GetPubKey(offset);
+                offset += 32;
+                int resultItemsLength = (int)_data.GetU32(offset);
+                offset += 4;
+                result.Items = new InventoryItem[resultItemsLength];
+                for (uint resultItemsIdx = 0; resultItemsIdx < resultItemsLength; resultItemsIdx++)
+                {
+                    offset += InventoryItem.Deserialize(_data, offset, out var resultItemsresultItemsIdx);
+                    result.Items[resultItemsIdx] = resultItemsresultItemsIdx;
+                }
+
+                result.Bump = _data.GetU8(offset);
+                offset += 1;
+                return result;
+            }
+        }
     }
 
     namespace Errors
@@ -901,6 +940,17 @@ namespace Chaindepth
             return new Solana.Unity.Programs.Models.ProgramAccountsResultWrapper<List<SessionAuthority>>(res, resultingAccounts);
         }
 
+        public async Task<Solana.Unity.Programs.Models.ProgramAccountsResultWrapper<List<StorageAccount>>> GetStorageAccountsAsync(string programAddress = ChaindepthProgram.ID, Commitment commitment = Commitment.Confirmed)
+        {
+            var list = new List<Solana.Unity.Rpc.Models.MemCmp>{new Solana.Unity.Rpc.Models.MemCmp{Bytes = StorageAccount.ACCOUNT_DISCRIMINATOR_B58, Offset = 0}};
+            var res = await RpcClient.GetProgramAccountsAsync(programAddress, commitment, memCmpList: list);
+            if (!res.WasSuccessful || !(res.Result?.Count > 0))
+                return new Solana.Unity.Programs.Models.ProgramAccountsResultWrapper<List<StorageAccount>>(res);
+            List<StorageAccount> resultingAccounts = new List<StorageAccount>(res.Result.Count);
+            resultingAccounts.AddRange(res.Result.Select(result => StorageAccount.Deserialize(Convert.FromBase64String(result.Account.Data[0]))));
+            return new Solana.Unity.Programs.Models.ProgramAccountsResultWrapper<List<StorageAccount>>(res, resultingAccounts);
+        }
+
         public async Task<Solana.Unity.Programs.Models.AccountResultWrapper<BossFightAccount>> GetBossFightAccountAsync(string accountAddress, Commitment commitment = Commitment.Finalized)
         {
             var res = await RpcClient.GetAccountInfoAsync(accountAddress, commitment);
@@ -989,6 +1039,15 @@ namespace Chaindepth
                 return new Solana.Unity.Programs.Models.AccountResultWrapper<SessionAuthority>(res);
             var resultingAccount = SessionAuthority.Deserialize(Convert.FromBase64String(res.Result.Value.Data[0]));
             return new Solana.Unity.Programs.Models.AccountResultWrapper<SessionAuthority>(res, resultingAccount);
+        }
+
+        public async Task<Solana.Unity.Programs.Models.AccountResultWrapper<StorageAccount>> GetStorageAccountAsync(string accountAddress, Commitment commitment = Commitment.Finalized)
+        {
+            var res = await RpcClient.GetAccountInfoAsync(accountAddress, commitment);
+            if (!res.WasSuccessful)
+                return new Solana.Unity.Programs.Models.AccountResultWrapper<StorageAccount>(res);
+            var resultingAccount = StorageAccount.Deserialize(Convert.FromBase64String(res.Result.Value.Data[0]));
+            return new Solana.Unity.Programs.Models.AccountResultWrapper<StorageAccount>(res, resultingAccount);
         }
 
         public async Task<SubscriptionState> SubscribeBossFightAccountAsync(string accountAddress, Action<SubscriptionState, Solana.Unity.Rpc.Messages.ResponseValue<Solana.Unity.Rpc.Models.AccountInfo>, BossFightAccount> callback, Commitment commitment = Commitment.Finalized)
@@ -1106,6 +1165,18 @@ namespace Chaindepth
                 SessionAuthority parsingResult = null;
                 if (e.Value?.Data?.Count > 0)
                     parsingResult = SessionAuthority.Deserialize(Convert.FromBase64String(e.Value.Data[0]));
+                callback(s, e, parsingResult);
+            }, commitment);
+            return res;
+        }
+
+        public async Task<SubscriptionState> SubscribeStorageAccountAsync(string accountAddress, Action<SubscriptionState, Solana.Unity.Rpc.Messages.ResponseValue<Solana.Unity.Rpc.Models.AccountInfo>, StorageAccount> callback, Commitment commitment = Commitment.Finalized)
+        {
+            SubscriptionState res = await StreamingRpcClient.SubscribeAccountInfoAsync(accountAddress, (s, e) =>
+            {
+                StorageAccount parsingResult = null;
+                if (e.Value?.Data?.Count > 0)
+                    parsingResult = StorageAccount.Deserialize(Convert.FromBase64String(e.Value.Data[0]));
                 callback(s, e, parsingResult);
             }, commitment);
             return res;
@@ -1320,6 +1391,8 @@ namespace Chaindepth
             public PublicKey Room { get; set; }
 
             public PublicKey Inventory { get; set; }
+
+            public PublicKey Storage { get; set; }
 
             public PublicKey RoomPresence { get; set; }
 
@@ -1846,7 +1919,7 @@ namespace Chaindepth
             {
                 programId ??= new(ID);
                 List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
-                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Authority, true), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Player, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Global, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.PlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Room, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Inventory, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.RoomPresence, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.SessionAuthority == null ? programId : accounts.SessionAuthority, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
+                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Authority, true), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Player, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Global, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.PlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Room, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Inventory, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Storage, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.RoomPresence, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.SessionAuthority == null ? programId : accounts.SessionAuthority, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
                 byte[] _data = new byte[1200];
                 int offset = 0;
                 _data.WriteU64(2950877880480132764UL, offset);

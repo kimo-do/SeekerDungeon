@@ -41,6 +41,7 @@ namespace SeekerDungeon.Solana
         public bool IsResettingLegacyAccount { get; init; }
         public bool CanSelfResetLegacyAccount { get; init; }
         public ulong TotalScore { get; init; }
+        public IReadOnlyList<CollectionItemView> StoredCollectionItems { get; init; }
     }
 
     /// <summary>
@@ -528,6 +529,7 @@ namespace SeekerDungeon.Solana
                 await lgManager.FetchGlobalState();
                 await lgManager.FetchPlayerState();
                 await lgManager.FetchPlayerProfile();
+                await lgManager.FetchStorage();
                 await RefreshCompatibilityGateAsync();
 
                 var profile = lgManager.CurrentProfileState;
@@ -621,6 +623,7 @@ namespace SeekerDungeon.Solana
             await lgManager.FetchGlobalState();
             await lgManager.FetchPlayerState();
             await lgManager.FetchPlayerProfile();
+            await lgManager.FetchStorage();
             await RefreshCompatibilityGateAsync();
 
             if (lgManager.CurrentPlayerState != null)
@@ -719,6 +722,7 @@ namespace SeekerDungeon.Solana
 
             await lgManager.FetchPlayerState();
             await lgManager.FetchPlayerProfile();
+            await lgManager.FetchStorage();
             if (lgManager.CurrentPlayerState != null || lgManager.CurrentProfileState != null)
             {
                 return false;
@@ -867,6 +871,7 @@ namespace SeekerDungeon.Solana
 
                 await lgManager.FetchPlayerState();
                 await lgManager.FetchPlayerProfile();
+                await lgManager.FetchStorage();
                 await RefreshCompatibilityGateAsync();
                 HasExistingProfile = lgManager.CurrentProfileState != null;
                 PendingDisplayName = GetShortWalletAddress();
@@ -1471,6 +1476,8 @@ namespace SeekerDungeon.Solana
             var playerState = lgManager != null ? lgManager.CurrentPlayerState : null;
             var hasUnextractedRun = playerState != null && playerState.InDungeon;
             var totalScore = playerState?.TotalScore ?? 0UL;
+            var storedCollectionItems = lgManager?.CurrentStorageState.ToCollectionItemViews()
+                ?? (IReadOnlyList<CollectionItemView>)Array.Empty<CollectionItemView>();
 
             return new MainMenuCharacterState
             {
@@ -1499,7 +1506,8 @@ namespace SeekerDungeon.Solana
                 IsLegacyResetConfirmArmed = _legacyResetConfirmArmed,
                 IsResettingLegacyAccount = _isResettingLegacyAccount,
                 CanSelfResetLegacyAccount = !LGConfig.IsMainnetRuntime,
-                TotalScore = totalScore
+                TotalScore = totalScore,
+                StoredCollectionItems = storedCollectionItems
             };
         }
 

@@ -6,7 +6,7 @@ use crate::instructions::session_auth::authorize_player_action;
 use crate::state::{
     compute_time_bonus, is_scored_loot_item, score_value_for_item, session_instruction_bits,
     GlobalAccount, InventoryAccount, PlayerAccount, RoomAccount, RoomPresence, SessionAuthority,
-    DIRECTION_SOUTH, WALL_ENTRANCE_STAIRS,
+    StorageAccount, DIRECTION_SOUTH, WALL_ENTRANCE_STAIRS,
 };
 
 #[derive(Accounts)]
@@ -50,6 +50,15 @@ pub struct ExitDungeon<'info> {
         bump
     )]
     pub inventory: Account<'info, InventoryAccount>,
+
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = StorageAccount::DISCRIMINATOR.len() + StorageAccount::INIT_SPACE,
+        seeds = [StorageAccount::SEED_PREFIX, player.key().as_ref()],
+        bump
+    )]
+    pub storage: Account<'info, StorageAccount>,
 
     #[account(
         mut,
@@ -118,6 +127,13 @@ pub fn handler(ctx: Context<ExitDungeon>) -> Result<()> {
         inventory.owner == player_key,
         ChainDepthError::Unauthorized
     );
+    let storage = &mut ctx.accounts.storage;
+    if storage.owner == Pubkey::default() {
+        storage.owner = player_key;
+        storage.items = Vec::new();
+        storage.bump = ctx.bumps.storage;
+    }
+    require!(storage.owner == player_key, ChainDepthError::Unauthorized);
 
     let mut loot_score = 0u64;
     let mut extracted_item_stacks = 0u32;
@@ -125,6 +141,8 @@ pub fn handler(ctx: Context<ExitDungeon>) -> Result<()> {
     let mut kept_items = Vec::with_capacity(inventory.items.len());
     for item in inventory.items.iter() {
         if is_scored_loot_item(item.item_id) {
+            storage.add_item(item.item_id, item.amount, item.durability)?;
+
             let unit_score = score_value_for_item(item.item_id);
             let stack_score = unit_score
                 .checked_mul(item.amount as u64)

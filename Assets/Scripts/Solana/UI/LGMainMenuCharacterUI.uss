@@ -271,6 +271,79 @@
     -unity-text-outline-color: rgba(40, 28, 0, 0.9);
 }
 
+.menu-storage-panel {
+    width: 92%;
+    max-width: 760px;
+    min-height: 120px;
+    max-height: 240px;
+    margin-top: 2px;
+    margin-bottom: 12px;
+    padding-top: 10px;
+    padding-right: 14px;
+    padding-bottom: 10px;
+    padding-left: 14px;
+    background-color: rgba(6, 11, 20, 0.72);
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(152, 180, 218, 0.42);
+    border-right-color: rgba(152, 180, 218, 0.42);
+    border-bottom-color: rgba(84, 108, 139, 0.36);
+    border-left-color: rgba(152, 180, 218, 0.42);
+}
+
+.menu-storage-title {
+    font-size: 20px;
+    -unity-font-style: bold;
+    color: rgb(230, 241, 255);
+    margin-bottom: 6px;
+}
+
+.menu-storage-scroll {
+    max-height: 170px;
+}
+
+.menu-storage-items {
+    flex-direction: column;
+}
+
+.menu-storage-row {
+    min-height: 36px;
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.menu-storage-item-icon {
+    width: 28px;
+    height: 28px;
+    margin-right: 8px;
+    -unity-background-scale-mode: scale-to-fit;
+}
+
+.menu-storage-item-name {
+    flex-grow: 1;
+    font-size: 16px;
+    color: rgb(218, 234, 255);
+}
+
+.menu-storage-item-count {
+    font-size: 16px;
+    -unity-font-style: bold;
+    color: rgb(255, 226, 147);
+}
+
+.menu-storage-empty {
+    font-size: 15px;
+    color: rgba(206, 222, 244, 0.85);
+    margin-top: 6px;
+}
+
 .disconnect-button {
     min-width: 100px;
     height: 100px;
@@ -298,14 +371,14 @@
     margin-bottom: -2px;
 }
 
-.audio-toggle-button {
-    width: 88px;
-    min-width: 88px;
-    height: 88px;
-    min-height: 88px;
-    margin-top: 4px;
-    margin-bottom: 8px;
-    align-self: flex-end;
+.settings-cog-button {
+    width: 100px;
+    min-width: 100px;
+    height: 100px;
+    min-height: 100px;
+    margin-top: 13px;
+    margin-bottom: 13px;
+    align-self: flex-start;
     background-color: rgba(0, 0, 0, 0);
     -unity-background-scale-mode: scale-to-fit;
     border-top-width: 0;
@@ -313,11 +386,7 @@
     border-bottom-width: 0;
     border-left-width: 0;
     color: rgba(0, 0, 0, 0);
-}
-
-.audio-toggle-button:active {
-    margin-top: 6px;
-    margin-bottom: 6px;
+    color: rgba(0, 0, 0, 0);
 }
 
 .wallet-pill-stack {
@@ -580,6 +649,7 @@
     align-items: center;
     justify-content: center;
     background-color: rgba(8, 10, 16, 0.54);
+    z-index: 120;
 }
 
 .modal-card {
@@ -659,6 +729,148 @@
     -unity-font-definition: none;
     font-size: 30px;
     -unity-text-align: middle-center;
+}
+
+.settings-card {
+    max-width: 860px;
+    min-height: 620px;
+    justify-content: flex-start;
+    align-items: stretch;
+    position: relative;
+    padding-top: 70px;
+}
+
+.settings-row {
+    width: 100%;
+    max-width: 660px;
+    align-self: center;
+    flex-direction: column;
+    align-items: stretch;
+    margin-top: 10px;
+    margin-bottom: 12px;
+    padding-left: 8px;
+    padding-right: 8px;
+}
+
+.settings-row-label {
+    margin-bottom: 8px;
+    color: rgb(232, 240, 255);
+    font-size: 38px;
+    -unity-font-style: bold;
+}
+
+.settings-slider-row {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    column-gap: 14px;
+}
+
+.settings-audio-toggle-button {
+    width: 86px;
+    min-width: 86px;
+    height: 86px;
+    min-height: 86px;
+    background-color: rgba(0, 0, 0, 0);
+    -unity-background-scale-mode: scale-to-fit;
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+    color: rgba(0, 0, 0, 0);
+}
+
+.settings-slider {
+    flex-grow: 1;
+    height: 78px;
+    margin-top: 6px;
+    margin-bottom: 6px;
+}
+
+.settings-button-row {
+    margin-top: 18px;
+    max-width: 640px;
+    align-self: center;
+}
+
+.settings-danger-button {
+    color: rgb(255, 204, 204);
+}
+
+.settings-reset-button {
+    -unity-background-image-tint-color: rgb(195, 82, 82);
+}
+
+.settings-danger-confirm-button {
+    -unity-background-image-tint-color: rgb(172, 48, 48);
+    color: rgb(255, 225, 225);
+}
+
+.settings-slider .unity-base-slider__drag-container {
+    height: 78px;
+    min-height: 78px;
+}
+
+.settings-slider .unity-base-slider__tracker {
+    height: 22px;
+    min-height: 22px;
+    border-top-left-radius: 11px;
+    border-top-right-radius: 11px;
+    border-bottom-left-radius: 11px;
+    border-bottom-right-radius: 11px;
+    background-color: rgba(214, 228, 255, 0.28);
+}
+
+.settings-slider .unity-base-slider__dragger {
+    width: 68px;
+    min-width: 68px;
+    height: 68px;
+    min-height: 68px;
+    margin-top: -23px;
+    border-top-left-radius: 34px;
+    border-top-right-radius: 34px;
+    border-bottom-left-radius: 34px;
+    border-bottom-right-radius: 34px;
+    background-color: rgb(245, 224, 164);
+    border-top-width: 2px;
+    border-right-width: 2px;
+    border-bottom-width: 2px;
+    border-left-width: 2px;
+    border-top-color: rgb(255, 242, 205);
+    border-right-color: rgb(188, 159, 99);
+    border-bottom-color: rgb(146, 117, 63);
+    border-left-color: rgb(255, 242, 205);
+}
+
+.settings-danger-card .modal-title {
+    color: rgb(255, 184, 184);
+    -unity-text-outline-color: rgba(65, 0, 0, 0.95);
+}
+
+.settings-close-button {
+    position: absolute;
+    top: 14px;
+    right: 12px;
+    width: 70px;
+    height: 70px;
+    font-size: 40px;
+    -unity-font-style: bold;
+    color: rgb(232, 239, 252);
+    background-color: rgba(0, 0, 0, 0);
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.8);
+}
+
+#settings-overlay {
+    z-index: 130;
+}
+
+#reset-confirm-overlay {
+    z-index: 140;
 }
 
 .extraction-summary-overlay {

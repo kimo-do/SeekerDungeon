@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_lang::system_program;
 
 use crate::errors::ChainDepthError;
-use crate::state::{InventoryAccount, PlayerAccount, PlayerProfile};
+use crate::state::{InventoryAccount, PlayerAccount, PlayerProfile, StorageAccount};
 
 #[derive(Accounts)]
 pub struct ResetMyPlayer<'info> {
@@ -36,9 +36,15 @@ pub fn handler(ctx: Context<ResetMyPlayer>) -> Result<()> {
             &[InventoryAccount::SEED_PREFIX, ctx.accounts.authority.key().as_ref()],
             &crate::ID,
         );
+        let (expected_storage, _) = Pubkey::find_program_address(
+            &[StorageAccount::SEED_PREFIX, ctx.accounts.authority.key().as_ref()],
+            &crate::ID,
+        );
 
         require!(
-            account_info.key() == expected_profile || account_info.key() == expected_inventory,
+            account_info.key() == expected_profile
+                || account_info.key() == expected_inventory
+                || account_info.key() == expected_storage,
             ChainDepthError::Unauthorized
         );
 

@@ -11,6 +11,15 @@ namespace SeekerDungeon.Audio
     {
         private const float MinFadeSeconds = 0.01f;
         private const string MutedPrefKey = "seeker_audio_muted";
+        private const float DefaultPitchMin = 0.96f;
+        private const float DefaultPitchMax = 1.04f;
+        private const float MinimumUsablePitch = 0.85f;
+        private const float DefaultSpatialMinDistance = 1.5f;
+        private const float DefaultSpatialMaxDistance = 18f;
+        private const string MusicEnabledPrefKey = "seeker_audio_music_enabled";
+        private const string SfxEnabledPrefKey = "seeker_audio_sfx_enabled";
+        private const string MusicVolumePrefKey = "seeker_audio_music_volume";
+        private const string SfxVolumePrefKey = "seeker_audio_sfx_volume";
 
         public static GameAudioManager Instance { get; private set; }
 
@@ -27,8 +36,17 @@ namespace SeekerDungeon.Audio
         private Vector3 _bossMonsterWorldPos;
         private float _nextBossMonsterOneShotAt;
         private bool _isMuted;
+        private bool _musicEnabled = true;
+        private bool _sfxEnabled = true;
+        private float _musicVolume = 1f;
+        private float _sfxVolume = 1f;
+        private float _activeSceneMusicBaseVolume = 1f;
 
         public bool IsMuted => _isMuted;
+        public bool IsMusicEnabled => _musicEnabled;
+        public bool IsSfxEnabled => _sfxEnabled;
+        public float MusicVolume => _musicVolume;
+        public float SfxVolume => _sfxVolume;
 
         private void Awake()
         {
@@ -42,6 +60,10 @@ namespace SeekerDungeon.Audio
             DontDestroyOnLoad(gameObject);
             EnsureCoreSources();
             _isMuted = PlayerPrefs.GetInt(MutedPrefKey, 0) == 1;
+            _musicEnabled = PlayerPrefs.GetInt(MusicEnabledPrefKey, 1) == 1;
+            _sfxEnabled = PlayerPrefs.GetInt(SfxEnabledPrefKey, 1) == 1;
+            _musicVolume = Mathf.Clamp01(PlayerPrefs.GetFloat(MusicVolumePrefKey, 1f));
+            _sfxVolume = Mathf.Clamp01(PlayerPrefs.GetFloat(SfxVolumePrefKey, 1f));
             ApplyMuteState();
         }
 
@@ -67,7 +89,7 @@ namespace SeekerDungeon.Audio
 
         public void PlayButton(ButtonSfxCategory category)
         {
-            if (_isMuted)
+            if (_isMuted || !_sfxEnabled || _sfxVolume <= 0.001f)
             {
                 return;
             }
@@ -86,12 +108,12 @@ namespace SeekerDungeon.Audio
 
             EnsureCoreSources();
             _uiOneShotSource.pitch = RandomPitch(entry.pitchRange);
-            _uiOneShotSource.PlayOneShot(clip, Mathf.Clamp01(entry.volume));
+            _uiOneShotSource.PlayOneShot(clip, Mathf.Clamp01(entry.volume) * _sfxVolume);
         }
 
         public void PlayStinger(StingerSfxId id)
         {
-            if (_isMuted)
+            if (_isMuted || !_sfxEnabled || _sfxVolume <= 0.001f)
             {
                 return;
             }
@@ -110,19 +132,20 @@ namespace SeekerDungeon.Audio
 
             EnsureCoreSources();
             _uiOneShotSource.pitch = RandomPitch(entry.pitchRange);
-            _uiOneShotSource.PlayOneShot(clip, Mathf.Clamp01(entry.volume));
+            _uiOneShotSource.PlayOneShot(clip, Mathf.Clamp01(entry.volume) * _sfxVolume);
         }
 
         public void PlayWorld(WorldSfxId id, Vector3 worldPos, bool spatialOverride = false)
         {
-            if (_isMuted)
+            if (_isMuted || !_sfxEnabled || _sfxVolume <= 0.001f)
             {
                 return;
             }
 
-            var entry = FindWorldEntry(id);
+            var entry = FindWorldEntryWithFallback(id);
             if (entry == null)
             {
+                Log($"Missing world SFX mapping for '{id}'.");
                 return;
             }
 
@@ -136,7 +159,7 @@ namespace SeekerDungeon.Audio
             PlayClipAtPosition(
                 clip,
                 worldPos,
-                entry.volume,
+                entry.volume * _sfxVolume,
                 RandomPitch(entry.pitchRange),
                 useSpatial ? entry.spatialBlend : 0f,
                 entry.minDistance,
@@ -163,7 +186,7 @@ namespace SeekerDungeon.Audio
                 return;
             }
 
-            if (_isMuted)
+            if (_isMuted || !_sfxEnabled || _sfxVolume <= 0.001f)
             {
                 StopLoop(id);
                 return;
@@ -177,7 +200,7 @@ namespace SeekerDungeon.Audio
 
             source.transform.position = worldPos;
             source.clip = entry.clip;
-            source.volume = Mathf.Clamp01(entry.volume);
+            source.volume = Mathf.Clamp01(entry.volume) * _sfxVolume;
             source.pitch = 1f;
             source.loop = true;
             source.spatialBlend = entry.spatialized ? Mathf.Clamp01(entry.spatialBlend) : 0f;
@@ -191,14 +214,15 @@ namespace SeekerDungeon.Audio
 
         public void PlayLootRevealByRarity(ItemRarity rarity, Vector3 worldPos)
         {
-            if (_isMuted)
+            if (_isMuted || !_sfxEnabled || _sfxVolume <= 0.001f)
             {
                 return;
             }
 
-            var entry = FindLootEntry(rarity);
+            var entry = FindLootEntryWithFallback(rarity);
             if (entry == null)
             {
+                Log($"Missing loot reveal SFX mapping for rarity '{rarity}'.");
                 return;
             }
 
@@ -211,7 +235,7 @@ namespace SeekerDungeon.Audio
             PlayClipAtPosition(
                 clip,
                 worldPos,
-                entry.volume,
+                entry.volume * _sfxVolume,
                 RandomPitch(entry.pitchRange),
                 entry.spatialized ? Mathf.Clamp01(entry.spatialBlend) : 0f,
                 1f,
@@ -257,6 +281,58 @@ namespace SeekerDungeon.Audio
         public bool ToggleMute()
         {
             return SetMuted(!_isMuted);
+        }
+
+        public void SetMusicEnabled(bool enabled)
+        {
+            _musicEnabled = enabled;
+            PlayerPrefs.SetInt(MusicEnabledPrefKey, _musicEnabled ? 1 : 0);
+            PlayerPrefs.Save();
+            if (_musicEnabled)
+            {
+                EnsureNotMasterMuted();
+            }
+
+            ApplyMusicState();
+        }
+
+        public void SetSfxEnabled(bool enabled)
+        {
+            _sfxEnabled = enabled;
+            PlayerPrefs.SetInt(SfxEnabledPrefKey, _sfxEnabled ? 1 : 0);
+            PlayerPrefs.Save();
+            if (_sfxEnabled)
+            {
+                EnsureNotMasterMuted();
+            }
+
+            ApplySfxState();
+        }
+
+        public void SetMusicVolume(float value)
+        {
+            _musicVolume = Mathf.Clamp01(value);
+            PlayerPrefs.SetFloat(MusicVolumePrefKey, _musicVolume);
+            PlayerPrefs.Save();
+            if (_musicVolume > 0.001f)
+            {
+                EnsureNotMasterMuted();
+            }
+
+            ApplyMusicState();
+        }
+
+        public void SetSfxVolume(float value)
+        {
+            _sfxVolume = Mathf.Clamp01(value);
+            PlayerPrefs.SetFloat(SfxVolumePrefKey, _sfxVolume);
+            PlayerPrefs.Save();
+            if (_sfxVolume > 0.001f)
+            {
+                EnsureNotMasterMuted();
+            }
+
+            ApplySfxState();
         }
 
         public void UpdateBossMonsterAudio(ushort monsterId, bool isAlive, bool hasFighters, Vector3 worldPos)
@@ -322,6 +398,21 @@ namespace SeekerDungeon.Audio
         private void ApplyMuteState()
         {
             AudioListener.volume = _isMuted ? 0f : 1f;
+            ApplyMusicState();
+            ApplySfxState();
+        }
+
+        private void EnsureNotMasterMuted()
+        {
+            if (!_isMuted)
+            {
+                return;
+            }
+
+            _isMuted = false;
+            PlayerPrefs.SetInt(MutedPrefKey, 0);
+            PlayerPrefs.Save();
+            AudioListener.volume = 1f;
         }
 
         private void HandleSceneAudio(Scene scene)
@@ -336,18 +427,21 @@ namespace SeekerDungeon.Audio
                     _musicSource.Stop();
                     _musicSource.clip = musicEntry.clip;
                     _musicSource.loop = true;
-                    _musicSource.volume = Mathf.Clamp01(musicEntry.volume);
+                    _activeSceneMusicBaseVolume = Mathf.Clamp01(musicEntry.volume);
+                    _musicSource.volume = _activeSceneMusicBaseVolume * _musicVolume;
                     _musicSource.Play();
                 }
                 else
                 {
-                    _musicSource.volume = Mathf.Clamp01(musicEntry.volume);
+                    _activeSceneMusicBaseVolume = Mathf.Clamp01(musicEntry.volume);
+                    _musicSource.volume = _activeSceneMusicBaseVolume * _musicVolume;
                 }
             }
             else
             {
                 _musicSource.Stop();
                 _musicSource.clip = null;
+                _activeSceneMusicBaseVolume = 1f;
             }
 
             var isGameScene = string.Equals(scene.name, "GameScene", StringComparison.OrdinalIgnoreCase);
@@ -364,7 +458,64 @@ namespace SeekerDungeon.Audio
                 PlayStinger(StingerSfxId.DungeonEntered);
             }
 
+            ApplyMusicState();
+            ApplySfxState();
             Log($"Scene audio applied for '{scene.name}'.");
+        }
+
+        private void ApplyMusicState()
+        {
+            if (_musicSource == null)
+            {
+                return;
+            }
+
+            if (!_musicEnabled || _musicVolume <= 0.001f)
+            {
+                _musicSource.mute = true;
+                return;
+            }
+
+            _musicSource.mute = false;
+            _musicSource.volume = Mathf.Clamp01(_activeSceneMusicBaseVolume) * _musicVolume;
+        }
+
+        private void ApplySfxState()
+        {
+            if (!_sfxEnabled || _sfxVolume <= 0.001f)
+            {
+                StopLoop(AudioLoopId.GameAmbience);
+                StopLoop(AudioLoopId.Mining);
+                StopLoop(AudioLoopId.BossAttack);
+                StopBossMonsterAudio();
+                return;
+            }
+
+            if (audioCatalog?.loops != null)
+            {
+                for (var i = 0; i < audioCatalog.loops.Length; i += 1)
+                {
+                    var entry = audioCatalog.loops[i];
+                    if (entry == null)
+                    {
+                        continue;
+                    }
+
+                    if (_loopSourcesById.TryGetValue(entry.id, out var source) && source != null)
+                    {
+                        source.volume = Mathf.Clamp01(entry.volume) * _sfxVolume;
+                    }
+                }
+            }
+
+            if (_bossMonsterLoopSource != null && _activeBossMonsterId != 0)
+            {
+                var monsterEntry = FindMonsterEntry(_activeBossMonsterId);
+                if (monsterEntry != null)
+                {
+                    _bossMonsterLoopSource.volume = Mathf.Clamp01(monsterEntry.loopVolume) * _sfxVolume;
+                }
+            }
         }
 
         private void TickBossMonsterOneShot()
@@ -376,6 +527,10 @@ namespace SeekerDungeon.Audio
 
             var monsterEntry = FindMonsterEntry(_activeBossMonsterId);
             if (monsterEntry == null || monsterEntry.oneShotClips == null || monsterEntry.oneShotClips.Length == 0)
+            {
+                return;
+            }
+            if (!_sfxEnabled || _sfxVolume <= 0.001f)
             {
                 return;
             }
@@ -396,7 +551,7 @@ namespace SeekerDungeon.Audio
                 PlayClipAtPosition(
                     clip,
                     _bossMonsterWorldPos,
-                    monsterEntry.oneShotVolume,
+                    monsterEntry.oneShotVolume * _sfxVolume,
                     pitch,
                     spatialBlend,
                     1f,
@@ -428,7 +583,7 @@ namespace SeekerDungeon.Audio
             _bossMonsterLoopSource ??= CreateLoopSource("Loop_BossMonster");
             _bossMonsterLoopSource.transform.position = _bossMonsterWorldPos;
             _bossMonsterLoopSource.clip = monsterEntry.loopClip;
-            _bossMonsterLoopSource.volume = Mathf.Clamp01(monsterEntry.loopVolume);
+            _bossMonsterLoopSource.volume = Mathf.Clamp01(monsterEntry.loopVolume) * _sfxVolume;
             _bossMonsterLoopSource.pitch = 1f;
             _bossMonsterLoopSource.loop = true;
             _bossMonsterLoopSource.spatialBlend = monsterEntry.loopSpatialized
@@ -475,8 +630,13 @@ namespace SeekerDungeon.Audio
             source.volume = Mathf.Clamp01(volume);
             source.pitch = pitch;
             source.spatialBlend = Mathf.Clamp01(spatialBlend);
-            source.minDistance = Mathf.Max(0.01f, minDistance);
-            source.maxDistance = Mathf.Max(source.minDistance, maxDistance);
+            var useSpatial = source.spatialBlend > 0.001f;
+            source.minDistance = useSpatial
+                ? Mathf.Max(0.01f, minDistance > 0f ? minDistance : DefaultSpatialMinDistance)
+                : 1f;
+            source.maxDistance = useSpatial
+                ? Mathf.Max(source.minDistance + 0.01f, maxDistance > 0f ? maxDistance : DefaultSpatialMaxDistance)
+                : source.minDistance;
             source.Play();
             Destroy(go, Mathf.Max(0.1f, clip.length / Mathf.Max(0.01f, Mathf.Abs(pitch))) + 0.2f);
         }
@@ -587,6 +747,48 @@ namespace SeekerDungeon.Audio
             return null;
         }
 
+        private WorldSfxEntry FindWorldEntryWithFallback(WorldSfxId id)
+        {
+            var exact = FindWorldEntry(id);
+            if (HasUsableClips(exact?.clips))
+            {
+                return exact;
+            }
+
+            var fallbackId = id switch
+            {
+                WorldSfxId.DoorOpenRubble => WorldSfxId.DoorOpenOpen,
+                WorldSfxId.DoorOpenLocked => WorldSfxId.DoorOpenOpen,
+                WorldSfxId.StairsExit => WorldSfxId.DoorOpenOpen,
+                _ => id
+            };
+
+            if (fallbackId != id)
+            {
+                var fallback = FindWorldEntry(fallbackId);
+                if (HasUsableClips(fallback?.clips))
+                {
+                    return fallback;
+                }
+            }
+
+            if (audioCatalog?.worldSfx == null)
+            {
+                return null;
+            }
+
+            for (var i = 0; i < audioCatalog.worldSfx.Length; i += 1)
+            {
+                var entry = audioCatalog.worldSfx[i];
+                if (HasUsableClips(entry?.clips))
+                {
+                    return entry;
+                }
+            }
+
+            return null;
+        }
+
         private LoopSfxEntry FindLoopEntry(AudioLoopId id)
         {
             if (audioCatalog == null || audioCatalog.loops == null)
@@ -617,6 +819,37 @@ namespace SeekerDungeon.Audio
             {
                 var entry = audioCatalog.lootRevealByRarity[i];
                 if (entry != null && entry.rarity == rarity)
+                {
+                    return entry;
+                }
+            }
+
+            return null;
+        }
+
+        private LootRaritySfxEntry FindLootEntryWithFallback(ItemRarity rarity)
+        {
+            var exact = FindLootEntry(rarity);
+            if (HasUsableClips(exact?.clips))
+            {
+                return exact;
+            }
+
+            var common = FindLootEntry(ItemRarity.Common);
+            if (HasUsableClips(common?.clips))
+            {
+                return common;
+            }
+
+            if (audioCatalog?.lootRevealByRarity == null)
+            {
+                return null;
+            }
+
+            for (var i = 0; i < audioCatalog.lootRevealByRarity.Length; i += 1)
+            {
+                var entry = audioCatalog.lootRevealByRarity[i];
+                if (HasUsableClips(entry?.clips))
                 {
                     return entry;
                 }
@@ -686,8 +919,16 @@ namespace SeekerDungeon.Audio
 
         private static float RandomPitch(Vector2 range)
         {
-            var min = Mathf.Max(0.01f, Mathf.Min(range.x, range.y));
-            var max = Mathf.Max(min, Mathf.Max(range.x, range.y));
+            var minRaw = Mathf.Min(range.x, range.y);
+            var maxRaw = Mathf.Max(range.x, range.y);
+
+            if (maxRaw <= 0.001f)
+            {
+                return UnityEngine.Random.Range(DefaultPitchMin, DefaultPitchMax);
+            }
+
+            var min = Mathf.Max(MinimumUsablePitch, minRaw);
+            var max = Mathf.Max(min, maxRaw);
             return UnityEngine.Random.Range(min, max);
         }
 
@@ -696,6 +937,24 @@ namespace SeekerDungeon.Audio
             var min = Mathf.Min(range.x, range.y);
             var max = Mathf.Max(range.x, range.y);
             return UnityEngine.Random.Range(min, max);
+        }
+
+        private static bool HasUsableClips(IReadOnlyList<AudioClip> clips)
+        {
+            if (clips == null || clips.Count == 0)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < clips.Count; i += 1)
+            {
+                if (clips[i] != null)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void Log(string message)

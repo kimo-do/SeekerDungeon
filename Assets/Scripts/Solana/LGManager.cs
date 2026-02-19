@@ -62,6 +62,7 @@ namespace SeekerDungeon.Solana
         public PlayerProfile CurrentProfileState { get; private set; }
         public RoomAccount CurrentRoomState { get; private set; }
         public InventoryAccount CurrentInventoryState { get; private set; }
+        public StorageAccount CurrentStorageState { get; private set; }
 
         // Events
         public event Action<GlobalAccount> OnGlobalStateUpdated;
@@ -70,6 +71,7 @@ namespace SeekerDungeon.Solana
         public event Action<RoomAccount> OnRoomStateUpdated;
         public event Action<IReadOnlyList<RoomOccupantView>> OnRoomOccupantsUpdated;
         public event Action<InventoryAccount> OnInventoryUpdated;
+        public event Action<StorageAccount> OnStorageUpdated;
         public event Action<LootResult> OnChestLootResult;
         public event Action<string> OnTransactionSent;
         public event Action<string> OnError;
@@ -317,6 +319,24 @@ namespace SeekerDungeon.Solana
                 new List<byte[]>
                 {
                     Encoding.UTF8.GetBytes(LGConfig.INVENTORY_SEED),
+                    playerPubkey.KeyBytes
+                },
+                _programId,
+                out var pda,
+                out _
+            );
+            return success ? pda : null;
+        }
+
+        /// <summary>
+        /// Derive storage PDA for a player
+        /// </summary>
+        public PublicKey DeriveStoragePda(PublicKey playerPubkey)
+        {
+            var success = PublicKey.TryFindProgramAddress(
+                new List<byte[]>
+                {
+                    Encoding.UTF8.GetBytes(LGConfig.STORAGE_SEED),
                     playerPubkey.KeyBytes
                 },
                 _programId,
@@ -717,6 +737,7 @@ namespace SeekerDungeon.Solana
             await FetchPlayerProfile();
             await FetchCurrentRoom();
             await FetchInventory();
+            await FetchStorage();
             Log("State refresh complete");
         }
 
@@ -1510,7 +1531,7 @@ namespace SeekerDungeon.Solana
 
         /// <summary>
         /// Self-service reset for the connected player's account data.
-        /// Closes player account and, when present, also profile/inventory PDAs.
+        /// Closes player account and, when present, also profile/inventory/storage PDAs.
         /// </summary>
         public async UniTask<TxResult> ResetMyPlayerData()
         {
@@ -1526,6 +1547,7 @@ namespace SeekerDungeon.Solana
                 var playerPda = DerivePlayerPda(authority);
                 var profilePda = DeriveProfilePda(authority);
                 var inventoryPda = DeriveInventoryPda(authority);
+                var storagePda = DeriveStoragePda(authority);
 
                 if (!await AccountHasData(playerPda))
                 {
@@ -1552,6 +1574,11 @@ namespace SeekerDungeon.Solana
                     instruction.Keys.Add(AccountMeta.Writable(inventoryPda, false));
                 }
 
+                if (await AccountHasData(storagePda))
+                {
+                    instruction.Keys.Add(AccountMeta.Writable(storagePda, false));
+                }
+
                 var signature = await SendTransaction(instruction);
                 if (string.IsNullOrWhiteSpace(signature))
                 {
@@ -1565,6 +1592,60 @@ namespace SeekerDungeon.Solana
             {
                 LogError($"ResetMyPlayerData failed: {exception.Message}");
                 return TxResult.Fail(exception.Message);
+            }
+        }
+
+        /// <summary>
+        /// Fetch storage for the current wallet
+        /// </summary>
+        public async UniTask<StorageAccount> FetchStorage()
+        {
+            if (Web3.Wallet == null)
+            {
+                LogError("Wallet not connected");
+                return null;
+            }
+
+            Log("Fetching storage...");
+
+            try
+            {
+                var storagePda = DeriveStoragePda(Web3.Wallet.Account.PublicKey);
+                if (storagePda == null)
+                {
+                    LogError("Failed to derive storage PDA");
+                    return null;
+                }
+
+                if (!await AccountHasData(storagePda))
+                {
+                    Log("Storage account not found (not initialized yet)");
+                    CurrentStorageState = null;
+                    OnStorageUpdated?.Invoke(null);
+                    return null;
+                }
+
+                var result = await _client.GetStorageAccountAsync(storagePda.Key, Commitment.Confirmed);
+
+                if (!result.WasSuccessful || result.ParsedResult == null)
+                {
+                    Log("Storage account not found");
+                    CurrentStorageState = null;
+                    OnStorageUpdated?.Invoke(null);
+                    return null;
+                }
+
+                CurrentStorageState = result.ParsedResult;
+                var itemCount = CurrentStorageState.Items?.Length ?? 0;
+                Log($"Storage fetched: {itemCount} item stacks");
+                OnStorageUpdated?.Invoke(CurrentStorageState);
+
+                return CurrentStorageState;
+            }
+            catch (Exception e)
+            {
+                LogError($"Failed to fetch storage: {e.Message}");
+                return null;
             }
         }
 
@@ -1716,6 +1797,7 @@ namespace SeekerDungeon.Solana
                             CurrentPlayerState.CurrentRoomX,
                             CurrentPlayerState.CurrentRoomY);
                         var inventoryPda = DeriveInventoryPda(context.Player);
+                        var storagePda = DeriveStoragePda(context.Player);
                         var roomPresencePda = DeriveRoomPresencePda(
                             CurrentGlobalState.SeasonSeed,
                             CurrentPlayerState.CurrentRoomX,
@@ -1731,6 +1813,7 @@ namespace SeekerDungeon.Solana
                                 PlayerAccount = playerPda,
                                 Room = roomPda,
                                 Inventory = inventoryPda,
+                                Storage = storagePda,
                                 RoomPresence = roomPresencePda,
                                 SessionAuthority = context.SessionAuthority,
                                 SystemProgram = SystemProgram.ProgramIdKey
@@ -1758,6 +1841,7 @@ namespace SeekerDungeon.Solana
                                 CurrentPlayerState.CurrentRoomX,
                                 CurrentPlayerState.CurrentRoomY);
                             var inventoryPda = DeriveInventoryPda(context.Player);
+                            var storagePda = DeriveStoragePda(context.Player);
                             var roomPresencePda = DeriveRoomPresencePda(
                                 CurrentGlobalState.SeasonSeed,
                                 CurrentPlayerState.CurrentRoomX,
@@ -1773,6 +1857,7 @@ namespace SeekerDungeon.Solana
                                     PlayerAccount = playerPda,
                                     Room = roomPda,
                                     Inventory = inventoryPda,
+                                    Storage = storagePda,
                                     RoomPresence = roomPresencePda,
                                     SessionAuthority = context.SessionAuthority,
                                     SystemProgram = SystemProgram.ProgramIdKey
@@ -3685,6 +3770,7 @@ namespace SeekerDungeon.Solana
             {
                 await FetchPlayerState();
                 await FetchInventory();
+                await FetchStorage();
 
                 var summaryCandidate = BuildExtractionSummary(
                     inventoryBefore,
@@ -3697,11 +3783,11 @@ namespace SeekerDungeon.Solana
                 var hasRunScore = summaryCandidate.RunScore > 0;
                 var hasExtractedItems = summaryCandidate.Items.Count > 0;
 
-                // If we had scored loot before extraction, wait until inventory diff catches up
-                // so the summary can show concrete extracted items in UI.
+                // When extraction had scored loot, wait for both inventory diff and total score
+                // update so summary totals are based on settled player state.
                 if (hadScoredLootBefore)
                 {
-                    if (hasExtractedItems || (hasRunScore && attempt >= 4))
+                    if (hasExtractedItems && (scoreAdvanced || hasRunScore))
                     {
                         return;
                     }
@@ -3770,9 +3856,22 @@ namespace SeekerDungeon.Solana
                            totalScoreAfter >= totalScoreBefore
                 ? totalScoreAfter - totalScoreBefore
                 : 0UL;
+
+            // Defensive fallback: if extraction clearly banked scored loot but RPC total score
+            // is still stale, avoid presenting a misleading zero-score run summary.
+            if (runEndReason == DungeonRunEndReason.Extraction &&
+                runScore == 0 &&
+                lootScore > 0)
+            {
+                runScore = lootScore;
+            }
+
             var timeScore = runEndReason == DungeonRunEndReason.Extraction && runScore >= lootScore
                 ? runScore - lootScore
                 : 0UL;
+            var totalScoreAfterRun = runEndReason == DungeonRunEndReason.Extraction
+                ? Math.Max(totalScoreAfter, totalScoreBefore + runScore)
+                : totalScoreAfter;
 
             return new DungeonExtractionSummary
             {
@@ -3780,7 +3879,7 @@ namespace SeekerDungeon.Solana
                 LootScore = lootScore,
                 TimeScore = timeScore,
                 RunScore = runScore,
-                TotalScoreAfterRun = totalScoreAfter,
+                TotalScoreAfterRun = totalScoreAfterRun,
                 RunEndReason = runEndReason
             };
         }
