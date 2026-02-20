@@ -145,4 +145,31 @@ pub enum ChainDepthError {
     // Math errors
     #[msg("Arithmetic overflow")]
     Overflow,
+
+    #[msg("Invalid season for this operation")]
+    InvalidSeason,
+
+    #[msg("Invalid duel opponent")]
+    InvalidDuelOpponent,
+
+    #[msg("Invalid duel stake")]
+    InvalidDuelStake,
+
+    #[msg("Invalid duel expiry")]
+    InvalidDuelExpiry,
+
+    #[msg("Players must be in the same room to duel")]
+    PlayersNotInSameRoom,
+
+    #[msg("Invalid duel state transition")]
+    InvalidDuelState,
+
+    #[msg("Invalid duel escrow account")]
+    InvalidDuelEscrow,
+
+    #[msg("Duel challenge has already expired")]
+    DuelChallengeExpired,
+
+    #[msg("Duel challenge has not yet expired")]
+    DuelChallengeNotExpired,
 }

@@ -158,6 +158,7 @@ namespace SeekerDungeon.Dungeon
 
             if (notifyListeners)
             {
+                GameAudioManager.Instance?.PlayWorld(WorldSfxId.RatSquash, transform.position);
                 Killed?.Invoke(this, transform.position);
             }
         }

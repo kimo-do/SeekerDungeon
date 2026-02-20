@@ -17,6 +17,8 @@
     "smoke-locked-door": "npx tsx scripts/smoke-locked-door-unlock-devnet.ts",
     "smoke-room-routing": "npx tsx scripts/smoke-room-routing-devnet.ts",
     "smoke-session-join-job": "npx tsx scripts/smoke-session-join-job-devnet.ts",
+    "smoke-vrf-duel": "npx tsx scripts/smoke-vrf-duel-devnet.ts",
+    "sim-duel": "npx tsx scripts/simulate-duel-local.ts",
     "watch-logs": "npx tsx scripts/watch-logs.ts",
     "telemetry-extraction": "npx tsx scripts/extraction-telemetry-devnet.ts",
     "rollout-readiness": "npx tsx scripts/rollout-readiness-devnet.ts"

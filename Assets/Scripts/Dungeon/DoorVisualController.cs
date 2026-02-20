@@ -28,6 +28,7 @@ namespace SeekerDungeon.Dungeon
     public sealed class DoorVisualController : MonoBehaviour
     {
         [SerializeField] private bool enableDebugLogs = true;
+        [SerializeField] private bool keepLockedDoorVisualWhenOpen = true;
         [SerializeField] private List<DoorStateVisualEntry> stateVisuals = new();
         [SerializeField] private List<LockedDoorVisualEntry> lockedDoorVisuals = new();
         [SerializeField] private GameObject entranceStairsVisualRoot;
@@ -194,6 +195,15 @@ namespace SeekerDungeon.Dungeon
                 lockedVisual != null)
             {
                 return lockedVisual;
+            }
+
+            if (keepLockedDoorVisualWhenOpen &&
+                wallState == RoomWallState.Open &&
+                door.LockKind != 0 &&
+                _lockedVisualByKind.TryGetValue(door.LockKind, out var unlockedLockVisual) &&
+                unlockedLockVisual != null)
+            {
+                return unlockedLockVisual;
             }
 
             if (_visualByState.TryGetValue(wallState, out var visual))

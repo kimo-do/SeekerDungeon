@@ -1053,6 +1053,7 @@ namespace SeekerDungeon.Solana
                 if (funded)
                 {
                     HideSessionFeeModal();
+                    GameAudioManager.Instance?.PlayWorld(WorldSfxId.SessionWalletTopUp, transform.position);
                     ShowCenterToast("Session wallet funded.", 1.25f);
                     await RefreshBalancesAsync();
                     return;

@@ -27,6 +27,7 @@ namespace SeekerDungeon.Audio
         [SerializeField] private bool logDebugMessages;
 
         private readonly Dictionary<AudioLoopId, AudioSource> _loopSourcesById = new();
+        private readonly HashSet<string> _sceneMusicFirstVisitConsumed = new(StringComparer.OrdinalIgnoreCase);
         private AudioSource _musicSource;
         private AudioSource _uiOneShotSource;
         private AudioSource _bossMonsterLoopSource;
@@ -422,19 +423,37 @@ namespace SeekerDungeon.Audio
             var musicEntry = FindSceneMusic(scene.name);
             if (musicEntry != null && musicEntry.clip != null)
             {
-                if (_musicSource.clip != musicEntry.clip || !_musicSource.isPlaying)
+                var playFirstVisitClip =
+                    !string.IsNullOrWhiteSpace(scene.name) &&
+                    musicEntry.firstVisitClip != null &&
+                    !_sceneMusicFirstVisitConsumed.Contains(scene.name);
+
+                var targetClip = playFirstVisitClip
+                    ? musicEntry.firstVisitClip
+                    : musicEntry.clip;
+
+                var targetBaseVolume = playFirstVisitClip
+                    ? Mathf.Clamp01(musicEntry.firstVisitVolume)
+                    : Mathf.Clamp01(musicEntry.volume);
+
+                if (_musicSource.clip != targetClip || !_musicSource.isPlaying)
                 {
                     _musicSource.Stop();
-                    _musicSource.clip = musicEntry.clip;
+                    _musicSource.clip = targetClip;
                     _musicSource.loop = true;
-                    _activeSceneMusicBaseVolume = Mathf.Clamp01(musicEntry.volume);
+                    _activeSceneMusicBaseVolume = targetBaseVolume;
                     _musicSource.volume = _activeSceneMusicBaseVolume * _musicVolume;
                     _musicSource.Play();
                 }
                 else
                 {
-                    _activeSceneMusicBaseVolume = Mathf.Clamp01(musicEntry.volume);
+                    _activeSceneMusicBaseVolume = targetBaseVolume;
                     _musicSource.volume = _activeSceneMusicBaseVolume * _musicVolume;
+                }
+
+                if (playFirstVisitClip)
+                {
+                    _sceneMusicFirstVisitConsumed.Add(scene.name);
                 }
             }
             else
@@ -757,6 +776,7 @@ namespace SeekerDungeon.Audio
 
             var fallbackId = id switch
             {
+                WorldSfxId.DoorUnlock => WorldSfxId.DoorOpenLocked,
                 WorldSfxId.DoorOpenRubble => WorldSfxId.DoorOpenOpen,
                 WorldSfxId.DoorOpenLocked => WorldSfxId.DoorOpenOpen,
                 WorldSfxId.StairsExit => WorldSfxId.DoorOpenOpen,
@@ -770,6 +790,13 @@ namespace SeekerDungeon.Audio
                 {
                     return fallback;
                 }
+            }
+
+            // Rubble doors should never resolve to unrelated SFX (such as locked-door audio)
+            // when their dedicated clip mapping is missing.
+            if (id == WorldSfxId.DoorOpenRubble)
+            {
+                return null;
             }
 
             if (audioCatalog?.worldSfx == null)

@@ -299,7 +299,7 @@ namespace SeekerDungeon.Dungeon
                         else if (wasLockedBeforeInteraction)
                         {
                             GameAudioManager.Instance?.PlayWorld(
-                                WorldSfxId.DoorOpenLocked,
+                                WorldSfxId.DoorUnlock,
                                 door.InteractWorldPosition);
                         }
                     }

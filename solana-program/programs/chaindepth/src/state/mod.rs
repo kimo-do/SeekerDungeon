@@ -1,4 +1,5 @@
 pub mod boss_fight;
+pub mod duel_challenge;
 pub mod global;
 pub mod helper_stake;
 pub mod inventory;
@@ -13,6 +14,7 @@ pub mod session_authority;
 pub mod storage;
 
 pub use boss_fight::*;
+pub use duel_challenge::*;
 pub use global::*;
 pub use helper_stake::*;
 pub use inventory::*;

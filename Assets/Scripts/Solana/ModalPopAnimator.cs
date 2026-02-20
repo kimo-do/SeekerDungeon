@@ -1,5 +1,8 @@
+using System;
 using System.Collections.Generic;
+using SeekerDungeon.Audio;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.UIElements;
 
 namespace SeekerDungeon.Solana
@@ -18,6 +21,11 @@ namespace SeekerDungeon.Solana
             if (card == null)
             {
                 return;
+            }
+
+            if (ShouldPlayModalOpenSfx())
+            {
+                GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.ModalOpen);
             }
 
             if (ActiveAnimations.TryGetValue(card, out var existingAnimation) && existingAnimation != null)
@@ -52,6 +60,22 @@ namespace SeekerDungeon.Solana
             }).Every(16);
 
             ActiveAnimations[card] = animation;
+        }
+
+        private static bool ShouldPlayModalOpenSfx()
+        {
+            var sceneName = SceneManager.GetActiveScene().name;
+            if (string.Equals(sceneName, "Loading", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (string.Equals(sceneName, "Preload", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return true;
         }
     }
 }

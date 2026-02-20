@@ -4,7 +4,7 @@
         <ui:VisualElement name="hud-top-left-actions" class="hud-top-left-actions">
             <ui:Button name="hud-btn-back" text="Back" class="hud-back-button" style="height: 81px; width: 176px; -unity-text-align: lower-center; text-shadow: 4px 4px 0 rgb(0, 0, 0); color: rgb(255, 252, 215); -unity-text-outline-width: 2px; -unity-text-outline-color: rgb(0, 0, 0);"/>
         </ui:VisualElement>
-        <ui:VisualElement name="hud-top-center" class="hud-top-center">
+        <ui:VisualElement name="hud-top-center" class="hud-top-center" picking-mode="Ignore">
             <ui:VisualElement name="hud-player-health" class="hud-player-health" style="margin-right: 109px; margin-top: 16px;">
                 <ui:VisualElement name="hud-player-health-fill" class="hud-player-health-fill"/>
                 <ui:Label name="hud-player-health-label" text="--/--" class="hud-player-health-label"/>

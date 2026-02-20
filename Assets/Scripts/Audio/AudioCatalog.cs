@@ -10,6 +10,8 @@ namespace SeekerDungeon.Audio
         public string sceneName;
         public AudioClip clip;
         [Range(0f, 1f)] public float volume = 0.8f;
+        public AudioClip firstVisitClip;
+        [Range(0f, 1f)] public float firstVisitVolume = 0.8f;
     }
 
     [Serializable]
@@ -94,4 +96,3 @@ namespace SeekerDungeon.Audio
         public MonsterAudioEntry[] monsterAudio = Array.Empty<MonsterAudioEntry>();
     }
 }
-

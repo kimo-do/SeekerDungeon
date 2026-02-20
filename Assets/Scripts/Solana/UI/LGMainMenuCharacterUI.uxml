@@ -36,13 +36,6 @@
         <ui:VisualElement name="bottom-center-layer" class="bottom-center-layer">
             <ui:Label name="menu-status-label" text="Loading..." class="status-label" style="font-size: 35px;"/>
             <ui:Label name="menu-total-score-label" text="Total Score: 0" class="existing-total-score-label" style="display: none;"/>
-            <ui:VisualElement name="menu-storage-panel" class="menu-storage-panel" style="display: none;">
-                <ui:Label name="menu-storage-title" text="Collection" class="menu-storage-title"/>
-                <ui:ScrollView name="menu-storage-scroll" mode="Vertical" class="menu-storage-scroll">
-                    <ui:VisualElement name="menu-storage-items" class="menu-storage-items"/>
-                </ui:ScrollView>
-                <ui:Label name="menu-storage-empty" text="No valuables banked yet." class="menu-storage-empty" style="display: none;"/>
-            </ui:VisualElement>
             <ui:VisualElement name="create-identity-panel" class="floating-panel identity-panel" style="margin-bottom: 66px;">
                 <ui:TextField name="display-name-input" label="" value="Name" class="name-input" style="font-size: 34px; color: rgb(255, 255, 255); background-image: url(&quot;project://database/Assets/Sprites/inputfield.png?fileID=2800000&amp;guid=b83acef540c7dbe49a2cb7fbbc4de7e7&amp;type=3#inputfield&quot;); -unity-background-image-tint-color: rgb(255, 255, 255); -unity-background-scale-mode: scale-to-fit; height: 85px; width: 561px;"/>
             </ui:VisualElement>
@@ -53,6 +46,7 @@
                 <ui:Button name="btn-create-character" text="Create Character" class="action-button cta-button" style="width: 660px; font-size: 40px; -unity-font-definition: url(&quot;project://database/Assets/OpenSans-Bold.ttf?fileID=12800000&amp;guid=540b7a85944effe4fb9eb3de0c29d37a&amp;type=3#OpenSans-Bold&quot;);"/>
             </ui:VisualElement>
             <ui:VisualElement name="existing-character-container" class="cta-wrap" style="display: none;">
+                <ui:Button name="btn-open-vault" text="Vault 0" class="action-button vault-button" style="display: none; background-image: url(&quot;project://database/Assets/Sprites/vaultbutton.png?fileID=2800000&amp;guid=8db043a4aafad1147861a00b2ffa2e4b&amp;type=3#vaultbutton&quot;); -unity-background-scale-mode: scale-to-fit; height: 189px; font-size: 36px; padding-bottom: 25px;"/>
                 <ui:Button name="btn-enter-dungeon" text="Enter the Dungeon" class="action-button cta-button"/>
             </ui:VisualElement>
         </ui:VisualElement>
@@ -147,6 +141,19 @@
                     <ui:Button name="btn-low-balance-dismiss" text="Dismiss" class="action-button modal-action-button modal-longbtn"/>
                     <ui:Button name="btn-low-balance-topup" text="Airdrop Sol" class="action-button modal-action-button modal-longbtn" style="display: none;"/>
                 </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement name="vault-overlay" class="vault-overlay" style="display: none;">
+            <ui:VisualElement name="vault-card" class="vault-card">
+                <ui:VisualElement class="vault-header">
+                    <ui:Label name="vault-title" text="Vault" class="vault-title"/>
+                    <ui:Button name="btn-vault-close" text="X" class="vault-close-button"/>
+                </ui:VisualElement>
+                <ui:Label name="vault-subtitle" text="Your stored valuables" class="vault-subtitle"/>
+                <ui:ScrollView name="vault-scroll" mode="Vertical" class="vault-scroll">
+                    <ui:VisualElement name="vault-items" class="vault-items"/>
+                </ui:ScrollView>
+                <ui:Label name="vault-empty" text="Your vault is empty." class="vault-empty" style="display: none;"/>
             </ui:VisualElement>
         </ui:VisualElement>
     </ui:VisualElement>

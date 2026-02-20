@@ -162,6 +162,53 @@ pub mod chaindepth {
         instructions::create_player_profile::handler(ctx, skin_id, display_name)
     }
 
+    /// Create a same-room duel challenge and escrow challenger stake.
+    pub fn create_duel_challenge(
+        ctx: Context<CreateDuelChallenge>,
+        challenge_seed: u64,
+        stake_amount: u64,
+        expires_at_slot: u64,
+    ) -> Result<()> {
+        instructions::create_duel_challenge::handler(
+            ctx,
+            challenge_seed,
+            stake_amount,
+            expires_at_slot,
+        )
+    }
+
+    /// Accept an open duel challenge, escrow opponent stake, and request VRF.
+    pub fn accept_duel_challenge(
+        ctx: Context<AcceptDuelChallenge>,
+        challenge_seed: u64,
+    ) -> Result<()> {
+        instructions::accept_duel_challenge::handler(ctx, challenge_seed)
+    }
+
+    /// VRF callback: consume randomness, resolve duel transcript, and settle escrow.
+    pub fn consume_duel_randomness(
+        ctx: Context<ConsumeDuelRandomness>,
+        randomness: [u8; 32],
+    ) -> Result<()> {
+        instructions::consume_duel_randomness::handler(ctx, randomness)
+    }
+
+    /// Opponent declines an open duel challenge and challenger is refunded.
+    pub fn decline_duel_challenge(
+        ctx: Context<DeclineDuelChallenge>,
+        challenge_seed: u64,
+    ) -> Result<()> {
+        instructions::decline_duel_challenge::handler(ctx, challenge_seed)
+    }
+
+    /// Expire an unaccepted duel challenge after timeout and refund challenger.
+    pub fn expire_duel_challenge(
+        ctx: Context<ExpireDuelChallenge>,
+        challenge_seed: u64,
+    ) -> Result<()> {
+        instructions::expire_duel_challenge::handler(ctx, challenge_seed)
+    }
+
     /// Join fight on boss in current room.
     pub fn join_boss_fight(ctx: Context<JoinBossFight>) -> Result<()> {
         instructions::join_boss_fight::handler(ctx)

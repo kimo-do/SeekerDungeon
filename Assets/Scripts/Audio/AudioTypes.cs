@@ -6,7 +6,8 @@ namespace SeekerDungeon.Audio
         Secondary = 1,
         Danger = 2,
         Nav = 3,
-        Confirm = 4
+        Confirm = 4,
+        ModalOpen = 5
     }
 
     public enum StingerSfxId
@@ -24,7 +25,10 @@ namespace SeekerDungeon.Audio
         StairsExit = 3,
         CharacterSwap = 4,
         Equip = 5,
-        RatOneShot = 6
+        RatOneShot = 6,
+        SessionWalletTopUp = 7,
+        RatSquash = 8,
+        DoorUnlock = 9
     }
 
     public enum AudioLoopId

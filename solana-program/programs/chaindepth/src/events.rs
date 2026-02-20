@@ -214,6 +214,59 @@ pub struct PlayerDied {
     pub lost_item_units: u32,
 }
 
+#[event]
+pub struct DuelChallengeCreated {
+    pub challenger: Pubkey,
+    pub opponent: Pubkey,
+    pub room_x: i8,
+    pub room_y: i8,
+    pub challenge_seed: u64,
+    pub stake_amount: u64,
+    pub expires_at_slot: u64,
+    pub duel_challenge: Pubkey,
+}
+
+#[event]
+pub struct DuelChallengeAccepted {
+    pub challenger: Pubkey,
+    pub opponent: Pubkey,
+    pub duel_challenge: Pubkey,
+    pub stake_amount: u64,
+    pub requested_slot: u64,
+}
+
+#[event]
+pub struct DuelChallengeDeclined {
+    pub challenger: Pubkey,
+    pub opponent: Pubkey,
+    pub duel_challenge: Pubkey,
+    pub stake_amount: u64,
+}
+
+#[event]
+pub struct DuelChallengeExpired {
+    pub challenger: Pubkey,
+    pub opponent: Pubkey,
+    pub duel_challenge: Pubkey,
+    pub stake_amount: u64,
+}
+
+#[event]
+pub struct DuelSettled {
+    pub challenger: Pubkey,
+    pub opponent: Pubkey,
+    pub winner: Pubkey,
+    pub is_draw: bool,
+    pub duel_challenge: Pubkey,
+    pub stake_amount: u64,
+    pub starter: u8,
+    pub challenger_final_hp: u16,
+    pub opponent_final_hp: u16,
+    pub turns_played: u8,
+    pub challenger_hits: Vec<u8>,
+    pub opponent_hits: Vec<u8>,
+}
+
 /// Item types for loot
 pub mod item_types {
     pub const ORE: u8 = 0;

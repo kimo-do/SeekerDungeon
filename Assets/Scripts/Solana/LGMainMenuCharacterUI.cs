@@ -12,6 +12,20 @@ namespace SeekerDungeon.Solana
     [RequireComponent(typeof(UIDocument))]
     public sealed class LGMainMenuCharacterUI : MonoBehaviour
     {
+        [Serializable]
+        private sealed class StorageVisualStage
+        {
+            [Min(1)] public uint threshold = 1;
+            public List<GameObject> targets = new();
+        }
+
+        [Serializable]
+        private sealed class StorageVisualTrack
+        {
+            public ItemId itemId = ItemId.SilverCoin;
+            public List<StorageVisualStage> stages = new();
+        }
+
         private const int SkinLabelMaxFontSize = 49;
         private const int SkinLabelMinFontSize = 24;
         private const float SpinnerDegreesPerSecond = 360f;
@@ -26,6 +40,8 @@ namespace SeekerDungeon.Solana
         [SerializeField] private Sprite settingsCogSprite;
         [SerializeField] private Sprite audioMutedSprite;
         [SerializeField] private Sprite audioUnmutedSprite;
+        [Header("Menu Storage Visuals")]
+        [SerializeField] private List<StorageVisualTrack> storageVisualTracks = new();
 
         private UIDocument _document;
 
@@ -41,9 +57,10 @@ namespace SeekerDungeon.Solana
         private Label _statusLabel;
         private Label _existingNameLabel;
         private Label _menuTotalScoreLabel;
-        private VisualElement _menuStoragePanel;
-        private VisualElement _menuStorageItemsContainer;
-        private Label _menuStorageEmptyLabel;
+        private VisualElement _vaultOverlay;
+        private VisualElement _vaultCard;
+        private VisualElement _vaultItemsContainer;
+        private Label _vaultEmptyLabel;
         private Label _pickCharacterTitleLabel;
         private Label _walletSolBalanceLabel;
         private Label _walletSkrBalanceLabel;
@@ -81,7 +98,9 @@ namespace SeekerDungeon.Solana
         private Button _previousSkinButton;
         private Button _nextSkinButton;
         private Button _confirmCreateButton;
+        private Button _vaultButton;
         private Button _enterDungeonButton;
+        private Button _vaultCloseButton;
         private Button _openSettingsButton;
         private Button _sessionPillButton;
         private Button _sessionSetupActivateButton;
@@ -143,6 +162,7 @@ namespace SeekerDungeon.Solana
         {
             _stopDrinkLoop = true;
             ShowSettingsOverlay(false);
+            SetOverlayVisible(_vaultOverlay, _vaultCard, false);
             UnbindUiHandlers();
             _isShowingExtractionSummary = false;
             _txIndicatorController?.Dispose();
@@ -196,9 +216,10 @@ namespace SeekerDungeon.Solana
             _displayNameInput = root.Q<TextField>("display-name-input");
             _statusLabel = root.Q<Label>("menu-status-label");
             _menuTotalScoreLabel = root.Q<Label>("menu-total-score-label");
-            _menuStoragePanel = root.Q<VisualElement>("menu-storage-panel");
-            _menuStorageItemsContainer = root.Q<VisualElement>("menu-storage-items");
-            _menuStorageEmptyLabel = root.Q<Label>("menu-storage-empty");
+            _vaultOverlay = root.Q<VisualElement>("vault-overlay");
+            _vaultCard = root.Q<VisualElement>("vault-card");
+            _vaultItemsContainer = root.Q<VisualElement>("vault-items");
+            _vaultEmptyLabel = root.Q<Label>("vault-empty");
             _existingNameLabel = root.Q<Label>("existing-display-name-label");
             _pickCharacterTitleLabel = root.Q<Label>("pick-character-title-label");
             _walletSolBalanceLabel = root.Q<Label>("wallet-sol-balance-label");
@@ -223,7 +244,9 @@ namespace SeekerDungeon.Solana
             _previousSkinButton = root.Q<Button>("btn-prev-skin");
             _nextSkinButton = root.Q<Button>("btn-next-skin");
             _confirmCreateButton = root.Q<Button>("btn-create-character");
+            _vaultButton = root.Q<Button>("btn-open-vault");
             _enterDungeonButton = root.Q<Button>("btn-enter-dungeon");
+            _vaultCloseButton = root.Q<Button>("btn-vault-close");
             _openSettingsButton = root.Q<Button>("btn-open-settings");
             _sessionPillButton = root.Q<Button>("btn-session-pill");
             _sessionSetupActivateButton = root.Q<Button>("btn-session-setup-activate");
@@ -259,6 +282,16 @@ namespace SeekerDungeon.Solana
             if (_enterDungeonButton != null)
             {
                 _enterDungeonButton.clicked += HandleEnterDungeonClicked;
+            }
+
+            if (_vaultButton != null)
+            {
+                _vaultButton.clicked += HandleVaultClicked;
+            }
+
+            if (_vaultCloseButton != null)
+            {
+                _vaultCloseButton.clicked += HandleVaultCloseClicked;
             }
 
             if (_openSettingsButton != null)
@@ -375,6 +408,16 @@ namespace SeekerDungeon.Solana
             if (_enterDungeonButton != null)
             {
                 _enterDungeonButton.clicked -= HandleEnterDungeonClicked;
+            }
+
+            if (_vaultButton != null)
+            {
+                _vaultButton.clicked -= HandleVaultClicked;
+            }
+
+            if (_vaultCloseButton != null)
+            {
+                _vaultCloseButton.clicked -= HandleVaultCloseClicked;
             }
 
             if (_openSettingsButton != null)
@@ -498,6 +541,18 @@ namespace SeekerDungeon.Solana
             GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Secondary);
             ShowSettingsOverlay(true);
             RefreshAudioSettingsUiFromManager();
+        }
+
+        private void HandleVaultClicked()
+        {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Secondary);
+            SetOverlayVisible(_vaultOverlay, _vaultCard, true);
+        }
+
+        private void HandleVaultCloseClicked()
+        {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Secondary);
+            SetOverlayVisible(_vaultOverlay, _vaultCard, false);
         }
 
         private void HandleEnableSessionClicked()
@@ -864,11 +919,19 @@ namespace SeekerDungeon.Solana
             }
 
             var isLockedProfile = state.HasProfile && !state.HasUnsavedProfileChanges;
-            if (_menuStoragePanel != null)
+            RefreshVaultCollection(state.StoredCollectionItems);
+            var hasStoredItems = TotalStoredItems(state.StoredCollectionItems) > 0;
+            ApplyStorageVisuals(isLockedProfile ? state.StoredCollectionItems : null);
+            if (_vaultButton != null)
             {
-                _menuStoragePanel.style.display = isLockedProfile ? DisplayStyle.Flex : DisplayStyle.None;
+                _vaultButton.style.display = isLockedProfile && hasStoredItems ? DisplayStyle.Flex : DisplayStyle.None;
+                _vaultButton.text = $"Vault {state.TotalScore}";
             }
-            RefreshStoredCollection(state.StoredCollectionItems);
+
+            if (!hasStoredItems)
+            {
+                SetOverlayVisible(_vaultOverlay, _vaultCard, false);
+            }
 
             var previewController = characterManager?.PreviewPlayerController;
             previewController?.SetDisplayName(state.PlayerDisplayName);
@@ -1037,6 +1100,7 @@ namespace SeekerDungeon.Solana
                 !state.IsLegacyResetRequired &&
                 (!state.HasProfile || state.HasUnsavedProfileChanges));
             _enterDungeonButton?.SetEnabled(canEnter && !state.IsLegacyResetRequired);
+            _vaultButton?.SetEnabled(canEnter && !state.IsLegacyResetRequired && hasStoredItems);
             _openSettingsButton?.SetEnabled(!state.IsBusy);
             if (_sessionPillButton != null)
             {
@@ -1064,18 +1128,18 @@ namespace SeekerDungeon.Solana
             TryShowPendingExtractionSummary();
         }
 
-        private void RefreshStoredCollection(IReadOnlyList<CollectionItemView> collectionItems)
+        private void RefreshVaultCollection(IReadOnlyList<CollectionItemView> collectionItems)
         {
-            if (_menuStorageItemsContainer == null)
+            if (_vaultItemsContainer == null)
             {
                 return;
             }
 
-            _menuStorageItemsContainer.Clear();
-            var hasItems = collectionItems != null && collectionItems.Count > 0;
-            if (_menuStorageEmptyLabel != null)
+            _vaultItemsContainer.Clear();
+            var hasItems = TotalStoredItems(collectionItems) > 0;
+            if (_vaultEmptyLabel != null)
             {
-                _menuStorageEmptyLabel.style.display = hasItems ? DisplayStyle.None : DisplayStyle.Flex;
+                _vaultEmptyLabel.style.display = hasItems ? DisplayStyle.None : DisplayStyle.Flex;
             }
 
             if (!hasItems)
@@ -1092,27 +1156,135 @@ namespace SeekerDungeon.Solana
                 }
 
                 var row = new VisualElement();
-                row.AddToClassList("menu-storage-row");
+                row.AddToClassList("vault-item-row");
 
+                var itemDisplayName = ResolveItemDisplayName(collectionItem.ItemId);
                 var icon = new VisualElement();
-                icon.AddToClassList("menu-storage-item-icon");
+                icon.AddToClassList("vault-item-icon");
                 var iconSprite = ResolveItemIcon(collectionItem.ItemId);
                 if (iconSprite != null)
                 {
                     icon.style.backgroundImage = new StyleBackground(iconSprite);
                 }
+                else
+                {
+                    icon.AddToClassList("vault-item-icon-fallback");
+                    var fallbackLabel = new Label(BuildIconFallbackText(itemDisplayName));
+                    fallbackLabel.AddToClassList("vault-item-icon-fallback-label");
+                    icon.Add(fallbackLabel);
+                }
                 row.Add(icon);
 
-                var itemNameLabel = new Label(ResolveItemDisplayName(collectionItem.ItemId));
-                itemNameLabel.AddToClassList("menu-storage-item-name");
+                var itemNameLabel = new Label(itemDisplayName);
+                itemNameLabel.AddToClassList("vault-item-name");
                 row.Add(itemNameLabel);
 
                 var countLabel = new Label($"x{collectionItem.Amount}");
-                countLabel.AddToClassList("menu-storage-item-count");
+                countLabel.AddToClassList("vault-item-count");
                 row.Add(countLabel);
 
-                _menuStorageItemsContainer.Add(row);
+                _vaultItemsContainer.Add(row);
             }
+        }
+
+        private static ulong TotalStoredItems(IReadOnlyList<CollectionItemView> collectionItems)
+        {
+            if (collectionItems == null || collectionItems.Count == 0)
+            {
+                return 0;
+            }
+
+            ulong total = 0;
+            for (var itemIndex = 0; itemIndex < collectionItems.Count; itemIndex += 1)
+            {
+                var item = collectionItems[itemIndex];
+                if (item == null || item.Amount == 0)
+                {
+                    continue;
+                }
+
+                total += item.Amount;
+            }
+
+            return total;
+        }
+
+        private void ApplyStorageVisuals(IReadOnlyList<CollectionItemView> collectionItems)
+        {
+            if (storageVisualTracks == null || storageVisualTracks.Count == 0)
+            {
+                return;
+            }
+
+            var amountByItemId = BuildStoredAmountByItemId(collectionItems);
+            for (var trackIndex = 0; trackIndex < storageVisualTracks.Count; trackIndex += 1)
+            {
+                var track = storageVisualTracks[trackIndex];
+                if (track == null || track.stages == null || track.stages.Count == 0)
+                {
+                    continue;
+                }
+
+                amountByItemId.TryGetValue(track.itemId, out var itemAmount);
+                for (var stageIndex = 0; stageIndex < track.stages.Count; stageIndex += 1)
+                {
+                    var stage = track.stages[stageIndex];
+                    if (stage == null || stage.targets == null || stage.targets.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    var shouldEnableStage = itemAmount >= stage.threshold;
+                    for (var targetIndex = 0; targetIndex < stage.targets.Count; targetIndex += 1)
+                    {
+                        var target = stage.targets[targetIndex];
+                        if (target != null)
+                        {
+                            target.SetActive(shouldEnableStage);
+                        }
+                    }
+                }
+            }
+        }
+
+        private static Dictionary<ItemId, uint> BuildStoredAmountByItemId(IReadOnlyList<CollectionItemView> collectionItems)
+        {
+            var amountByItemId = new Dictionary<ItemId, uint>();
+            if (collectionItems == null || collectionItems.Count == 0)
+            {
+                return amountByItemId;
+            }
+
+            for (var itemIndex = 0; itemIndex < collectionItems.Count; itemIndex += 1)
+            {
+                var item = collectionItems[itemIndex];
+                if (item == null || item.Amount == 0)
+                {
+                    continue;
+                }
+
+                if (amountByItemId.TryGetValue(item.ItemId, out var existingAmount))
+                {
+                    amountByItemId[item.ItemId] = existingAmount + item.Amount;
+                }
+                else
+                {
+                    amountByItemId[item.ItemId] = item.Amount;
+                }
+            }
+
+            return amountByItemId;
+        }
+
+        private static string BuildIconFallbackText(string itemDisplayName)
+        {
+            if (string.IsNullOrWhiteSpace(itemDisplayName))
+            {
+                return "?";
+            }
+
+            var trimmed = itemDisplayName.Trim();
+            return trimmed.Substring(0, 1).ToUpperInvariant();
         }
 
         private void StartDrinkLoopIfNeeded()

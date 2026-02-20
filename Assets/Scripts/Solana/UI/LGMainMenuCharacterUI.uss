@@ -271,18 +271,84 @@
     -unity-text-outline-color: rgba(40, 28, 0, 0.9);
 }
 
-.menu-storage-panel {
-    width: 92%;
-    max-width: 760px;
-    min-height: 120px;
-    max-height: 240px;
-    margin-top: 2px;
+.vault-button {
+    min-width: 540px;
+    min-height: 138px;
+    height: 138px;
+    margin-bottom: 14px;
+    font-size: 52px;
+    color: rgb(255, 228, 145);
+}
+
+.vault-overlay {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(5, 10, 18, 0.92);
+    z-index: 150;
+}
+
+.vault-card {
+    width: 94%;
+    max-width: 1160px;
+    max-height: 92%;
+    min-height: 640px;
+    padding: 38px 34px 30px 34px;
+    align-items: stretch;
+    background-color: rgba(10, 16, 26, 0.72);
+    background-image: url("project://database/Assets/Sprites/squire_ui_modal.png?fileID=-4845399846067421652&guid=66045a6caca1a264f8bd1a0ef307c99f&type=3#squire_ui_modal_0");
+    -unity-background-scale-mode: sliced;
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+}
+
+.vault-header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
     margin-bottom: 12px;
-    padding-top: 10px;
-    padding-right: 14px;
-    padding-bottom: 10px;
-    padding-left: 14px;
-    background-color: rgba(6, 11, 20, 0.72);
+}
+
+.vault-title {
+    font-size: 66px;
+    -unity-font-style: bold;
+    color: rgb(255, 230, 145);
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(52, 33, 0, 0.95);
+}
+
+.vault-close-button {
+    width: 76px;
+    min-width: 76px;
+    height: 76px;
+    min-height: 76px;
+    font-size: 38px;
+    color: rgb(235, 242, 255);
+    background-color: rgba(0, 0, 0, 0);
+    border-top-width: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+}
+
+.vault-subtitle {
+    margin-bottom: 20px;
+    font-size: 30px;
+    color: rgb(210, 224, 248);
+    padding-left: 2px;
+}
+
+.vault-scroll {
+    flex-grow: 1;
+    background-color: rgba(8, 13, 22, 0.74);
+    padding-top: 8px;
+    padding-bottom: 8px;
     border-top-left-radius: 12px;
     border-top-right-radius: 12px;
     border-bottom-left-radius: 12px;
@@ -291,57 +357,86 @@
     border-right-width: 1px;
     border-bottom-width: 1px;
     border-left-width: 1px;
-    border-top-color: rgba(152, 180, 218, 0.42);
-    border-right-color: rgba(152, 180, 218, 0.42);
-    border-bottom-color: rgba(84, 108, 139, 0.36);
-    border-left-color: rgba(152, 180, 218, 0.42);
+    border-top-color: rgba(126, 144, 176, 0.62);
+    border-left-color: rgba(126, 144, 176, 0.62);
+    border-right-color: rgba(52, 68, 92, 0.74);
+    border-bottom-color: rgba(52, 68, 92, 0.74);
 }
 
-.menu-storage-title {
-    font-size: 20px;
-    -unity-font-style: bold;
-    color: rgb(230, 241, 255);
-    margin-bottom: 6px;
-}
-
-.menu-storage-scroll {
-    max-height: 170px;
-}
-
-.menu-storage-items {
+.vault-items {
+    padding: 20px;
     flex-direction: column;
+    row-gap: 12px;
 }
 
-.menu-storage-row {
-    min-height: 36px;
+.vault-item-row {
+    min-height: 84px;
+    padding-left: 18px;
+    padding-right: 18px;
     flex-direction: row;
     align-items: center;
-    margin-bottom: 4px;
+    background-color: rgba(23, 32, 46, 0.78);
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
 }
 
-.menu-storage-item-icon {
-    width: 28px;
-    height: 28px;
-    margin-right: 8px;
+.vault-item-icon {
+    width: 54px;
+    height: 54px;
+    min-width: 54px;
+    min-height: 54px;
+    flex-shrink: 0;
+    margin-right: 14px;
     -unity-background-scale-mode: scale-to-fit;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-color: rgba(255, 255, 255, 0.04);
+    border-top-left-radius: 9px;
+    border-top-right-radius: 9px;
+    border-bottom-left-radius: 9px;
+    border-bottom-right-radius: 9px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(169, 187, 222, 0.45);
+    border-right-color: rgba(169, 187, 222, 0.45);
+    border-bottom-color: rgba(74, 91, 123, 0.52);
+    border-left-color: rgba(169, 187, 222, 0.45);
 }
 
-.menu-storage-item-name {
-    flex-grow: 1;
-    font-size: 16px;
-    color: rgb(218, 234, 255);
+.vault-item-icon-fallback {
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(201, 173, 98, 0.26);
 }
 
-.menu-storage-item-count {
-    font-size: 16px;
+.vault-item-icon-fallback-label {
+    font-size: 24px;
     -unity-font-style: bold;
-    color: rgb(255, 226, 147);
+    color: rgb(255, 228, 145);
+    -unity-text-align: middle-center;
 }
 
-.menu-storage-empty {
-    font-size: 15px;
-    color: rgba(206, 222, 244, 0.85);
-    margin-top: 6px;
+.vault-item-name {
+    flex-grow: 1;
+    font-size: 30px;
+    color: rgb(230, 238, 251);
+}
+
+.vault-item-count {
+    font-size: 30px;
+    -unity-font-style: bold;
+    color: rgb(255, 220, 132);
+}
+
+.vault-empty {
+    margin-top: 12px;
+    font-size: 26px;
+    color: rgba(211, 225, 245, 0.88);
+    -unity-text-align: middle-center;
 }
 
 .disconnect-button {
