@@ -929,6 +929,9 @@ MonoBehaviour:
     sprite: {fileID: 7227000743248742133, guid: 531d2876fc0f880489cd0b3208ca602a, type: 3}
   characterNameAnchor: {fileID: 5852513891496822425}
   playerNamePrefab: {fileID: 2216771843196064832, guid: 1614aba7c126b8b43ab8f929fa17910a, type: 3}
+  playerHealthBarView: {fileID: 0}
+  playerHealthBarPrefab: {fileID: 3104601031813022557, guid: 92ed27351d304d54b8867e1ebfe02005, type: 3}
+  playerHealthBarAnchor: {fileID: 0}
   animateSkinSwitch: 1
   skinPopScaleMultiplier: 1.12
   skinPopOutDuration: 0.08

@@ -27,6 +27,7 @@ namespace SeekerDungeon.Dungeon
 
     public sealed class DoorVisualController : MonoBehaviour
     {
+        [SerializeField] private bool enableDebugLogs = true;
         [SerializeField] private List<DoorStateVisualEntry> stateVisuals = new();
         [SerializeField] private List<LockedDoorVisualEntry> lockedDoorVisuals = new();
         [SerializeField] private GameObject entranceStairsVisualRoot;
@@ -57,13 +58,31 @@ namespace SeekerDungeon.Dungeon
             }
 
             var targetVisual = ResolveVisual(door);
+            var requestedVisualName = targetVisual != null ? targetVisual.name : "null";
+            if (targetVisual != null && !IsLocalVisual(targetVisual))
+            {
+                targetVisual = null;
+            }
+
+            var fallbackVisual = IsLocalVisual(fallbackVisualRoot)
+                ? fallbackVisualRoot
+                : ResolveFirstLocalFallbackVisual();
 
             SetAllKnownDoorVisualsActiveState(targetVisual);
 
-            if (fallbackVisualRoot != null)
+            if (fallbackVisual != null)
             {
                 var useFallback = targetVisual == null;
-                fallbackVisualRoot.SetActive(useFallback);
+                // If fallback is the same object as the selected visual, do not
+                // overwrite the active state we just set in SetAllKnownDoorVisualsActiveState.
+                if (!ReferenceEquals(fallbackVisual, targetVisual))
+                {
+                    fallbackVisual.SetActive(useFallback);
+                }
+                if (useFallback)
+                {
+                    targetVisual = fallbackVisual;
+                }
             }
 
             // Resolve the VisualInteractable on whichever state visual is now active.
@@ -77,6 +96,17 @@ namespace SeekerDungeon.Dungeon
                                     door.RequiredProgress > 0 &&
                                     door.StartSlot > 0;
             SetRubbleJobVfxActive(isRubbleJobActive);
+
+            if (enableDebugLogs && (door.WallState == RoomWallState.Locked || targetVisual == null))
+            {
+                var chosenVisualName = targetVisual != null ? targetVisual.name : "null";
+                var fallbackVisualName = fallbackVisual != null ? fallbackVisual.name : "null";
+                Debug.Log(
+                    $"[DoorVisualController] ApplyDoorState door={name} dir={door.Direction} wall={door.WallState} lockKind={door.LockKind} " +
+                    $"requestedVisual={requestedVisualName} chosenVisual={chosenVisualName} fallback={fallbackVisualName} " +
+                    $"activeChildren=[{GetActiveChildNames()}] stateMap=[{DescribeStateMap()}] lockMap=[{DescribeLockMap()}] " +
+                    $"visualActive=[{DescribeVisualActiveFlags()}]");
+            }
         }
 
         private void RebuildStateIndex()
@@ -88,6 +118,13 @@ namespace SeekerDungeon.Dungeon
             {
                 if (stateVisual == null || stateVisual.VisualRoot == null)
                 {
+                    continue;
+                }
+
+                if (!IsLocalVisual(stateVisual.VisualRoot))
+                {
+                    Debug.LogWarning(
+                        $"[DoorVisualController] Ignoring non-local state visual '{stateVisual.VisualRoot.name}' on '{name}'.");
                     continue;
                 }
 
@@ -110,6 +147,13 @@ namespace SeekerDungeon.Dungeon
             {
                 if (lockedVisual == null || lockedVisual.VisualRoot == null)
                 {
+                    continue;
+                }
+
+                if (!IsLocalVisual(lockedVisual.VisualRoot))
+                {
+                    Debug.LogWarning(
+                        $"[DoorVisualController] Ignoring non-local locked visual '{lockedVisual.VisualRoot.name}' on '{name}'.");
                     continue;
                 }
 
@@ -164,6 +208,101 @@ namespace SeekerDungeon.Dungeon
             }
 
             return null;
+        }
+
+        private bool IsLocalVisual(GameObject visualRoot)
+        {
+            return visualRoot != null && visualRoot.transform.IsChildOf(transform);
+        }
+
+        private GameObject ResolveFirstLocalFallbackVisual()
+        {
+            foreach (var visual in _visualByState.Values)
+            {
+                if (IsLocalVisual(visual))
+                {
+                    return visual;
+                }
+            }
+
+            foreach (var visual in _lockedVisualByKind.Values)
+            {
+                if (IsLocalVisual(visual))
+                {
+                    return visual;
+                }
+            }
+
+            return null;
+        }
+
+        private string DescribeStateMap()
+        {
+            var entries = new List<string>();
+            foreach (var kvp in _visualByState)
+            {
+                var visualName = kvp.Value != null ? kvp.Value.name : "null";
+                var local = IsLocalVisual(kvp.Value) ? "local" : "nonlocal";
+                entries.Add($"{kvp.Key}:{visualName}:{local}");
+            }
+
+            return string.Join(", ", entries);
+        }
+
+        private string DescribeLockMap()
+        {
+            var entries = new List<string>();
+            foreach (var kvp in _lockedVisualByKind)
+            {
+                var visualName = kvp.Value != null ? kvp.Value.name : "null";
+                var local = IsLocalVisual(kvp.Value) ? "local" : "nonlocal";
+                entries.Add($"{kvp.Key}:{visualName}:{local}");
+            }
+
+            return string.Join(", ", entries);
+        }
+
+        private string GetActiveChildNames()
+        {
+            var active = new List<string>();
+            for (var index = 0; index < transform.childCount; index += 1)
+            {
+                var child = transform.GetChild(index);
+                if (child != null && child.gameObject.activeSelf)
+                {
+                    active.Add(child.gameObject.name);
+                }
+            }
+
+            return string.Join(", ", active);
+        }
+
+        private string DescribeVisualActiveFlags()
+        {
+            var entries = new List<string>();
+            var handled = new HashSet<GameObject>();
+
+            foreach (var visual in _visualByState.Values)
+            {
+                if (visual == null || !handled.Add(visual))
+                {
+                    continue;
+                }
+
+                entries.Add($"{visual.name}:self={visual.activeSelf}:hier={visual.activeInHierarchy}");
+            }
+
+            foreach (var visual in _lockedVisualByKind.Values)
+            {
+                if (visual == null || !handled.Add(visual))
+                {
+                    continue;
+                }
+
+                entries.Add($"{visual.name}:self={visual.activeSelf}:hier={visual.activeInHierarchy}");
+            }
+
+            return string.Join(", ", entries);
         }
 
         private void SetAllKnownDoorVisualsActiveState(GameObject targetVisual)

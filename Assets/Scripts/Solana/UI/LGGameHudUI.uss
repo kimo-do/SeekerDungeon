@@ -34,6 +34,61 @@
     margin-bottom: -2px;
 }
 
+.hud-top-center {
+    position: absolute;
+    top: 22px;
+    left: 0;
+    right: 0;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+.hud-player-health {
+    position: relative;
+    width: 460px;
+    max-width: 58%;
+    min-width: 280px;
+    height: 54px;
+    background-color: rgba(62, 8, 8, 0.9);
+    border-top-left-radius: 14px;
+    border-top-right-radius: 14px;
+    border-bottom-left-radius: 14px;
+    border-bottom-right-radius: 14px;
+    border-top-width: 2px;
+    border-right-width: 2px;
+    border-bottom-width: 2px;
+    border-left-width: 2px;
+    border-top-color: rgba(255, 186, 186, 0.88);
+    border-right-color: rgba(255, 186, 186, 0.88);
+    border-bottom-color: rgba(88, 10, 10, 0.95);
+    border-left-color: rgba(255, 186, 186, 0.88);
+    overflow: hidden;
+    justify-content: center;
+    align-items: center;
+}
+
+.hud-player-health-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 100%;
+    background-color: rgba(223, 34, 34, 0.95);
+    border-top-left-radius: 12px;
+    border-bottom-left-radius: 12px;
+}
+
+.hud-player-health-label {
+    font-size: 30px;
+    -unity-font-style: bold;
+    color: rgb(255, 243, 236);
+    -unity-text-outline-width: 2px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.9);
+    text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.78);
+    -unity-text-align: middle-center;
+    letter-spacing: 0.6px;
+}
+
 .top-right-actions {
     position: absolute;
     top: 24px;
@@ -494,6 +549,143 @@
     background-image: url("project://database/Assets/Sprites/green_gem%20(1).png?fileID=4316597614382486321&guid=e1ed46fd593086b4a9d9e315ce6d4d0a&type=3#gem_inactive");
     -unity-background-scale-mode: scale-to-fit;
     opacity: 0.72;
+}
+
+.hud-session-fee-needed {
+    font-size: 24px;
+    color: rgb(196, 229, 255);
+    -unity-text-align: middle-center;
+    margin-bottom: 14px;
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.65);
+}
+
+.hud-session-fee-balance {
+    font-size: 28px;
+    color: rgb(207, 233, 255);
+    -unity-text-align: middle-center;
+    margin-bottom: 6px;
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.65);
+}
+
+.hud-session-fee-balance.warning {
+    color: rgb(255, 124, 124);
+}
+
+.hud-session-fee-group {
+    width: 100%;
+    max-width: 760px;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.hud-session-fee-group-label {
+    font-size: 26px;
+    color: rgb(255, 233, 160);
+    -unity-font-style: bold;
+    margin-bottom: 6px;
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgba(0, 0, 0, 0.65);
+}
+
+.hud-session-fee-option-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    column-gap: 10px;
+    row-gap: 10px;
+    width: auto;
+    max-width: 100%;
+}
+
+.hud-session-fee-option-btn {
+    min-width: 100px;
+    height: 74px;
+    font-size: 28px;
+    color: rgb(236, 236, 236);
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    background-color: rgba(35, 43, 60, 0.85);
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    border-top-width: 2px;
+    border-right-width: 2px;
+    border-bottom-width: 2px;
+    border-left-width: 2px;
+    border-top-color: rgba(136, 154, 193, 0.95);
+    border-right-color: rgba(136, 154, 193, 0.95);
+    border-bottom-color: rgba(136, 154, 193, 0.95);
+    border-left-color: rgba(136, 154, 193, 0.95);
+}
+
+.hud-session-fee-option-btn.selected {
+    color: rgb(255, 248, 214);
+    background-color: rgba(116, 86, 23, 0.88);
+    border-top-color: rgb(255, 225, 137);
+    border-right-color: rgb(255, 225, 137);
+    border-bottom-color: rgb(255, 225, 137);
+    border-left-color: rgb(255, 225, 137);
+}
+
+.hud-session-fee-custom-input {
+    min-width: 170px;
+    max-width: 260px;
+    height: 74px;
+    font-size: 28px;
+    color: rgb(242, 247, 255);
+    background-color: rgba(14, 21, 34, 0.98);
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    border-top-width: 2px;
+    border-right-width: 2px;
+    border-bottom-width: 2px;
+    border-left-width: 2px;
+    border-top-color: rgba(140, 161, 197, 0.95);
+    border-right-color: rgba(140, 161, 197, 0.95);
+    border-bottom-color: rgba(140, 161, 197, 0.95);
+    border-left-color: rgba(140, 161, 197, 0.95);
+    -unity-text-align: middle-left;
+    padding-left: 12px;
+    padding-right: 12px;
+}
+
+.hud-session-fee-custom-input > .unity-text-input {
+    color: rgb(245, 248, 255);
+    font-size: 28px;
+    -unity-text-align: middle-left;
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.hud-session-fee-custom-input > .unity-text-field__input {
+    color: rgb(245, 248, 255);
+    font-size: 28px;
+    -unity-text-align: middle-left;
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.hud-session-fee-custom-input > .unity-base-text-field__input {
+    color: rgb(245, 248, 255);
+    font-size: 28px;
+    -unity-text-align: middle-left;
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.hud-session-fee-custom-input.selected {
+    border-top-color: rgb(255, 225, 137);
+    border-right-color: rgb(255, 225, 137);
+    border-bottom-color: rgb(255, 225, 137);
+    border-left-color: rgb(255, 225, 137);
+    background-color: rgba(60, 44, 10, 0.92);
+}
+
+#session-fee-actions {
+    margin-top: 18px;
 }
 
 .tx-indicator {

@@ -53,6 +53,12 @@ namespace SeekerDungeon.Solana
         private VisualElement _legacyResetOverlay;
         private VisualElement _settingsOverlay;
         private VisualElement _resetConfirmOverlay;
+        private VisualElement _sessionSetupCard;
+        private VisualElement _legacyResetCard;
+        private VisualElement _settingsCard;
+        private VisualElement _resetConfirmCard;
+        private VisualElement _lowBalanceModalCard;
+        private VisualElement _extractionSummaryCard;
         private Label _sessionSetupMessageLabel;
         private Label _legacyResetMessageLabel;
         private Label _lowBalanceModalMessageLabel;
@@ -203,6 +209,12 @@ namespace SeekerDungeon.Solana
             _legacyResetOverlay = root.Q<VisualElement>("legacy-reset-overlay");
             _settingsOverlay = root.Q<VisualElement>("settings-overlay");
             _resetConfirmOverlay = root.Q<VisualElement>("reset-confirm-overlay");
+            _sessionSetupCard = root.Q<VisualElement>("session-setup-card");
+            _legacyResetCard = root.Q<VisualElement>("legacy-reset-card");
+            _settingsCard = root.Q<VisualElement>("settings-card");
+            _resetConfirmCard = root.Q<VisualElement>("reset-confirm-card");
+            _lowBalanceModalCard = root.Q<VisualElement>("low-balance-modal-card");
+            _extractionSummaryCard = root.Q<VisualElement>("extraction-summary-card");
             _sessionSetupMessageLabel = root.Q<Label>("session-setup-message");
             _legacyResetMessageLabel = root.Q<Label>("legacy-reset-message");
             _lowBalanceModalMessageLabel = root.Q<Label>("low-balance-modal-message");
@@ -629,12 +641,7 @@ namespace SeekerDungeon.Solana
 
         private void ShowSettingsOverlay(bool show)
         {
-            if (_settingsOverlay != null)
-            {
-                _settingsOverlay.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
-                _settingsOverlay.style.visibility = show ? Visibility.Visible : Visibility.Hidden;
-                _settingsOverlay.style.opacity = show ? 1f : 0f;
-            }
+            SetOverlayVisible(_settingsOverlay, _settingsCard, show);
 
             if (!show)
             {
@@ -644,11 +651,24 @@ namespace SeekerDungeon.Solana
 
         private void ShowResetConfirmOverlay(bool show)
         {
-            if (_resetConfirmOverlay != null)
+            SetOverlayVisible(_resetConfirmOverlay, _resetConfirmCard, show);
+        }
+
+        private static void SetOverlayVisible(VisualElement overlay, VisualElement card, bool show)
+        {
+            if (overlay == null)
             {
-                _resetConfirmOverlay.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
-                _resetConfirmOverlay.style.visibility = show ? Visibility.Visible : Visibility.Hidden;
-                _resetConfirmOverlay.style.opacity = show ? 1f : 0f;
+                return;
+            }
+
+            var wasVisible = overlay.style.display == DisplayStyle.Flex;
+            overlay.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
+            overlay.style.visibility = show ? Visibility.Visible : Visibility.Hidden;
+            overlay.style.opacity = show ? 1f : 0f;
+
+            if (show && !wasVisible)
+            {
+                ModalPopAnimator.PlayOpen(card);
             }
         }
 
@@ -897,9 +917,7 @@ namespace SeekerDungeon.Solana
 
             if (_lowBalanceModalOverlay != null)
             {
-                _lowBalanceModalOverlay.style.display = state.IsLowBalanceModalVisible
-                    ? DisplayStyle.Flex
-                    : DisplayStyle.None;
+                SetOverlayVisible(_lowBalanceModalOverlay, _lowBalanceModalCard, state.IsLowBalanceModalVisible);
             }
 
             var shouldShowSessionSetupOverlay =
@@ -909,16 +927,12 @@ namespace SeekerDungeon.Solana
                 !state.IsLegacyResetRequired;
             if (_sessionSetupOverlay != null)
             {
-                _sessionSetupOverlay.style.display = shouldShowSessionSetupOverlay
-                    ? DisplayStyle.Flex
-                    : DisplayStyle.None;
+                SetOverlayVisible(_sessionSetupOverlay, _sessionSetupCard, shouldShowSessionSetupOverlay);
             }
 
             if (_legacyResetOverlay != null)
             {
-                _legacyResetOverlay.style.display = state.IsLegacyResetRequired
-                    ? DisplayStyle.Flex
-                    : DisplayStyle.None;
+                SetOverlayVisible(_legacyResetOverlay, _legacyResetCard, state.IsLegacyResetRequired);
             }
 
             if (_sessionSetupMessageLabel != null)
@@ -1197,7 +1211,7 @@ namespace SeekerDungeon.Solana
             }
 
             _isShowingExtractionSummary = true;
-            _extractionSummaryOverlay.style.display = DisplayStyle.Flex;
+            SetOverlayVisible(_extractionSummaryOverlay, _extractionSummaryCard, true);
 
             if (_extractionSummaryContinueButton != null)
             {
@@ -1350,7 +1364,7 @@ namespace SeekerDungeon.Solana
 
             if (_extractionSummaryOverlay != null)
             {
-                _extractionSummaryOverlay.style.display = DisplayStyle.None;
+                SetOverlayVisible(_extractionSummaryOverlay, _extractionSummaryCard, false);
             }
 
             _isShowingExtractionSummary = false;

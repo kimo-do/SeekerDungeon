@@ -4,6 +4,12 @@
         <ui:VisualElement name="hud-top-left-actions" class="hud-top-left-actions">
             <ui:Button name="hud-btn-back" text="Back" class="hud-back-button" style="height: 81px; width: 176px; -unity-text-align: lower-center; text-shadow: 4px 4px 0 rgb(0, 0, 0); color: rgb(255, 252, 215); -unity-text-outline-width: 2px; -unity-text-outline-color: rgb(0, 0, 0);"/>
         </ui:VisualElement>
+        <ui:VisualElement name="hud-top-center" class="hud-top-center">
+            <ui:VisualElement name="hud-player-health" class="hud-player-health" style="margin-right: 109px; margin-top: 16px;">
+                <ui:VisualElement name="hud-player-health-fill" class="hud-player-health-fill"/>
+                <ui:Label name="hud-player-health-label" text="--/--" class="hud-player-health-label"/>
+            </ui:VisualElement>
+        </ui:VisualElement>
         <ui:VisualElement name="hud-top-right-actions" class="top-right-actions">
             <ui:VisualElement name="wallet-pill-stack" class="wallet-pill-stack">
                 <ui:VisualElement name="wallet-sol-pill" class="wallet-pill" style="background-image: url(&quot;project://database/Assets/Sprites/pill_shaped_ui_elements.png?fileID=-5465383454656379642&amp;guid=bba72545d6bcacf4a9f10aaed00c848b&amp;type=3#pill_shaped_ui_elements (1) (1)_0&quot;); -unity-background-scale-mode: scale-to-fit;">
@@ -20,7 +26,7 @@
                 <ui:VisualElement name="tx-indicator-logo" class="tx-indicator-logo"/>
             </ui:VisualElement>
         </ui:VisualElement>
-        <ui:VisualElement name="hud-debug-block" class="hud-debug-block">
+        <ui:VisualElement name="hud-debug-block" class="hud-debug-block" style="top: 146px; left: 50px;">
             <ui:Label name="hud-job-info" text="job:none" class="hud-debug-label"/>
             <ui:Label name="hud-status" text="" class="hud-debug-status"/>
         </ui:VisualElement>
@@ -49,12 +55,39 @@
         </ui:VisualElement>
         <ui:VisualElement name="session-fee-overlay" class="hud-modal-overlay" style="display: none;">
             <ui:VisualElement name="session-fee-card" class="hud-modal-card hud-session-fee-card">
+                <ui:Button name="btn-session-fee-close" text="X" class="hud-modal-close-button"/>
                 <ui:VisualElement name="session-fee-gem" class="hud-session-fee-gem"/>
                 <ui:Label name="session-fee-title" text="SESSION LOW BALANCE" class="hud-modal-title"/>
                 <ui:Label name="session-fee-message" text="Your session wallet is low on SOL for transaction fees. Top up session funding to continue smooth gameplay." class="hud-modal-message"/>
+                <ui:Label name="session-fee-needed" text="" class="hud-session-fee-needed"/>
+                <ui:Label name="session-fee-balance-sol" text="Session SOL: --" class="hud-session-fee-balance"/>
+                <ui:Label name="session-fee-balance-skr" text="Session SKR: --" class="hud-session-fee-balance"/>
+                <ui:VisualElement name="session-fee-sol-group" class="hud-session-fee-group">
+                    <ui:Label name="session-fee-sol-label" text="SOL Top Up" class="hud-session-fee-group-label"/>
+                    <ui:VisualElement name="session-fee-sol-row" class="hud-session-fee-option-row">
+                        <ui:Button name="btn-session-sol-0" text="0" class="hud-session-fee-option-btn"/>
+                        <ui:Button name="btn-session-sol-005" text="0.05" class="hud-session-fee-option-btn"/>
+                        <ui:Button name="btn-session-sol-01" text="0.1" class="hud-session-fee-option-btn"/>
+                        <ui:Button name="btn-session-sol-05" text="0.5" class="hud-session-fee-option-btn"/>
+                        <ui:Button name="btn-session-sol-1" text="1" class="hud-session-fee-option-btn"/>
+                        <ui:Button name="btn-session-sol-custom" text="X" class="hud-session-fee-option-btn"/>
+                        <ui:TextField name="session-sol-custom-input" class="hud-session-fee-custom-input" value="" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+                <ui:VisualElement name="session-fee-skr-group" class="hud-session-fee-group">
+                    <ui:Label name="session-fee-skr-label" text="SKR Top Up" class="hud-session-fee-group-label"/>
+                    <ui:VisualElement name="session-fee-skr-row" class="hud-session-fee-option-row">
+                        <ui:Button name="btn-session-skr-0" text="0" class="hud-session-fee-option-btn"/>
+                        <ui:Button name="btn-session-skr-1" text="1" class="hud-session-fee-option-btn"/>
+                        <ui:Button name="btn-session-skr-5" text="5" class="hud-session-fee-option-btn"/>
+                        <ui:Button name="btn-session-skr-20" text="20" class="hud-session-fee-option-btn"/>
+                        <ui:Button name="btn-session-skr-50" text="50" class="hud-session-fee-option-btn"/>
+                        <ui:Button name="btn-session-skr-custom" text="X" class="hud-session-fee-option-btn"/>
+                        <ui:TextField name="session-skr-custom-input" class="hud-session-fee-custom-input" value="" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
                 <ui:VisualElement name="session-fee-actions" class="hud-modal-action-row">
-                    <ui:Button name="btn-session-fee-topup" text="Top Up Session" class="hud-modal-button hud-modal-button-primary"/>
-                    <ui:Button name="btn-session-fee-use-wallet" text="Use Wallet For Now" class="hud-modal-button"/>
+                    <ui:Button name="btn-session-fee-topup" text="Fund Session" class="hud-modal-button hud-modal-button-primary"/>
                 </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>

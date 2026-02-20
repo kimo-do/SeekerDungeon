@@ -14,6 +14,9 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private float smoothSpeed = 6f;
         [SerializeField] private bool hideWhenNoBoss = true;
         [SerializeField] private float slotSecondsEstimate = 0.4f;
+        [SerializeField] private bool useChunkedClientProjection = true;
+        [SerializeField] private float visualHitIntervalSeconds = 0.6f;
+        [SerializeField] private ulong minDamagePerVisualHit = 1UL;
 
         private float _displayNormalized = 1f;
         private float _targetNormalized = 1f;
@@ -123,11 +126,46 @@ namespace SeekerDungeon.Dungeon
             }
 
             var elapsedSeconds = Mathf.Max(0f, Time.unscaledTime - _boundAtUnscaledTime);
-            var slotsElapsed = elapsedSeconds / Mathf.Max(0.01f, slotSecondsEstimate);
-            var projectedDamageDouble = Math.Floor(_boundTotalDps * slotsElapsed);
-            var projectedDamage = projectedDamageDouble >= ulong.MaxValue
-                ? ulong.MaxValue
-                : (ulong)projectedDamageDouble;
+            if (elapsedSeconds <= 0f)
+            {
+                return _boundCurrentHp;
+            }
+
+            ulong projectedDamage;
+            if (useChunkedClientProjection)
+            {
+                // Client-side projection in discrete hit windows for chunked visuals.
+                var hitInterval = Mathf.Max(0.05f, visualHitIntervalSeconds);
+                var hitsElapsedDouble = Math.Floor(elapsedSeconds / hitInterval);
+                if (hitsElapsedDouble <= 0d)
+                {
+                    return _boundCurrentHp;
+                }
+
+                var hitsElapsed = hitsElapsedDouble >= ulong.MaxValue
+                    ? ulong.MaxValue
+                    : (ulong)hitsElapsedDouble;
+
+                var damagePerSecond = _boundTotalDps / Math.Max(0.01, slotSecondsEstimate);
+                var damagePerHitDouble = Math.Floor(damagePerSecond * hitInterval);
+                var computedDamagePerHit = damagePerHitDouble >= ulong.MaxValue
+                    ? ulong.MaxValue
+                    : (ulong)damagePerHitDouble;
+                var damagePerHit = Math.Max(minDamagePerVisualHit, computedDamagePerHit);
+
+                projectedDamage = hitsElapsed >= ulong.MaxValue / Math.Max(1UL, damagePerHit)
+                    ? ulong.MaxValue
+                    : hitsElapsed * damagePerHit;
+            }
+            else
+            {
+                var slotsElapsed = elapsedSeconds / Mathf.Max(0.01f, slotSecondsEstimate);
+                var projectedDamageDouble = Math.Floor(_boundTotalDps * slotsElapsed);
+                projectedDamage = projectedDamageDouble >= ulong.MaxValue
+                    ? ulong.MaxValue
+                    : (ulong)projectedDamageDouble;
+            }
+
             return _boundCurrentHp > projectedDamage
                 ? _boundCurrentHp - projectedDamage
                 : 0UL;

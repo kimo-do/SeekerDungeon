@@ -49,7 +49,7 @@ MonoBehaviour:
   - category: 1
     clips:
     - {fileID: 8300000, guid: 1bf11803964e60a469be72443d993247, type: 3}
-    volume: 0.438
+    volume: 0.368
     pitchRange: {x: 0, y: 1}
   stingers:
   - id: 0
@@ -144,6 +144,39 @@ MonoBehaviour:
     spatialBlend: 0
   monsterAudio:
   - monsterId: 1
+    loopClip: {fileID: 8300000, guid: 1bca67ef2c4f65e47ac0c9cb34bc842f, type: 3}
+    loopVolume: 0.478
+    loopSpatialized: 0
+    loopSpatialBlend: 0.304
+    oneShotClips: []
+    oneShotVolume: 0
+    oneShotPitchRange: {x: 0, y: 0}
+    oneShotIntervalSeconds: {x: 0, y: 0}
+    oneShotSpatialized: 0
+    oneShotSpatialBlend: 0
+  - monsterId: 2
+    loopClip: {fileID: 8300000, guid: 1bca67ef2c4f65e47ac0c9cb34bc842f, type: 3}
+    loopVolume: 0.478
+    loopSpatialized: 0
+    loopSpatialBlend: 0.304
+    oneShotClips: []
+    oneShotVolume: 0
+    oneShotPitchRange: {x: 0, y: 0}
+    oneShotIntervalSeconds: {x: 0, y: 0}
+    oneShotSpatialized: 0
+    oneShotSpatialBlend: 0
+  - monsterId: 3
+    loopClip: {fileID: 8300000, guid: 1bca67ef2c4f65e47ac0c9cb34bc842f, type: 3}
+    loopVolume: 0.478
+    loopSpatialized: 0
+    loopSpatialBlend: 0.304
+    oneShotClips: []
+    oneShotVolume: 0
+    oneShotPitchRange: {x: 0, y: 0}
+    oneShotIntervalSeconds: {x: 0, y: 0}
+    oneShotSpatialized: 0
+    oneShotSpatialBlend: 0
+  - monsterId: 3
     loopClip: {fileID: 8300000, guid: 1bca67ef2c4f65e47ac0c9cb34bc842f, type: 3}
     loopVolume: 0.478
     loopSpatialized: 0

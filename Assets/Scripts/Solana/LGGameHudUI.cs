@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Chaindepth.Accounts;
 using Cysharp.Threading.Tasks;
@@ -21,6 +22,8 @@ namespace SeekerDungeon.Solana
         private const float HudSlotWidthPx = 118f;
         private const float HudSlotHorizontalMarginPx = 14f;
         private const int FallbackVisibleSlotLimit = 6;
+        private static readonly double[] SolTopUpPresetValues = { 0.05d, 0.1d, 0.5d, 1d };
+        private static readonly int[] SkrTopUpPresetValues = { 1, 5, 20, 50 };
 
         [Header("References")]
         [SerializeField] private LGManager manager;
@@ -47,6 +50,9 @@ namespace SeekerDungeon.Solana
         private UIDocument _document;
         private Label _solBalanceLabel;
         private Label _skrBalanceLabel;
+        private VisualElement _playerHealthRoot;
+        private VisualElement _playerHealthFill;
+        private Label _playerHealthLabel;
         private Label _jobInfoLabel;
         private Label _statusLabel;
         private Button _backButton;
@@ -63,9 +69,20 @@ namespace SeekerDungeon.Solana
         private Button _exitConfirmCloseButton;
         private Button _exitConfirmLeaveButton;
         private VisualElement _sessionFeeOverlay;
+        private VisualElement _exitConfirmCard;
+        private VisualElement _sessionFeeCard;
         private Label _sessionFeeMessageLabel;
+        private Label _sessionFeeNeededLabel;
+        private Label _sessionFeeSolBalanceLabel;
+        private Label _sessionFeeSkrBalanceLabel;
+        private Button _sessionFeeCloseButton;
         private Button _sessionFeeTopUpButton;
-        private Button _sessionFeeUseWalletButton;
+        private Button _sessionFeeSolCustomButton;
+        private Button _sessionFeeSkrCustomButton;
+        private TextField _sessionFeeSolCustomInput;
+        private TextField _sessionFeeSkrCustomInput;
+        private readonly List<Button> _sessionFeeSolPresetButtons = new();
+        private readonly List<Button> _sessionFeeSkrPresetButtons = new();
         private UniTaskCompletionSource<bool> _exitConfirmTcs;
         private VisualElement _root;
         private TxIndicatorVisualController _txIndicatorController;
@@ -76,6 +93,10 @@ namespace SeekerDungeon.Solana
         private bool _isEquippingFromTooltip;
         private float _lastInventorySlotsWidth = -1f;
         private bool _isFundingSessionFee;
+        private bool _isSolCustomSelected;
+        private bool _isSkrCustomSelected;
+        private double _selectedSolTopUp = SolTopUpPresetValues[0];
+        private int _selectedSkrTopUp = SkrTopUpPresetValues[0];
 
         private bool _isLoadingScene;
 
@@ -120,6 +141,9 @@ namespace SeekerDungeon.Solana
 
             _solBalanceLabel = _root.Q<Label>("wallet-sol-balance-label");
             _skrBalanceLabel = _root.Q<Label>("wallet-skr-balance-label");
+            _playerHealthRoot = _root.Q<VisualElement>("hud-player-health");
+            _playerHealthFill = _root.Q<VisualElement>("hud-player-health-fill");
+            _playerHealthLabel = _root.Q<Label>("hud-player-health-label");
             _jobInfoLabel = _root.Q<Label>("hud-job-info");
             _statusLabel = _root.Q<Label>("hud-status");
             _backButton = _root.Q<Button>("hud-btn-back");
@@ -132,17 +156,27 @@ namespace SeekerDungeon.Solana
             _itemTooltipValueLabel = _root.Q<Label>("hud-item-tooltip-value");
             _itemTooltipEquipButton = _root.Q<Button>("hud-item-tooltip-equip");
             _exitConfirmOverlay = _root.Q<VisualElement>("exit-confirm-overlay");
+            _exitConfirmCard = _root.Q<VisualElement>("exit-confirm-card");
             _exitConfirmCloseButton = _root.Q<Button>("btn-exit-confirm-close");
             _exitConfirmLeaveButton = _root.Q<Button>("btn-exit-confirm-leave");
             _sessionFeeOverlay = _root.Q<VisualElement>("session-fee-overlay");
+            _sessionFeeCard = _root.Q<VisualElement>("session-fee-card");
             _sessionFeeMessageLabel = _root.Q<Label>("session-fee-message");
+            _sessionFeeNeededLabel = _root.Q<Label>("session-fee-needed");
+            _sessionFeeSolBalanceLabel = _root.Q<Label>("session-fee-balance-sol");
+            _sessionFeeSkrBalanceLabel = _root.Q<Label>("session-fee-balance-skr");
+            _sessionFeeCloseButton = _root.Q<Button>("btn-session-fee-close");
             _sessionFeeTopUpButton = _root.Q<Button>("btn-session-fee-topup");
-            _sessionFeeUseWalletButton = _root.Q<Button>("btn-session-fee-use-wallet");
+            _sessionFeeSolCustomButton = _root.Q<Button>("btn-session-sol-custom");
+            _sessionFeeSkrCustomButton = _root.Q<Button>("btn-session-skr-custom");
+            _sessionFeeSolCustomInput = _root.Q<TextField>("session-sol-custom-input");
+            _sessionFeeSkrCustomInput = _root.Q<TextField>("session-skr-custom-input");
             HideExitConfirmModal();
             HideSessionFeeModal();
             HideItemTooltip();
             CacheTooltipDefaultStyles();
             ResolveHotbarGlowSpriteIfMissing();
+            InitializeSessionFeeModalUi();
 
             SetLabel(_networkLabel, "DEVNET");
 
@@ -171,9 +205,9 @@ namespace SeekerDungeon.Solana
             {
                 _sessionFeeTopUpButton.clicked += HandleSessionFeeTopUpClicked;
             }
-            if (_sessionFeeUseWalletButton != null)
+            if (_sessionFeeCloseButton != null)
             {
-                _sessionFeeUseWalletButton.clicked += HandleSessionFeeUseWalletClicked;
+                _sessionFeeCloseButton.clicked += HandleSessionFeeCloseClicked;
             }
             if (_root != null)
             {
@@ -235,10 +269,11 @@ namespace SeekerDungeon.Solana
             {
                 _sessionFeeTopUpButton.clicked -= HandleSessionFeeTopUpClicked;
             }
-            if (_sessionFeeUseWalletButton != null)
+            if (_sessionFeeCloseButton != null)
             {
-                _sessionFeeUseWalletButton.clicked -= HandleSessionFeeUseWalletClicked;
+                _sessionFeeCloseButton.clicked -= HandleSessionFeeCloseClicked;
             }
+            UnbindSessionFeePresetHandlers();
             if (_root != null)
             {
                 _root.UnregisterCallback<PointerDownEvent>(HandleRootPointerDown);
@@ -316,8 +351,9 @@ namespace SeekerDungeon.Solana
             }
         }
 
-        private void HandlePlayerStateUpdated(Chaindepth.Accounts.PlayerAccount _)
+        private void HandlePlayerStateUpdated(Chaindepth.Accounts.PlayerAccount playerState)
         {
+            RefreshPlayerHealth(playerState);
             RefreshJobInfo();
             UpdateEquippedSlotHighlight();
         }
@@ -360,6 +396,7 @@ namespace SeekerDungeon.Solana
         private async UniTask RefreshHudAsync()
         {
             await RefreshBalancesAsync();
+            RefreshPlayerHealth(manager?.CurrentPlayerState);
             RefreshJobInfo();
         }
 
@@ -454,6 +491,30 @@ namespace SeekerDungeon.Solana
             SetLabel(_jobInfoLabel, "job:none");
         }
 
+        private void RefreshPlayerHealth(Chaindepth.Accounts.PlayerAccount playerState)
+        {
+            if (_playerHealthRoot == null || _playerHealthFill == null || _playerHealthLabel == null)
+            {
+                return;
+            }
+
+            if (playerState == null)
+            {
+                _playerHealthRoot.style.display = DisplayStyle.None;
+                _playerHealthLabel.text = "--/--";
+                _playerHealthFill.style.width = Length.Percent(100f);
+                return;
+            }
+
+            var maxHp = Mathf.Max(1, (int)playerState.MaxHp);
+            var currentHp = Mathf.Clamp((int)playerState.CurrentHp, 0, maxHp);
+            var hpPercent = Mathf.Clamp01((float)currentHp / maxHp) * 100f;
+
+            _playerHealthRoot.style.display = DisplayStyle.Flex;
+            _playerHealthFill.style.width = Length.Percent(hpPercent);
+            _playerHealthLabel.text = $"{currentHp}/{maxHp}";
+        }
+
         private void SetStatus(string message)
         {
             if (logDebugMessages)
@@ -523,7 +584,7 @@ namespace SeekerDungeon.Solana
 
             _exitConfirmTcs?.TrySetResult(false);
             _exitConfirmTcs = new UniTaskCompletionSource<bool>();
-            _exitConfirmOverlay.style.display = DisplayStyle.Flex;
+            SetOverlayVisible(_exitConfirmOverlay, _exitConfirmCard, true);
             return _exitConfirmTcs.Task;
         }
 
@@ -545,15 +606,114 @@ namespace SeekerDungeon.Solana
 
         private void HideExitConfirmModal()
         {
-            if (_exitConfirmOverlay != null)
-            {
-                _exitConfirmOverlay.style.display = DisplayStyle.None;
-            }
+            SetOverlayVisible(_exitConfirmOverlay, _exitConfirmCard, false);
         }
 
         private void HandleSessionFeeFundingRequired(string message)
         {
             ShowSessionFeeModal(message);
+        }
+
+        private void InitializeSessionFeeModalUi()
+        {
+            _sessionFeeSolPresetButtons.Clear();
+            _sessionFeeSkrPresetButtons.Clear();
+
+            BindSessionFeePresetButton("btn-session-sol-005", isSol: true, SolTopUpPresetValues[0]);
+            BindSessionFeePresetButton("btn-session-sol-01", isSol: true, SolTopUpPresetValues[1]);
+            BindSessionFeePresetButton("btn-session-sol-05", isSol: true, SolTopUpPresetValues[2]);
+            BindSessionFeePresetButton("btn-session-sol-1", isSol: true, SolTopUpPresetValues[3]);
+            BindSessionFeePresetButton("btn-session-sol-0", isSol: true, 0d);
+            BindSessionFeePresetButton("btn-session-skr-0", isSol: false, 0d);
+            BindSessionFeePresetButton("btn-session-skr-1", isSol: false, SkrTopUpPresetValues[0]);
+            BindSessionFeePresetButton("btn-session-skr-5", isSol: false, SkrTopUpPresetValues[1]);
+            BindSessionFeePresetButton("btn-session-skr-20", isSol: false, SkrTopUpPresetValues[2]);
+            BindSessionFeePresetButton("btn-session-skr-50", isSol: false, SkrTopUpPresetValues[3]);
+
+            if (_sessionFeeSolCustomButton != null)
+            {
+                _sessionFeeSolCustomButton.clicked += HandleSessionFeeSolCustomClicked;
+            }
+
+            if (_sessionFeeSkrCustomButton != null)
+            {
+                _sessionFeeSkrCustomButton.clicked += HandleSessionFeeSkrCustomClicked;
+            }
+
+            if (_sessionFeeSolCustomInput != null)
+            {
+                _sessionFeeSolCustomInput.isDelayed = true;
+                _sessionFeeSolCustomInput.RegisterValueChangedCallback(HandleSessionFeeCustomInputChanged);
+            }
+
+            if (_sessionFeeSkrCustomInput != null)
+            {
+                _sessionFeeSkrCustomInput.isDelayed = true;
+                _sessionFeeSkrCustomInput.RegisterValueChangedCallback(HandleSessionFeeCustomInputChanged);
+            }
+
+            RefreshSessionFeeSelectionStyles();
+        }
+
+        private void UnbindSessionFeePresetHandlers()
+        {
+            for (var i = 0; i < _sessionFeeSolPresetButtons.Count; i += 1)
+            {
+                var button = _sessionFeeSolPresetButtons[i];
+                if (button != null)
+                {
+                    button.UnregisterCallback<ClickEvent>(HandleSessionFeeSolPresetClicked);
+                }
+            }
+
+            for (var i = 0; i < _sessionFeeSkrPresetButtons.Count; i += 1)
+            {
+                var button = _sessionFeeSkrPresetButtons[i];
+                if (button != null)
+                {
+                    button.UnregisterCallback<ClickEvent>(HandleSessionFeeSkrPresetClicked);
+                }
+            }
+
+            if (_sessionFeeSolCustomButton != null)
+            {
+                _sessionFeeSolCustomButton.clicked -= HandleSessionFeeSolCustomClicked;
+            }
+
+            if (_sessionFeeSkrCustomButton != null)
+            {
+                _sessionFeeSkrCustomButton.clicked -= HandleSessionFeeSkrCustomClicked;
+            }
+
+            if (_sessionFeeSolCustomInput != null)
+            {
+                _sessionFeeSolCustomInput.UnregisterValueChangedCallback(HandleSessionFeeCustomInputChanged);
+            }
+
+            if (_sessionFeeSkrCustomInput != null)
+            {
+                _sessionFeeSkrCustomInput.UnregisterValueChangedCallback(HandleSessionFeeCustomInputChanged);
+            }
+        }
+
+        private void BindSessionFeePresetButton(string buttonName, bool isSol, double value)
+        {
+            var button = _root?.Q<Button>(buttonName);
+            if (button == null)
+            {
+                return;
+            }
+
+            button.userData = value;
+            if (isSol)
+            {
+                _sessionFeeSolPresetButtons.Add(button);
+                button.RegisterCallback<ClickEvent>(HandleSessionFeeSolPresetClicked);
+                return;
+            }
+
+            _sessionFeeSkrPresetButtons.Add(button);
+            button.RegisterCallback<ClickEvent>(HandleSessionFeeSkrPresetClicked);
         }
 
         private void ShowSessionFeeModal(string message)
@@ -570,15 +730,32 @@ namespace SeekerDungeon.Solana
                     : message;
             }
 
-            _sessionFeeOverlay.style.display = DisplayStyle.Flex;
+            _ = RefreshSessionFeeNeededLabelAsync();
+            RefreshSessionFeeSelectionStyles();
+            SetOverlayVisible(_sessionFeeOverlay, _sessionFeeCard, true);
             UpdateSessionFeeButtonsInteractable();
         }
 
         private void HideSessionFeeModal()
         {
-            if (_sessionFeeOverlay != null)
+            SetOverlayVisible(_sessionFeeOverlay, _sessionFeeCard, false);
+        }
+
+        private static void SetOverlayVisible(VisualElement overlay, VisualElement card, bool show)
+        {
+            if (overlay == null)
             {
-                _sessionFeeOverlay.style.display = DisplayStyle.None;
+                return;
+            }
+
+            var wasVisible = overlay.style.display == DisplayStyle.Flex;
+            overlay.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
+            overlay.style.visibility = show ? Visibility.Visible : Visibility.Hidden;
+            overlay.style.opacity = show ? 1f : 0f;
+
+            if (show && !wasVisible)
+            {
+                ModalPopAnimator.PlayOpen(card);
             }
         }
 
@@ -588,11 +765,261 @@ namespace SeekerDungeon.Solana
             TopUpSessionFeeAsync().Forget();
         }
 
-        private void HandleSessionFeeUseWalletClicked()
+        private void HandleSessionFeeCloseClicked()
         {
             GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Secondary);
             HideSessionFeeModal();
-            ShowCenterToast("Using wallet signing for now.", 1.25f);
+        }
+
+        private void HandleSessionFeeSolPresetClicked(ClickEvent clickEvent)
+        {
+            if (_isFundingSessionFee)
+            {
+                return;
+            }
+
+            if (clickEvent.currentTarget is Button button &&
+                button.userData is double value)
+            {
+                _selectedSolTopUp = Math.Max(0d, value);
+            }
+
+            _isSolCustomSelected = false;
+            RefreshSessionFeeSelectionStyles();
+        }
+
+        private void HandleSessionFeeSkrPresetClicked(ClickEvent clickEvent)
+        {
+            if (_isFundingSessionFee)
+            {
+                return;
+            }
+
+            if (clickEvent.currentTarget is Button button &&
+                button.userData is double value)
+            {
+                _selectedSkrTopUp = Mathf.Max(0, Mathf.RoundToInt((float)value));
+            }
+
+            _isSkrCustomSelected = false;
+            RefreshSessionFeeSelectionStyles();
+        }
+
+        private void HandleSessionFeeSolCustomClicked()
+        {
+            if (_isFundingSessionFee)
+            {
+                return;
+            }
+
+            _isSolCustomSelected = true;
+            _sessionFeeSolCustomInput?.Focus();
+            RefreshSessionFeeSelectionStyles();
+        }
+
+        private void HandleSessionFeeSkrCustomClicked()
+        {
+            if (_isFundingSessionFee)
+            {
+                return;
+            }
+
+            _isSkrCustomSelected = true;
+            _sessionFeeSkrCustomInput?.Focus();
+            RefreshSessionFeeSelectionStyles();
+        }
+
+        private void HandleSessionFeeCustomInputChanged(ChangeEvent<string> _)
+        {
+            _isSolCustomSelected = IsCustomInputPopulated(_sessionFeeSolCustomInput);
+            _isSkrCustomSelected = IsCustomInputPopulated(_sessionFeeSkrCustomInput);
+            RefreshSessionFeeSelectionStyles();
+        }
+
+        private static bool IsCustomInputPopulated(TextField input)
+        {
+            return input != null && !string.IsNullOrWhiteSpace(input.value);
+        }
+
+        private void RefreshSessionFeeSelectionStyles()
+        {
+            if (IsCustomInputPopulated(_sessionFeeSolCustomInput))
+            {
+                _isSolCustomSelected = true;
+            }
+
+            if (IsCustomInputPopulated(_sessionFeeSkrCustomInput))
+            {
+                _isSkrCustomSelected = true;
+            }
+
+            for (var i = 0; i < _sessionFeeSolPresetButtons.Count; i += 1)
+            {
+                var button = _sessionFeeSolPresetButtons[i];
+                if (button == null || !(button.userData is double value))
+                {
+                    continue;
+                }
+
+                SetSelectedClass(button, !_isSolCustomSelected && Math.Abs(value - _selectedSolTopUp) < 0.00001d);
+            }
+
+            for (var i = 0; i < _sessionFeeSkrPresetButtons.Count; i += 1)
+            {
+                var button = _sessionFeeSkrPresetButtons[i];
+                if (button == null || !(button.userData is double value))
+                {
+                    continue;
+                }
+
+                SetSelectedClass(button, !_isSkrCustomSelected && Math.Abs(value - _selectedSkrTopUp) < 0.00001d);
+            }
+
+            SetSelectedClass(_sessionFeeSolCustomButton, _isSolCustomSelected);
+            SetSelectedClass(_sessionFeeSkrCustomButton, _isSkrCustomSelected);
+            SetSelectedClass(_sessionFeeSolCustomInput, _isSolCustomSelected);
+            SetSelectedClass(_sessionFeeSkrCustomInput, _isSkrCustomSelected);
+        }
+
+        private static void SetSelectedClass(VisualElement element, bool isSelected)
+        {
+            if (element == null)
+            {
+                return;
+            }
+
+            if (isSelected)
+            {
+                element.AddToClassList("selected");
+                return;
+            }
+
+            element.RemoveFromClassList("selected");
+        }
+
+        private async UniTaskVoid RefreshSessionFeeNeededLabelAsync()
+        {
+            if (_sessionFeeNeededLabel == null || walletSessionManager == null)
+            {
+                return;
+            }
+
+            var recommendedSolLamports = walletSessionManager.GetSessionRecommendedSolLamports();
+            var recommendedSkrRaw = walletSessionManager.GetSessionRecommendedSkrRawAmount();
+            var currentSolLamports = await walletSessionManager.GetSessionSignerSolBalanceLamportsAsync();
+            var currentSkrRaw = await walletSessionManager.GetSessionSignerSkrBalanceRawAsync();
+            if (!currentSolLamports.HasValue)
+            {
+                _sessionFeeNeededLabel.text = "Session balances";
+                SetSessionBalanceLine(_sessionFeeSolBalanceLabel, "Session SOL: --", false);
+                SetSessionBalanceLine(_sessionFeeSkrBalanceLabel, "Session SKR: --", false);
+                return;
+            }
+
+            _sessionFeeNeededLabel.text = "Session balances";
+
+            var currentSol = currentSolLamports.Value / 1_000_000_000d;
+            var solIsLow = currentSolLamports.Value < recommendedSolLamports;
+            SetSessionBalanceLine(
+                _sessionFeeSolBalanceLabel,
+                $"Session SOL: {currentSol:F3}",
+                solIsLow);
+
+            if (!currentSkrRaw.HasValue)
+            {
+                SetSessionBalanceLine(_sessionFeeSkrBalanceLabel, "Session SKR: --", false);
+                return;
+            }
+
+            var currentSkr = currentSkrRaw.Value / (double)LGConfig.SKR_MULTIPLIER;
+            var skrIsLow = currentSkrRaw.Value < recommendedSkrRaw;
+            SetSessionBalanceLine(
+                _sessionFeeSkrBalanceLabel,
+                $"Session SKR: {currentSkr:F3}",
+                skrIsLow);
+        }
+
+        private static void SetSessionBalanceLine(Label label, string text, bool isWarning)
+        {
+            if (label == null)
+            {
+                return;
+            }
+
+            label.text = text;
+            if (isWarning)
+            {
+                label.AddToClassList("warning");
+                return;
+            }
+
+            label.RemoveFromClassList("warning");
+        }
+
+        private bool TryResolveSessionTopUpAmounts(out ulong solLamports, out ulong skrRawAmount, out string validationError)
+        {
+            validationError = null;
+            solLamports = 0UL;
+            skrRawAmount = 0UL;
+
+            double solAmount;
+            if (_isSolCustomSelected)
+            {
+                if (!TryParsePositiveDouble(_sessionFeeSolCustomInput?.value, out solAmount))
+                {
+                    validationError = "Enter a valid custom SOL amount.";
+                    return false;
+                }
+            }
+            else
+            {
+                solAmount = _selectedSolTopUp;
+            }
+
+            double skrAmount;
+            if (_isSkrCustomSelected)
+            {
+                if (!TryParsePositiveDouble(_sessionFeeSkrCustomInput?.value, out skrAmount))
+                {
+                    validationError = "Enter a valid custom SKR amount.";
+                    return false;
+                }
+            }
+            else
+            {
+                skrAmount = _selectedSkrTopUp;
+            }
+
+            if (solAmount < 0d || skrAmount < 0d)
+            {
+                validationError = "Top-up values must be non-negative.";
+                return false;
+            }
+
+            solLamports = (ulong)Math.Round(solAmount * 1_000_000_000d, MidpointRounding.AwayFromZero);
+            skrRawAmount = (ulong)Math.Round(
+                skrAmount * LGConfig.SKR_MULTIPLIER,
+                MidpointRounding.AwayFromZero);
+
+            if (solLamports == 0UL && skrRawAmount == 0UL)
+            {
+                validationError = "Select a SOL or SKR amount greater than 0.";
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool TryParsePositiveDouble(string value, out double parsed)
+        {
+            parsed = 0d;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            return double.TryParse(value.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out parsed) &&
+                   parsed > 0d;
         }
 
         private async UniTaskVoid TopUpSessionFeeAsync()
@@ -613,7 +1040,16 @@ namespace SeekerDungeon.Solana
 
             try
             {
-                var funded = await walletSessionManager.EnsureSessionSignerFundedAsync(emitPromptStatus: true);
+                if (!TryResolveSessionTopUpAmounts(out var solLamports, out var skrRawAmount, out var validationError))
+                {
+                    SetStatus(validationError);
+                    return;
+                }
+
+                var funded = await walletSessionManager.FundSessionWalletAsync(
+                    solLamports,
+                    skrRawAmount,
+                    emitPromptStatus: true);
                 if (funded)
                 {
                     HideSessionFeeModal();
@@ -638,7 +1074,22 @@ namespace SeekerDungeon.Solana
         private void UpdateSessionFeeButtonsInteractable()
         {
             _sessionFeeTopUpButton?.SetEnabled(!_isFundingSessionFee);
-            _sessionFeeUseWalletButton?.SetEnabled(!_isFundingSessionFee);
+            _sessionFeeCloseButton?.SetEnabled(!_isFundingSessionFee);
+
+            for (var i = 0; i < _sessionFeeSolPresetButtons.Count; i += 1)
+            {
+                _sessionFeeSolPresetButtons[i]?.SetEnabled(!_isFundingSessionFee);
+            }
+
+            for (var i = 0; i < _sessionFeeSkrPresetButtons.Count; i += 1)
+            {
+                _sessionFeeSkrPresetButtons[i]?.SetEnabled(!_isFundingSessionFee);
+            }
+
+            _sessionFeeSolCustomButton?.SetEnabled(!_isFundingSessionFee);
+            _sessionFeeSkrCustomButton?.SetEnabled(!_isFundingSessionFee);
+            _sessionFeeSolCustomInput?.SetEnabled(!_isFundingSessionFee);
+            _sessionFeeSkrCustomInput?.SetEnabled(!_isFundingSessionFee);
         }
 
         private void HandleInventoryUpdated(InventoryAccount inventory)

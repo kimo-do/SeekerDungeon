@@ -15,6 +15,7 @@ namespace SeekerDungeon.Dungeon
         [Header("References")]
         [SerializeField] private LGManager lgManager;
         [SerializeField] private DungeonManager dungeonManager;
+        [SerializeField] private DungeonInputController dungeonInputController;
 
         [Header("Scheduler")]
         [SerializeField] private bool autoRun = true;
@@ -31,8 +32,13 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private float bossTickRetryCooldownSeconds = 1.2f;
         [SerializeField] private float bossTickRateLimitBaseCooldownSeconds = 3f;
         [SerializeField] private float bossTickRateLimitMaxCooldownSeconds = 18f;
+        [SerializeField] private float bossTickFailureBaseCooldownSeconds = 2.5f;
+        [SerializeField] private float bossTickFailureMaxCooldownSeconds = 30f;
+        [SerializeField] private int bossTickFailurePauseThreshold = 6;
+        [SerializeField] private float bossTickFailurePauseSeconds = 45f;
         [SerializeField] private int bossPropagationMaxAttempts = 4;
         [SerializeField] private int bossPropagationDelayMs = 220;
+        [SerializeField] private bool logBossCombatTelemetry = true;
 
         [SerializeField] private float completeJobFailCooldownSeconds = 30f;
         [SerializeField] private int maxCompleteJobRetries = 3;
@@ -52,6 +58,7 @@ namespace SeekerDungeon.Dungeon
         private float _nextBossFighterCheckAt;
         private bool _cachedIsLocalBossFighter;
         private int _bossTickRateLimitFailureCount;
+        private int _bossTickFailureCount;
 
         private void Awake()
         {
@@ -68,6 +75,11 @@ namespace SeekerDungeon.Dungeon
             if (dungeonManager == null)
             {
                 dungeonManager = UnityEngine.Object.FindFirstObjectByType<DungeonManager>();
+            }
+
+            if (dungeonInputController == null)
+            {
+                dungeonInputController = UnityEngine.Object.FindFirstObjectByType<DungeonInputController>();
             }
         }
 
@@ -143,6 +155,17 @@ namespace SeekerDungeon.Dungeon
             var player = await GetPlayerStateAsync();
             if (player == null)
             {
+                return idlePollSeconds;
+            }
+
+            // Do not run any auto-complete or boss-death handling while the
+            // player is outside an active dungeon run. This prevents stale
+            // post-death state from bouncing the player back to menu.
+            if (!player.InDungeon)
+            {
+                _cachedIsLocalBossFighter = false;
+                _bossTickFailureCount = 0;
+                _bossTickRateLimitFailureCount = 0;
                 return idlePollSeconds;
             }
 
@@ -263,6 +286,8 @@ namespace SeekerDungeon.Dungeon
             if (room.CenterType != LGConfig.CENTER_BOSS || room.BossDefeated)
             {
                 _cachedIsLocalBossFighter = false;
+                _bossTickFailureCount = 0;
+                _bossTickRateLimitFailureCount = 0;
                 return -1f;
             }
 
@@ -290,12 +315,44 @@ namespace SeekerDungeon.Dungeon
 
             cancellationToken.ThrowIfCancellationRequested();
             var hpBeforeTick = room.BossCurrentHp;
+            var playerHpBeforeTick = lgManager.CurrentPlayerState != null
+                ? (int)lgManager.CurrentPlayerState.CurrentHp
+                : -1;
             var tickResult = await lgManager.TickBossFight();
             if (!tickResult.Success)
             {
+                if (IsNoActiveJobError(tickResult.Error))
+                {
+                    var refreshedPlayer = await lgManager.FetchPlayerState();
+                    if (refreshedPlayer != null && !refreshedPlayer.InDungeon)
+                    {
+                        Log("Boss tick ended with NoActiveJob and player is out of dungeon; triggering death exit flow.");
+                        if (dungeonInputController == null)
+                        {
+                            dungeonInputController = UnityEngine.Object.FindFirstObjectByType<DungeonInputController>();
+                        }
+
+                        if (dungeonInputController != null)
+                        {
+                            await dungeonInputController.HandleDeathExitAlreadyAppliedAsync("boss_tick_no_active_job");
+                        }
+
+                        return Mathf.Max(minRecheckSeconds, idlePollSeconds);
+                    }
+                }
+
+                if (logBossCombatTelemetry &&
+                    !string.IsNullOrWhiteSpace(tickResult.Error) &&
+                    tickResult.Error.IndexOf("PlayerDead", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    Log("Boss tick reported PlayerDead; player should be force-exited on next death handling path.");
+                }
+
                 if (IsBossAlreadyDefeatedError(tickResult.Error))
                 {
                     _cachedIsLocalBossFighter = false;
+                    _bossTickFailureCount = 0;
+                    _bossTickRateLimitFailureCount = 0;
                     if (dungeonManager != null)
                     {
                         dungeonManager.ClearOptimisticBossFight();
@@ -307,6 +364,7 @@ namespace SeekerDungeon.Dungeon
 
                 if (IsRpcRateLimitError(tickResult.Error))
                 {
+                    _bossTickFailureCount = Mathf.Clamp(_bossTickFailureCount + 1, 1, 32);
                     _bossTickRateLimitFailureCount = Mathf.Clamp(_bossTickRateLimitFailureCount + 1, 1, 8);
                     var backoffSeconds = Mathf.Min(
                         bossTickRateLimitMaxCooldownSeconds,
@@ -320,15 +378,45 @@ namespace SeekerDungeon.Dungeon
                     return Mathf.Max(minRecheckSeconds, _nextBossTickAt - now);
                 }
 
-                _nextBossTickAt = now + Mathf.Max(0.2f, bossTickRetryCooldownSeconds);
+                _bossTickFailureCount = Mathf.Clamp(_bossTickFailureCount + 1, 1, 32);
+                _bossTickRateLimitFailureCount = 0;
+
+                var failureBackoffSeconds = Mathf.Min(
+                    bossTickFailureMaxCooldownSeconds,
+                    bossTickFailureBaseCooldownSeconds * Mathf.Pow(1.6f, _bossTickFailureCount - 1));
+                _nextBossTickAt = now + Mathf.Max(0.2f, failureBackoffSeconds);
+
+                if (_bossTickFailureCount >= Mathf.Max(1, bossTickFailurePauseThreshold))
+                {
+                    _cachedIsLocalBossFighter = false;
+                    _nextBossFighterCheckAt = now + Mathf.Max(2f, bossTickFailurePauseSeconds * 0.25f);
+                    _nextBossTickAt = now + Mathf.Max(2f, bossTickFailurePauseSeconds);
+                    if (dungeonManager != null)
+                    {
+                        dungeonManager.ClearOptimisticBossFight();
+                    }
+
+                    GameplayActionLog.AutoComplete("CenterBoss", "TickBossFight", false, tickResult.Error);
+                    Log(
+                        $"Boss tick paused after {_bossTickFailureCount} consecutive failures. " +
+                        $"cooldown={(_nextBossTickAt - now):F2}s error={tickResult.Error}");
+                    return Mathf.Max(minRecheckSeconds, _nextBossTickAt - now);
+                }
+
                 GameplayActionLog.AutoComplete("CenterBoss", "TickBossFight", false, tickResult.Error);
-                return Mathf.Max(minRecheckSeconds, bossTickRetryCooldownSeconds);
+                return Mathf.Max(minRecheckSeconds, _nextBossTickAt - now);
             }
 
             _bossTickRateLimitFailureCount = 0;
+            _bossTickFailureCount = 0;
             GameplayActionLog.AutoComplete("CenterBoss", "TickBossFight", true, tickResult.Signature);
             _nextBossTickAt = now + Mathf.Max(0.2f, bossTickIntervalSeconds);
             await WaitForBossStatePropagationAsync(room, hpBeforeTick, cancellationToken);
+
+            if (logBossCombatTelemetry)
+            {
+                await LogBossCombatTelemetryAsync(room, hpBeforeTick, playerHpBeforeTick, cancellationToken);
+            }
 
             if (dungeonManager != null)
             {
@@ -390,6 +478,54 @@ namespace SeekerDungeon.Dungeon
             }
 
             return error.IndexOf("BossAlreadyDefeated", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsNoActiveJobError(string error)
+        {
+            if (string.IsNullOrWhiteSpace(error))
+            {
+                return false;
+            }
+
+            return error.IndexOf("NoActiveJob", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private async UniTask LogBossCombatTelemetryAsync(
+            Chaindepth.Accounts.RoomAccount roomBeforeTick,
+            ulong bossHpBeforeTick,
+            int playerHpBeforeTick,
+            CancellationToken cancellationToken)
+        {
+            if (lgManager == null || roomBeforeTick == null)
+            {
+                return;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            var refreshedRoom = await lgManager.FetchRoomState(
+                roomBeforeTick.X,
+                roomBeforeTick.Y,
+                fireEvent: false);
+            cancellationToken.ThrowIfCancellationRequested();
+            var refreshedPlayer = await lgManager.FetchPlayerState();
+
+            var bossHpAfterTick = refreshedRoom != null ? refreshedRoom.BossCurrentHp : bossHpBeforeTick;
+            var playerHpAfterTick = refreshedPlayer != null ? (int)refreshedPlayer.CurrentHp : -1;
+            var bossDelta = (long)bossHpBeforeTick - (long)bossHpAfterTick;
+            var playerDelta = playerHpBeforeTick >= 0 && playerHpAfterTick >= 0
+                ? playerHpBeforeTick - playerHpAfterTick
+                : int.MinValue;
+
+            var playerDeltaLabel = playerDelta == int.MinValue
+                ? "n/a"
+                : playerDelta.ToString();
+            var bossDeadAfter = refreshedRoom != null && refreshedRoom.BossDefeated;
+            var playerDeadAfter = refreshedPlayer != null && refreshedPlayer.CurrentHp == 0;
+
+            Log(
+                $"BossFightTelemetry room=({roomBeforeTick.X},{roomBeforeTick.Y}) " +
+                $"bossHp={bossHpBeforeTick}->{bossHpAfterTick} delta={bossDelta} dead={bossDeadAfter} " +
+                $"playerHp={playerHpBeforeTick}->{playerHpAfterTick} delta={playerDeltaLabel} dead={playerDeadAfter}");
         }
 
         private async UniTask<bool> ResolveLocalBossFighterFromPdaAsync(Chaindepth.Accounts.RoomAccount room)

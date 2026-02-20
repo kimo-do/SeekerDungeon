@@ -1,8 +1,10 @@
 using System;
+using System;
 using System.Collections.Generic;
 using DG.Tweening;
 using TMPro;
 using SeekerDungeon.Audio;
+using SeekerDungeon.Dungeon;
 using UnityEngine;
 
 namespace SeekerDungeon.Solana
@@ -34,6 +36,9 @@ namespace SeekerDungeon.Solana
         [Header("Identity Anchor")]
         [SerializeField] private Transform characterNameAnchor;
         [SerializeField] private GameObject playerNamePrefab;
+        [SerializeField] private BossHealthBarView playerHealthBarView;
+        [SerializeField] private BossHealthBarView playerHealthBarPrefab;
+        [SerializeField] private Transform playerHealthBarAnchor;
 
         [Header("Skin Switch Animation")]
         [SerializeField] private bool animateSkinSwitch = true;
@@ -76,6 +81,7 @@ namespace SeekerDungeon.Solana
         private TMP_Text _playerNameText;
         private Vector3 _playerNameBaseLocalScale = Vector3.one;
         private bool _hasPlayerNameBaseScale;
+        private BossHealthBarView _spawnedPlayerHealthBarView;
 
         private void Awake()
         {
@@ -146,11 +152,14 @@ namespace SeekerDungeon.Solana
                 _playerNameInstance = null;
                 _playerNameText = null;
             }
+
+            DestroySpawnedPlayerHealthBar();
         }
 
         private void LateUpdate()
         {
             ApplyNameMirrorCompensation();
+            UpdatePlayerHealthBarPosition();
         }
 
         public IReadOnlyList<PlayerSkinId> GetConfiguredSkins()
@@ -297,6 +306,26 @@ namespace SeekerDungeon.Solana
             }
 
             _playerNameInstance.SetActive(isVisible);
+        }
+
+        public void SetCombatHealth(ushort currentHp, ushort maxHp, bool isBossFightActive)
+        {
+            var activeHealthBar = EnsurePlayerHealthBarView();
+            if (activeHealthBar == null)
+            {
+                return;
+            }
+
+            if (!isBossFightActive || maxHp == 0)
+            {
+                activeHealthBar.Bind(0UL, 0UL, 0UL, true, false);
+                return;
+            }
+
+            var clampedCurrentHp = currentHp > maxHp ? maxHp : currentHp;
+            var isDead = clampedCurrentHp == 0;
+            activeHealthBar.Bind(clampedCurrentHp, maxHp, 0UL, isDead, true);
+            UpdatePlayerHealthBarPosition();
         }
 
         /// <summary>
@@ -537,7 +566,65 @@ namespace SeekerDungeon.Solana
             _activeRigBindings = selectedRig;
             _activeVisualRootForAnimation = selectedRig.transform;
             _skinBaseScale = _activeVisualRootForAnimation.localScale;
+            UpdatePlayerHealthBarPosition();
             return true;
+        }
+
+        private BossHealthBarView EnsurePlayerHealthBarView()
+        {
+            if (_spawnedPlayerHealthBarView != null)
+            {
+                return _spawnedPlayerHealthBarView;
+            }
+
+            if (playerHealthBarPrefab != null)
+            {
+                _spawnedPlayerHealthBarView = Instantiate(playerHealthBarPrefab);
+                _spawnedPlayerHealthBarView.gameObject.name = $"{playerHealthBarPrefab.name}_{gameObject.name}_Runtime";
+                UpdatePlayerHealthBarPosition();
+                return _spawnedPlayerHealthBarView;
+            }
+
+            if (playerHealthBarView != null)
+            {
+                return playerHealthBarView;
+            }
+
+            playerHealthBarView = GetComponentInChildren<BossHealthBarView>(true);
+            return playerHealthBarView;
+        }
+
+        private void UpdatePlayerHealthBarPosition()
+        {
+            var activeHealthBar = _spawnedPlayerHealthBarView != null ? _spawnedPlayerHealthBarView : playerHealthBarView;
+            if (activeHealthBar == null)
+            {
+                return;
+            }
+
+            var anchor = playerHealthBarAnchor;
+            if (anchor == null)
+            {
+                anchor = CharacterNameAnchorTransform;
+            }
+
+            if (anchor == null)
+            {
+                anchor = transform;
+            }
+
+            activeHealthBar.transform.position = anchor.position;
+        }
+
+        private void DestroySpawnedPlayerHealthBar()
+        {
+            if (_spawnedPlayerHealthBarView == null)
+            {
+                return;
+            }
+
+            Destroy(_spawnedPlayerHealthBarView.gameObject);
+            _spawnedPlayerHealthBarView = null;
         }
 
         private void AttachActiveWieldedItemToHand()

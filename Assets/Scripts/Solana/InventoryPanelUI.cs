@@ -24,6 +24,7 @@ namespace SeekerDungeon.Solana
 
         private UIDocument _document;
         private VisualElement _overlay;
+        private VisualElement _panel;
         private VisualElement _grid;
         private Button _closeButton;
         private VisualElement _selectedIcon;
@@ -86,6 +87,7 @@ namespace SeekerDungeon.Solana
             }
 
             _overlay = root.Q<VisualElement>("inventory-overlay");
+            _panel = root.Q<VisualElement>("inventory-panel");
             _grid = root.Q<VisualElement>("inventory-grid");
             _closeButton = root.Q<Button>("inventory-btn-close");
             _selectedIcon = root.Q<VisualElement>("inventory-selected-icon");
@@ -171,10 +173,18 @@ namespace SeekerDungeon.Solana
 
         private void SetVisible(bool visible)
         {
+            var wasVisible = _isVisible;
             _isVisible = visible;
             if (_overlay != null)
             {
                 _overlay.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
+                _overlay.style.visibility = visible ? Visibility.Visible : Visibility.Hidden;
+                _overlay.style.opacity = visible ? 1f : 0f;
+            }
+
+            if (visible && !wasVisible)
+            {
+                ModalPopAnimator.PlayOpen(_panel);
             }
         }
 

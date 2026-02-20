@@ -33,6 +33,7 @@ namespace SeekerDungeon.Dungeon
         private int _pressedPointerId = -1;
         private Vector2 _pressedScreenPosition;
         private bool _pressedOverUi;
+        private bool _isHandlingDeathExitAlreadyApplied;
 
         private void Awake()
         {
@@ -505,6 +506,11 @@ namespace SeekerDungeon.Dungeon
                             }
                         }
 
+                        if (!centerResult.Success)
+                        {
+                            ShowCenterFailureToastIfApplicable(centerResult.Error);
+                        }
+
                         // Play chest open animation on the visual controller
                         var currentRoomAfterInteraction = _lgManager.CurrentRoomState;
                         var isChestCenterAfterInteraction = currentRoomAfterInteraction != null &&
@@ -745,6 +751,54 @@ namespace SeekerDungeon.Dungeon
             await LoadExitSceneAsync();
         }
 
+        /// <summary>
+        /// Local fallback path when on-chain boss tick already applied death-outcome
+        /// (player removed from run, HP reset) and no explicit ForceExitOnDeath
+        /// instruction is needed from the client.
+        /// </summary>
+        public async UniTask HandleDeathExitAlreadyAppliedAsync(string sourceTag = "unknown")
+        {
+            if (_isHandlingDeathExitAlreadyApplied)
+            {
+                return;
+            }
+
+            _isHandlingDeathExitAlreadyApplied = true;
+            try
+            {
+                var sceneLoadController = SceneLoadController.GetOrCreate();
+                if (sceneLoadController != null)
+                {
+                    sceneLoadController.SetTransitionText("You died...");
+                    await sceneLoadController.FadeToBlackAsync();
+                }
+
+                await _lgManager.RefreshAllState();
+
+                // Ensure main menu can still show a death-run panel even when
+                // death resolution happened inside TickBossFight on-chain.
+                if (!DungeonExtractionSummaryStore.HasPendingSummary)
+                {
+                    var totalScoreAfterRun = _lgManager.CurrentPlayerState?.TotalScore ?? 0UL;
+                    DungeonExtractionSummaryStore.SetPending(new DungeonExtractionSummary
+                    {
+                        LootScore = 0UL,
+                        TimeScore = 0UL,
+                        RunScore = 0UL,
+                        TotalScoreAfterRun = totalScoreAfterRun,
+                        RunEndReason = DungeonRunEndReason.Death
+                    });
+                }
+
+                Debug.Log($"[DungeonInput] Death exit already applied on-chain ({sourceTag}). Loading menu.");
+                await LoadExitSceneAsync();
+            }
+            finally
+            {
+                _isHandlingDeathExitAlreadyApplied = false;
+            }
+        }
+
         private static bool TryGetPointerDownPosition(out Vector2 position, out int pointerId)
         {
             position = default;
@@ -895,6 +949,41 @@ namespace SeekerDungeon.Dungeon
             var toastMessage = !string.IsNullOrWhiteSpace(keyName) && !string.IsNullOrWhiteSpace(doorName)
                 ? $"You need {keyName} to open {doorName}"
                 : "You need the correct key to open this door";
+
+            if (gameHudUI == null)
+            {
+                gameHudUI = UnityEngine.Object.FindFirstObjectByType<LGGameHudUI>();
+            }
+
+            if (gameHudUI != null)
+            {
+                gameHudUI.ShowCenterToast(toastMessage, 1.5f);
+            }
+        }
+
+        private void ShowCenterFailureToastIfApplicable(string error)
+        {
+            if (string.IsNullOrWhiteSpace(error))
+            {
+                return;
+            }
+
+            string toastMessage = null;
+            if (error.IndexOf("NotBossFighter", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                error.IndexOf("Only players who joined this fight can loot", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                error.IndexOf("Only players who joined this boss fight can loot", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                toastMessage = "You did not contribute to this boss";
+            }
+            else if (error.IndexOf("AlreadyLooted", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                toastMessage = "This has already been looted";
+            }
+
+            if (string.IsNullOrWhiteSpace(toastMessage))
+            {
+                return;
+            }
 
             if (gameHudUI == null)
             {

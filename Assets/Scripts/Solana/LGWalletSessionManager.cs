@@ -161,7 +161,10 @@ namespace SeekerDungeon.Solana
                 SessionInstructionAllowlist.LeaveBossFight
             );
         private const SessionInstructionAllowlist RequiredGameplayAllowlistBits =
-            SessionInstructionAllowlist.UnlockDoor;
+            SessionInstructionAllowlist.UnlockDoor |
+            SessionInstructionAllowlist.JoinBossFight |
+            SessionInstructionAllowlist.TickBossFight |
+            SessionInstructionAllowlist.LeaveBossFight;
 
         [Header("Debug")]
         [SerializeField] private bool logDebugMessages = true;
@@ -2094,6 +2097,179 @@ namespace SeekerDungeon.Solana
             }
 
             EmitStatus($"{BuildTracePrefix(traceTag)}Swept {(sweepAmount / 1_000_000_000d):F6} SOL from session signer back to player. tx={sweepSig}");
+            return true;
+        }
+
+        public async UniTask<ulong?> GetSessionSignerRecommendedLamportsAsync()
+        {
+            if (_sessionSignerAccount == null)
+            {
+                return null;
+            }
+
+            var rpc = GetRpcClient();
+            if (rpc == null)
+            {
+                return null;
+            }
+
+            var result = await rpc.GetBalanceAsync(_sessionSignerAccount.PublicKey, commitment);
+            if (!result.WasSuccessful || result.Result == null)
+            {
+                return null;
+            }
+
+            var currentLamports = result.Result.Value;
+            if (currentLamports >= SessionSignerMinLamports)
+            {
+                return 0UL;
+            }
+
+            return SessionSignerMinLamports - currentLamports;
+        }
+
+        public ulong GetSessionRecommendedSolLamports()
+        {
+            return SessionSignerMinLamports;
+        }
+
+        public ulong GetSessionRecommendedSkrRawAmount()
+        {
+            return defaultSessionMaxTokenSpend;
+        }
+
+        public async UniTask<ulong?> GetSessionSignerSolBalanceLamportsAsync()
+        {
+            if (_sessionSignerAccount == null)
+            {
+                return null;
+            }
+
+            var rpc = GetRpcClient();
+            if (rpc == null)
+            {
+                return null;
+            }
+
+            var result = await rpc.GetBalanceAsync(_sessionSignerAccount.PublicKey, commitment);
+            if (!result.WasSuccessful || result.Result == null)
+            {
+                return null;
+            }
+
+            return result.Result.Value;
+        }
+
+        public async UniTask<ulong?> GetSessionSignerSkrBalanceRawAsync()
+        {
+            if (_sessionSignerAccount == null)
+            {
+                return null;
+            }
+
+            var rpc = GetRpcClient();
+            if (rpc == null)
+            {
+                return null;
+            }
+
+            var mint = new PublicKey(LGConfig.ActiveSkrMint);
+            var sessionAta = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(
+                _sessionSignerAccount.PublicKey,
+                mint);
+            var result = await rpc.GetTokenAccountBalanceAsync(sessionAta, commitment);
+            if (!result.WasSuccessful)
+            {
+                return 0UL;
+            }
+
+            var amountText = result.Result?.Value?.Amount;
+            if (string.IsNullOrWhiteSpace(amountText))
+            {
+                return 0UL;
+            }
+
+            return ulong.TryParse(amountText, out var parsed) ? parsed : 0UL;
+        }
+
+        public async UniTask<bool> FundSessionWalletAsync(
+            ulong solLamports,
+            ulong skrRawAmount,
+            bool emitPromptStatus = true)
+        {
+            if (_sessionSignerAccount == null)
+            {
+                EmitError("Session signer is unavailable for funding.");
+                return false;
+            }
+
+            if (solLamports == 0UL && skrRawAmount == 0UL)
+            {
+                EmitError("Select a SOL or SKR top-up amount greater than zero.");
+                return false;
+            }
+
+            var wallet = Web3.Wallet;
+            if (wallet?.Account == null)
+            {
+                EmitError("Wallet disconnected while funding session signer.");
+                return false;
+            }
+
+            var traceTag = "session-fund";
+            var tracePrefix = BuildTracePrefix(traceTag);
+            var mint = new PublicKey(LGConfig.ActiveSkrMint);
+
+            if (solLamports > 0UL)
+            {
+                if (emitPromptStatus)
+                {
+                    EmitStatus(
+                        $"Funding session wallet with {(solLamports / 1_000_000_000d):F4} SOL. Approve in wallet...");
+                }
+
+                var transferResult = await wallet.Transfer(
+                    _sessionSignerAccount.PublicKey,
+                    solLamports,
+                    commitment);
+                if (!transferResult.WasSuccessful || string.IsNullOrWhiteSpace(transferResult.Result))
+                {
+                    var reason = string.IsNullOrWhiteSpace(transferResult.Reason)
+                        ? "<unknown transfer failure>"
+                        : transferResult.Reason;
+                    EmitError($"Session SOL top-up failed: {reason}");
+                    return false;
+                }
+
+                EmitStatus($"{tracePrefix}Session SOL funded. tx={transferResult.Result}");
+            }
+
+            if (skrRawAmount > 0UL)
+            {
+                if (emitPromptStatus)
+                {
+                    EmitStatus(
+                        $"Funding session wallet with {(skrRawAmount / (double)LGConfig.SKR_MULTIPLIER):F3} SKR. Approve in wallet...");
+                }
+
+                var transferResult = await wallet.Transfer(
+                    _sessionSignerAccount.PublicKey,
+                    mint,
+                    skrRawAmount,
+                    commitment);
+                if (!transferResult.WasSuccessful || string.IsNullOrWhiteSpace(transferResult.Result))
+                {
+                    var reason = string.IsNullOrWhiteSpace(transferResult.Reason)
+                        ? "<unknown transfer failure>"
+                        : transferResult.Reason;
+                    EmitError($"Session SKR top-up failed: {reason}");
+                    return false;
+                }
+
+                EmitStatus($"{tracePrefix}Session SKR funded. tx={transferResult.Result}");
+            }
+
+            _isSessionSignerFunded = true;
             return true;
         }
 

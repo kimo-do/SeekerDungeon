@@ -439,6 +439,7 @@ namespace SeekerDungeon.Dungeon
         {
             var prevX = _currentRoomX;
             var prevY = _currentRoomY;
+            var transitionSucceeded = false;
 
             var sceneLoadController = SceneLoadController.GetOrCreate();
             await sceneLoadController.FadeToBlackAsync();
@@ -468,18 +469,26 @@ namespace SeekerDungeon.Dungeon
                 var refreshed = await TryRefreshCurrentRoomSnapshotAsync(RoomFetchRetryAttempts, RoomFetchRetryDelayMs);
                 if (!refreshed)
                 {
-                    // Keep visual and interactive state aligned with the rendered room
-                    // when target-room reads are still unavailable.
-                    _currentRoomX = prevX;
-                    _currentRoomY = prevY;
-                    if (_lgManager?.CurrentPlayerState != null)
+                    // If the optimistic target read missed, re-sync from player state
+                    // before giving up. This avoids getting stuck on stale room coords.
+                    await _lgManager.FetchPlayerState();
+                    await ResolveCurrentRoomCoordinatesAsync();
+                    refreshed = await TryRefreshCurrentRoomSnapshotAsync(RoomFetchRetryAttempts, RoomFetchRetryDelayMs);
+                    if (!refreshed)
                     {
-                        _lgManager.CurrentPlayerState.CurrentRoomX = (sbyte)prevX;
-                        _lgManager.CurrentPlayerState.CurrentRoomY = (sbyte)prevY;
-                    }
+                        // Keep visual and interactive state aligned with the rendered room
+                        // when target-room reads are still unavailable.
+                        _currentRoomX = prevX;
+                        _currentRoomY = prevY;
+                        if (_lgManager?.CurrentPlayerState != null)
+                        {
+                            _lgManager.CurrentPlayerState.CurrentRoomX = (sbyte)prevX;
+                            _lgManager.CurrentPlayerState.CurrentRoomY = (sbyte)prevY;
+                        }
 
-                    await TryRefreshCurrentRoomSnapshotAsync(2, 120);
-                    return;
+                        await TryRefreshCurrentRoomSnapshotAsync(2, 120);
+                        return;
+                    }
                 }
 
                 // Clean up any stale active jobs before revealing the new room.
@@ -494,11 +503,13 @@ namespace SeekerDungeon.Dungeon
                 {
                     await _lgManager.StartRoomOccupantSubscriptions(_currentRoomX, _currentRoomY);
                 }
+
+                transitionSucceeded = true;
             }
             finally
             {
                 GameplayActionLog.RoomTransitionEnd(
-                    _currentRoomX, _currentRoomY, true);
+                    _currentRoomX, _currentRoomY, transitionSucceeded);
 
                 sceneLoadController.ClearTransitionText();
                 await sceneLoadController.FadeFromBlackAsync();
@@ -1444,17 +1455,28 @@ namespace SeekerDungeon.Dungeon
 
         private void ApplyLocalPlayerWieldedState(OccupantActivity activity)
         {
-            if (localPlayerController == null || _lgManager?.CurrentPlayerState == null)
+            if (localPlayerController == null)
             {
                 return;
             }
 
+            if (_lgManager?.CurrentPlayerState == null)
+            {
+                localPlayerController.SetCombatHealth(0, 0, false);
+                return;
+            }
+
+            var playerState = _lgManager.CurrentPlayerState;
+            localPlayerController.SetCombatHealth(
+                playerState.CurrentHp,
+                playerState.MaxHp,
+                activity == OccupantActivity.BossFight);
             localPlayerController.SetMiningAnimationState(activity == OccupantActivity.DoorJob);
             localPlayerController.SetBossJobAnimationState(activity == OccupantActivity.BossFight);
 
             if (activity == OccupantActivity.DoorJob || activity == OccupantActivity.BossFight)
             {
-                var equippedId = LGDomainMapper.ToItemId(_lgManager.CurrentPlayerState.EquippedItemId);
+                var equippedId = LGDomainMapper.ToItemId(playerState.EquippedItemId);
                 if (ItemRegistry.IsWearable(equippedId))
                 {
                     localPlayerController.ShowWieldedItem(equippedId);

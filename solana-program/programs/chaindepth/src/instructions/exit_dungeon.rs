@@ -193,6 +193,10 @@ pub fn handler(ctx: Context<ExitDungeon>) -> Result<()> {
     player.last_extraction_slot = now_slot;
     player.current_run_start_slot = now_slot;
     player.in_dungeon = false;
+    if player.max_hp == 0 {
+        player.max_hp = crate::state::DEFAULT_PLAYER_MAX_HP;
+    }
+    player.current_hp = player.max_hp;
 
     let room_presence = &mut ctx.accounts.room_presence;
     room_presence.is_current = true;

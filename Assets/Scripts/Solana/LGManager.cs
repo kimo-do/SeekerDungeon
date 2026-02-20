@@ -99,7 +99,7 @@ namespace SeekerDungeon.Solana
         private const int MaxTransientSendAttemptsPerRpc = 2;
         private const int BaseTransientRetryDelayMs = 300;
         private const int RawHttpProbeTimeoutSeconds = 20;
-        private const int RawHttpBodyLogLimit = 400;
+        private const int RawHttpBodyLogLimit = 2000;
 
         private static LGManager FindExistingInstance()
         {
@@ -486,6 +486,7 @@ namespace SeekerDungeon.Solana
 
             try
             {
+                var previousState = CurrentPlayerState;
                 var playerPda = DerivePlayerPda(Web3.Wallet.Account.PublicKey);
                 if (playerPda == null)
                 {
@@ -534,7 +535,27 @@ namespace SeekerDungeon.Solana
                 }
 
                 CurrentPlayerState = result.ParsedResult;
-                Log($"Player State: Position=({CurrentPlayerState.CurrentRoomX}, {CurrentPlayerState.CurrentRoomY}), Jobs={CurrentPlayerState.JobsCompleted}");
+                Log(
+                    $"Player State: Position=({CurrentPlayerState.CurrentRoomX}, {CurrentPlayerState.CurrentRoomY}), " +
+                    $"Jobs={CurrentPlayerState.JobsCompleted}, HP={CurrentPlayerState.CurrentHp}/{CurrentPlayerState.MaxHp}, " +
+                    $"InDungeon={CurrentPlayerState.InDungeon}");
+
+                if (previousState != null)
+                {
+                    var hpChanged = previousState.CurrentHp != CurrentPlayerState.CurrentHp
+                                    || previousState.MaxHp != CurrentPlayerState.MaxHp;
+                    var dungeonChanged = previousState.InDungeon != CurrentPlayerState.InDungeon;
+                    if (hpChanged || dungeonChanged)
+                    {
+                        Log(
+                            $"Player State Delta: HP {previousState.CurrentHp}/{previousState.MaxHp} -> " +
+                            $"{CurrentPlayerState.CurrentHp}/{CurrentPlayerState.MaxHp}, " +
+                            $"InDungeon {previousState.InDungeon} -> {CurrentPlayerState.InDungeon}, " +
+                            $"Pos ({previousState.CurrentRoomX},{previousState.CurrentRoomY}) -> " +
+                            $"({CurrentPlayerState.CurrentRoomX},{CurrentPlayerState.CurrentRoomY})");
+                    }
+                }
+
                 OnPlayerStateUpdated?.Invoke(CurrentPlayerState);
 
                 return CurrentPlayerState;
@@ -1179,7 +1200,15 @@ namespace SeekerDungeon.Solana
 
             if (room.BossDefeated)
             {
-                Log("Center action: loot defeated boss.");
+                var defeatedBossRoomPda = DeriveRoomPda(CurrentGlobalState.SeasonSeed, room.X, room.Y);
+                var isFighterForLoot = await HasBossFightInCurrentRoom(defeatedBossRoomPda, Web3.Wallet.Account.PublicKey);
+                if (!isFighterForLoot)
+                {
+                    Log("Center action: boss already defeated, but local player is not a boss fighter. Skipping LootBoss tx.");
+                    return TxResult.Fail("Boss already defeated. Only players who joined this fight can loot.");
+                }
+
+                Log("Center action: loot defeated boss (eligible fighter).");
                 return await LootBoss();
             }
 
@@ -2925,6 +2954,27 @@ namespace SeekerDungeon.Solana
                 return TxResult.Fail("Player or global state not loaded");
             }
 
+            var room = await FetchCurrentRoom();
+            if (room == null)
+            {
+                LogError("Current room not loaded");
+                return TxResult.Fail("Current room not loaded");
+            }
+
+            if (room.CenterType != LGConfig.CENTER_BOSS || !room.BossDefeated)
+            {
+                Log("LootBoss skipped: room center is not a defeated boss.");
+                return TxResult.Fail("Boss is not defeated");
+            }
+
+            var roomPda = DeriveRoomPda(CurrentGlobalState.SeasonSeed, room.X, room.Y);
+            var isFighter = await HasBossFightInCurrentRoom(roomPda, Web3.Wallet.Account.PublicKey);
+            if (!isFighter)
+            {
+                Log("LootBoss skipped: local player is not a boss fighter for this defeated boss.");
+                return TxResult.Fail("Only players who joined this boss fight can loot.");
+            }
+
             Log("Looting boss...");
 
             // Snapshot inventory before loot so we can diff afterwards
@@ -3299,6 +3349,7 @@ namespace SeekerDungeon.Solana
             if (signingContext.UsesSessionSigner &&
                 IsFeePayerFundingFailure(failureReason))
             {
+                Log($"{actionName}: detected session fee funding failure ('{failureReason}'). Showing top-up prompt.");
                 OnSessionFeeFundingRequired?.Invoke(
                     "Your session wallet is low on SOL for transaction fees. Top up session funding to continue smooth gameplay.");
                 Log(
@@ -3318,6 +3369,27 @@ namespace SeekerDungeon.Solana
                 }
             }
 
+            if (IsRpcTransportFailureReason(failureReason))
+            {
+                Log(
+                    $"{actionName}: RPC transport failure detected ('{failureReason}'). " +
+                    "Retrying once with wallet signer.");
+                var walletContext = BuildWalletOnlySigningContext();
+                if (walletContext.SignerAccount != null)
+                {
+                    var walletSignature = await SendTransaction(
+                        buildInstruction(walletContext),
+                        walletContext.SignerAccount,
+                        new List<Account> { walletContext.SignerAccount });
+                    if (!string.IsNullOrWhiteSpace(walletSignature))
+                    {
+                        return TxResult.Ok(walletSignature);
+                    }
+                }
+
+                return TxResult.Fail($"{actionName} TX failed (RPC unstable, please retry)");
+            }
+
             if (!signingContext.UsesSessionSigner || walletSessionManager == null)
             {
                 return TxResult.Fail($"{actionName} TX failed{errorDetail}");
@@ -3328,11 +3400,17 @@ namespace SeekerDungeon.Solana
                 return TxResult.Fail($"{actionName} TX failed (non-recoverable){errorDetail}");
             }
 
-            Log($"{actionName} failed with recoverable session error. Attempting one session restart.");
-            var restarted = await walletSessionManager.EnsureGameplaySessionAsync();
+            var forceRebuildSession = IsSessionInstructionNotAllowedError();
+            Log(
+                forceRebuildSession
+                    ? $"{actionName} failed with SessionInstructionNotAllowed. Rebuilding session policy and retrying once."
+                    : $"{actionName} failed with recoverable session error. Attempting one session restart.");
+            var restarted = forceRebuildSession
+                ? await walletSessionManager.BeginGameplaySessionAsync()
+                : await walletSessionManager.EnsureGameplaySessionAsync();
             if (!restarted)
             {
-                return TxResult.Fail($"{actionName} session restart failed");
+                return TxResult.Fail($"{actionName} session restart failed{errorDetail}");
             }
 
             var retryContext = BuildGameplaySigningContext(walletSessionManager);
@@ -3352,7 +3430,25 @@ namespace SeekerDungeon.Solana
                 return TxResult.Ok(retrySignature);
             }
 
-            return TxResult.Fail($"{actionName} retry TX failed");
+            var retryErrorDetail = FormatProgramError(_lastProgramErrorCode);
+            if (retryContext.UsesSessionSigner && IsSessionInstructionNotAllowedError())
+            {
+                Log($"{actionName}: retry still hit SessionInstructionNotAllowed. Falling back to wallet signing once.");
+                var walletContext = BuildWalletOnlySigningContext();
+                if (walletContext.SignerAccount != null)
+                {
+                    var walletRetrySignature = await SendTransaction(
+                        buildInstruction(walletContext),
+                        walletContext.SignerAccount,
+                        new List<Account> { walletContext.SignerAccount });
+                    if (!string.IsNullOrWhiteSpace(walletRetrySignature))
+                    {
+                        return TxResult.Ok(walletRetrySignature);
+                    }
+                }
+            }
+
+            return TxResult.Fail($"{actionName} retry TX failed{retryErrorDetail}");
         }
 
         /// <summary>
@@ -3411,12 +3507,12 @@ namespace SeekerDungeon.Solana
                     return null;
                 }
 
+                var rawProbeAttempted = false;
                 for (var candidateIndex = 0; candidateIndex < rpcCandidates.Count; candidateIndex += 1)
                 {
                     var rpcCandidate = rpcCandidates[candidateIndex];
                     var rpcLabel = candidateIndex == 0 ? "primary" : "fallback";
                     var endpoint = DescribeRpcEndpoint(rpcCandidate);
-                    var rawProbeAttempted = false;
                     for (var attempt = 1; attempt <= MaxTransientSendAttemptsPerRpc; attempt += 1)
                     {
                         var blockHashResult = await rpcCandidate.GetLatestBlockHashAsync();
@@ -3455,7 +3551,13 @@ namespace SeekerDungeon.Solana
                         var failureReason = string.IsNullOrWhiteSpace(result.Reason)
                             ? "<empty reason>"
                             : result.Reason;
-                        _lastTransactionFailureReason = failureReason;
+                        // Preserve a concrete funding failure reason across later
+                        // generic transport errors within the same send flow.
+                        if (!(IsFeePayerFundingFailure(_lastTransactionFailureReason) &&
+                              !IsFeePayerFundingFailure(failureReason)))
+                        {
+                            _lastTransactionFailureReason = failureReason;
+                        }
                         _lastProgramErrorCode = ExtractCustomProgramErrorCode(failureReason);
                         LogError(
                             $"[{rpcLabel}] Transaction failed (attempt {attempt}/{MaxTransientSendAttemptsPerRpc}). " +
@@ -3465,7 +3567,12 @@ namespace SeekerDungeon.Solana
                             LogError($"[{rpcLabel}] Server error code: {result.ServerErrorCode}");
                         }
 
-                        if (!rawProbeAttempted && IsJsonParseFailure(failureReason))
+                        var shouldRunRawProbe = IsJsonParseFailure(failureReason) ||
+                                                (_lastProgramErrorCode.HasValue &&
+                                                 _lastProgramErrorCode.Value == 1U &&
+                                                 candidateIndex == 0 &&
+                                                 attempt == 1);
+                        if (!rawProbeAttempted && shouldRunRawProbe)
                         {
                             rawProbeAttempted = true;
                             var rawProbe = await TrySendTransactionViaRawHttpAsync(endpoint, txBase64);
@@ -3476,6 +3583,27 @@ namespace SeekerDungeon.Solana
                                     $"networkError={rawProbe.NetworkError ?? "<none>"} " +
                                     $"rpcError={rawProbe.RpcError ?? "<none>"} " +
                                     $"body={rawProbe.BodySnippet}");
+                            }
+
+                            // If raw probe extracted a concrete RPC error message,
+                            // promote it to the canonical failure reason so upper
+                            // layers can trigger the correct recovery path.
+                            if (!string.IsNullOrWhiteSpace(rawProbe.RpcError))
+                            {
+                                _lastTransactionFailureReason = rawProbe.RpcError;
+                                _lastProgramErrorCode = ExtractCustomProgramErrorCode(rawProbe.RpcError);
+                                failureReason = rawProbe.RpcError;
+                            }
+
+                            // Some RPC nodes return a generic "custom program error: 0x1"
+                            // while embedding the actionable funding cause in the JSON body.
+                            if (IsFeePayerFundingFailure(rawProbe.BodySnippet) &&
+                                !IsFeePayerFundingFailure(failureReason))
+                            {
+                                const string inferredFundingReason =
+                                    "Transaction simulation failed: insufficient lamports for transfer/rent (inferred from raw RPC body)";
+                                _lastTransactionFailureReason = inferredFundingReason;
+                                failureReason = inferredFundingReason;
                             }
 
                             if (rawProbe.WasSuccessful)
@@ -3614,6 +3742,8 @@ namespace SeekerDungeon.Solana
                 reason.IndexOf("InsufficientFundsForRent", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 reason.IndexOf("insufficient funds for rent", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 reason.IndexOf("insufficient funds for fee", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("insufficient lamports", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                reason.IndexOf("Transfer: insufficient lamports", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 reason.IndexOf("insufficient funds", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
@@ -3709,6 +3839,21 @@ namespace SeekerDungeon.Solana
         {
             return !string.IsNullOrWhiteSpace(reason) &&
                    reason.IndexOf("Unable to parse json", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsRpcTransportFailureReason(string reason)
+        {
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                return true;
+            }
+
+            if (reason.IndexOf("custom program error", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return false;
+            }
+
+            return IsTransientRpcFailure(reason);
         }
 
         private static InventoryAccount CloneInventorySnapshot(InventoryAccount source)
@@ -4169,6 +4314,12 @@ namespace SeekerDungeon.Solana
                    _lastProgramErrorCode.Value == (uint)Chaindepth.Errors.ChaindepthErrorKind.InsufficientItemAmount;
         }
 
+        private bool IsSessionInstructionNotAllowedError()
+        {
+            return _lastProgramErrorCode.HasValue &&
+                   _lastProgramErrorCode.Value == (uint)Chaindepth.Errors.ChaindepthErrorKind.SessionInstructionNotAllowed;
+        }
+
         private async UniTask<TxResult> StopActiveJobsBeforeRunTransition(string sourceAction)
         {
             if (CurrentGlobalState == null)
@@ -4474,14 +4625,56 @@ namespace SeekerDungeon.Solana
                 return moveResult;
             }
 
-            if (IsFrameworkAccountNotInitializedError())
+            var likelyStaleContext = IsLikelyStaleMoveContextError();
+            var likelyRpcTransport = IsRpcTransportFailureReason(_lastTransactionFailureReason);
+            if (!likelyStaleContext && !likelyRpcTransport)
             {
-                Log("MovePlayer hit AccountNotInitialized. Refreshing state and retrying once.");
-                await RefreshAllState();
-                moveResult = await MovePlayer(targetX, targetY);
+                return moveResult;
             }
 
+            Log(
+                "MovePlayer failed from door interaction. " +
+                "Refreshing state and retrying once with fresh coordinates.");
+            await RefreshAllState();
+
+            if (CurrentPlayerState == null)
+            {
+                await FetchPlayerState();
+            }
+
+            if (CurrentPlayerState == null)
+            {
+                return moveResult;
+            }
+
+            var (retryTargetX, retryTargetY) = LGConfig.GetAdjacentCoords(
+                CurrentPlayerState.CurrentRoomX,
+                CurrentPlayerState.CurrentRoomY,
+                direction);
+
+            if (retryTargetX != targetX || retryTargetY != targetY)
+            {
+                Log(
+                    $"Move retry target adjusted from ({targetX},{targetY}) " +
+                    $"to ({retryTargetX},{retryTargetY}) after state refresh.");
+            }
+
+            moveResult = await MovePlayer(retryTargetX, retryTargetY);
+
             return moveResult;
+        }
+
+        private bool IsNotAdjacentError()
+        {
+            return _lastProgramErrorCode.HasValue &&
+                   _lastProgramErrorCode.Value == (uint)Chaindepth.Errors.ChaindepthErrorKind.NotAdjacent;
+        }
+
+        private bool IsLikelyStaleMoveContextError()
+        {
+            // NotAdjacent is a concrete stale-context signal.
+            // Generic 0x1 is handled via failure-reason classification instead.
+            return IsNotAdjacentError();
         }
 
         private static bool TryMapProgramError(uint errorCode, out string message)
