@@ -1,12 +1,17 @@
 use anchor_lang::prelude::*;
 
 pub const MAX_DUEL_HITS_PER_PLAYER: usize = 100;
+pub const MAX_DUEL_NAME_LEN: usize = 24;
 
 #[account]
 #[derive(InitSpace)]
 pub struct DuelChallenge {
     pub challenger: Pubkey,
     pub opponent: Pubkey,
+    #[max_len(MAX_DUEL_NAME_LEN)]
+    pub challenger_display_name_snapshot: String,
+    #[max_len(MAX_DUEL_NAME_LEN)]
+    pub opponent_display_name_snapshot: String,
     pub season_seed: u64,
     pub room_x: i8,
     pub room_y: i8,

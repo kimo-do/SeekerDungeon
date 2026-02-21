@@ -41,7 +41,7 @@ pub struct InitGlobal<'info> {
     )]
     pub admin_token_account: Account<'info, TokenAccount>,
 
-    /// Starting room at (5, 5) - uses season_seed passed as instruction arg
+    /// Starting room at (START_X, START_Y) - uses season_seed passed as instruction arg
     #[account(
         init,
         payer = admin,

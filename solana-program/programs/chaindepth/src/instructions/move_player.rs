@@ -329,7 +329,7 @@ pub struct InitPlayer<'info> {
     pub profile: Account<'info, PlayerProfile>,
 
     #[account(
-        init,
+        init_if_needed,
         payer = player,
         space = RoomPresence::DISCRIMINATOR.len() + RoomPresence::INIT_SPACE,
         seeds = [
@@ -365,7 +365,7 @@ pub fn init_player_handler(ctx: Context<InitPlayer>) -> Result<()> {
     player_account.current_run_start_slot = clock.slot;
     player_account.runs_extracted = 0;
     player_account.last_extraction_slot = 0;
-    player_account.in_dungeon = false;
+    player_account.in_dungeon = true;
     player_account.current_hp = crate::state::DEFAULT_PLAYER_MAX_HP;
     player_account.max_hp = crate::state::DEFAULT_PLAYER_MAX_HP;
     player_account.data_version = PlayerAccount::CURRENT_DATA_VERSION;

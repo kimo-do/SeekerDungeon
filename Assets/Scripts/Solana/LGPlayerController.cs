@@ -417,6 +417,16 @@ namespace SeekerDungeon.Solana
             ApplyAnimatorJobState();
         }
 
+        public void SetFacingDirection(OccupantFacingDirection facingDirection)
+        {
+            var localScale = transform.localScale;
+            var absoluteX = Mathf.Abs(localScale.x);
+            localScale.x = facingDirection == OccupantFacingDirection.Right
+                ? absoluteX
+                : -absoluteX;
+            transform.localScale = localScale;
+        }
+
         private void PlaySkinSwitchAnimation()
         {
             var visualRoot = _activeVisualRootForAnimation;

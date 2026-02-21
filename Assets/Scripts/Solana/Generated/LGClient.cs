@@ -71,6 +71,122 @@ namespace Chaindepth
             }
         }
 
+        public partial class DuelChallenge
+        {
+            public static ulong ACCOUNT_DISCRIMINATOR => 424543391270110324UL;
+            public static ReadOnlySpan<byte> ACCOUNT_DISCRIMINATOR_BYTES => new byte[]{116, 4, 101, 12, 247, 71, 228, 5};
+            public static string ACCOUNT_DISCRIMINATOR_B58 => "LQWgrhJKvqJ";
+            public PublicKey Challenger { get; set; }
+
+            public PublicKey Opponent { get; set; }
+
+            public string ChallengerDisplayNameSnapshot { get; set; }
+
+            public string OpponentDisplayNameSnapshot { get; set; }
+
+            public ulong SeasonSeed { get; set; }
+
+            public sbyte RoomX { get; set; }
+
+            public sbyte RoomY { get; set; }
+
+            public ulong StakeAmount { get; set; }
+
+            public ulong ChallengeSeed { get; set; }
+
+            public ulong ExpiresAtSlot { get; set; }
+
+            public ulong RequestedSlot { get; set; }
+
+            public ulong SettledSlot { get; set; }
+
+            public PublicKey DuelEscrow { get; set; }
+
+            public PublicKey Winner { get; set; }
+
+            public bool IsDraw { get; set; }
+
+            public ushort ChallengerFinalHp { get; set; }
+
+            public ushort OpponentFinalHp { get; set; }
+
+            public byte TurnsPlayed { get; set; }
+
+            public byte Status { get; set; }
+
+            public byte Starter { get; set; }
+
+            public byte[] ChallengerHits { get; set; }
+
+            public byte[] OpponentHits { get; set; }
+
+            public byte Bump { get; set; }
+
+            public static DuelChallenge Deserialize(ReadOnlySpan<byte> _data)
+            {
+                int offset = 0;
+                ulong accountHashValue = _data.GetU64(offset);
+                offset += 8;
+                if (accountHashValue != ACCOUNT_DISCRIMINATOR)
+                {
+                    return null;
+                }
+
+                DuelChallenge result = new DuelChallenge();
+                result.Challenger = _data.GetPubKey(offset);
+                offset += 32;
+                result.Opponent = _data.GetPubKey(offset);
+                offset += 32;
+                offset += _data.GetBorshString(offset, out var resultChallengerDisplayNameSnapshot);
+                result.ChallengerDisplayNameSnapshot = resultChallengerDisplayNameSnapshot;
+                offset += _data.GetBorshString(offset, out var resultOpponentDisplayNameSnapshot);
+                result.OpponentDisplayNameSnapshot = resultOpponentDisplayNameSnapshot;
+                result.SeasonSeed = _data.GetU64(offset);
+                offset += 8;
+                result.RoomX = _data.GetS8(offset);
+                offset += 1;
+                result.RoomY = _data.GetS8(offset);
+                offset += 1;
+                result.StakeAmount = _data.GetU64(offset);
+                offset += 8;
+                result.ChallengeSeed = _data.GetU64(offset);
+                offset += 8;
+                result.ExpiresAtSlot = _data.GetU64(offset);
+                offset += 8;
+                result.RequestedSlot = _data.GetU64(offset);
+                offset += 8;
+                result.SettledSlot = _data.GetU64(offset);
+                offset += 8;
+                result.DuelEscrow = _data.GetPubKey(offset);
+                offset += 32;
+                result.Winner = _data.GetPubKey(offset);
+                offset += 32;
+                result.IsDraw = _data.GetBool(offset);
+                offset += 1;
+                result.ChallengerFinalHp = _data.GetU16(offset);
+                offset += 2;
+                result.OpponentFinalHp = _data.GetU16(offset);
+                offset += 2;
+                result.TurnsPlayed = _data.GetU8(offset);
+                offset += 1;
+                result.Status = _data.GetU8(offset);
+                offset += 1;
+                result.Starter = _data.GetU8(offset);
+                offset += 1;
+                int resultChallengerHitsLength = (int)_data.GetU32(offset);
+                offset += 4;
+                result.ChallengerHits = _data.GetBytes(offset, resultChallengerHitsLength);
+                offset += resultChallengerHitsLength;
+                int resultOpponentHitsLength = (int)_data.GetU32(offset);
+                offset += 4;
+                result.OpponentHits = _data.GetBytes(offset, resultOpponentHitsLength);
+                offset += resultOpponentHitsLength;
+                result.Bump = _data.GetU8(offset);
+                offset += 1;
+                return result;
+            }
+        }
+
         public partial class GlobalAccount
         {
             public static ulong ACCOUNT_DISCRIMINATOR => 5002420280216021377UL;
@@ -745,7 +861,16 @@ namespace Chaindepth
             Unauthorized = 6042U,
             InsufficientBalance = 6043U,
             TransferFailed = 6044U,
-            Overflow = 6045U
+            Overflow = 6045U,
+            InvalidSeason = 6046U,
+            InvalidDuelOpponent = 6047U,
+            InvalidDuelStake = 6048U,
+            InvalidDuelExpiry = 6049U,
+            PlayersNotInSameRoom = 6050U,
+            InvalidDuelState = 6051U,
+            InvalidDuelEscrow = 6052U,
+            DuelChallengeExpired = 6053U,
+            DuelChallengeNotExpired = 6054U
         }
     }
 
@@ -839,6 +964,17 @@ namespace Chaindepth
             List<BossFightAccount> resultingAccounts = new List<BossFightAccount>(res.Result.Count);
             resultingAccounts.AddRange(res.Result.Select(result => BossFightAccount.Deserialize(Convert.FromBase64String(result.Account.Data[0]))));
             return new Solana.Unity.Programs.Models.ProgramAccountsResultWrapper<List<BossFightAccount>>(res, resultingAccounts);
+        }
+
+        public async Task<Solana.Unity.Programs.Models.ProgramAccountsResultWrapper<List<DuelChallenge>>> GetDuelChallengesAsync(string programAddress = ChaindepthProgram.ID, Commitment commitment = Commitment.Confirmed)
+        {
+            var list = new List<Solana.Unity.Rpc.Models.MemCmp>{new Solana.Unity.Rpc.Models.MemCmp{Bytes = DuelChallenge.ACCOUNT_DISCRIMINATOR_B58, Offset = 0}};
+            var res = await RpcClient.GetProgramAccountsAsync(programAddress, commitment, memCmpList: list);
+            if (!res.WasSuccessful || !(res.Result?.Count > 0))
+                return new Solana.Unity.Programs.Models.ProgramAccountsResultWrapper<List<DuelChallenge>>(res);
+            List<DuelChallenge> resultingAccounts = new List<DuelChallenge>(res.Result.Count);
+            resultingAccounts.AddRange(res.Result.Select(result => DuelChallenge.Deserialize(Convert.FromBase64String(result.Account.Data[0]))));
+            return new Solana.Unity.Programs.Models.ProgramAccountsResultWrapper<List<DuelChallenge>>(res, resultingAccounts);
         }
 
         public async Task<Solana.Unity.Programs.Models.ProgramAccountsResultWrapper<List<GlobalAccount>>> GetGlobalAccountsAsync(string programAddress = ChaindepthProgram.ID, Commitment commitment = Commitment.Confirmed)
@@ -960,6 +1096,15 @@ namespace Chaindepth
             return new Solana.Unity.Programs.Models.AccountResultWrapper<BossFightAccount>(res, resultingAccount);
         }
 
+        public async Task<Solana.Unity.Programs.Models.AccountResultWrapper<DuelChallenge>> GetDuelChallengeAsync(string accountAddress, Commitment commitment = Commitment.Finalized)
+        {
+            var res = await RpcClient.GetAccountInfoAsync(accountAddress, commitment);
+            if (!res.WasSuccessful)
+                return new Solana.Unity.Programs.Models.AccountResultWrapper<DuelChallenge>(res);
+            var resultingAccount = DuelChallenge.Deserialize(Convert.FromBase64String(res.Result.Value.Data[0]));
+            return new Solana.Unity.Programs.Models.AccountResultWrapper<DuelChallenge>(res, resultingAccount);
+        }
+
         public async Task<Solana.Unity.Programs.Models.AccountResultWrapper<GlobalAccount>> GetGlobalAccountAsync(string accountAddress, Commitment commitment = Commitment.Finalized)
         {
             var res = await RpcClient.GetAccountInfoAsync(accountAddress, commitment);
@@ -1057,6 +1202,18 @@ namespace Chaindepth
                 BossFightAccount parsingResult = null;
                 if (e.Value?.Data?.Count > 0)
                     parsingResult = BossFightAccount.Deserialize(Convert.FromBase64String(e.Value.Data[0]));
+                callback(s, e, parsingResult);
+            }, commitment);
+            return res;
+        }
+
+        public async Task<SubscriptionState> SubscribeDuelChallengeAsync(string accountAddress, Action<SubscriptionState, Solana.Unity.Rpc.Messages.ResponseValue<Solana.Unity.Rpc.Models.AccountInfo>, DuelChallenge> callback, Commitment commitment = Commitment.Finalized)
+        {
+            SubscriptionState res = await StreamingRpcClient.SubscribeAccountInfoAsync(accountAddress, (s, e) =>
+            {
+                DuelChallenge parsingResult = null;
+                if (e.Value?.Data?.Count > 0)
+                    parsingResult = DuelChallenge.Deserialize(Convert.FromBase64String(e.Value.Data[0]));
                 callback(s, e, parsingResult);
             }, commitment);
             return res;
@@ -1184,7 +1341,7 @@ namespace Chaindepth
 
         protected override Dictionary<uint, ProgramError<ChaindepthErrorKind>> BuildErrorsDictionary()
         {
-            return new Dictionary<uint, ProgramError<ChaindepthErrorKind>>{{6000U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NotAdjacent, "Invalid move: target room is not adjacent")}, {6001U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.WallNotOpen, "Invalid move: wall is not open")}, {6002U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.WallNotLocked, "Wall is not locked")}, {6003U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.OutOfBounds, "Invalid move: coordinates out of bounds")}, {6004U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidDirection, "Invalid direction: must be 0-3 (N/S/E/W)")}, {6005U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NotRubble, "Wall is not rubble: cannot start job")}, {6006U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.AlreadyJoined, "Already joined this job")}, {6007U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.JobFull, "Job is full: maximum helpers reached")}, {6008U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NotHelper, "Not a helper on this job")}, {6009U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.JobNotReady, "Job not ready: progress insufficient")}, {6010U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NoActiveJob, "No active job at this location")}, {6011U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.JobAlreadyCompleted, "Job has already been completed")}, {6012U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.JobNotCompleted, "Job has not been completed yet")}, {6013U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.TooManyActiveJobs, "Too many active jobs: abandon one first")}, {6014U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InventoryFull, "Inventory is full")}, {6015U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidItemId, "Invalid item id")}, {6016U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidItemAmount, "Invalid item amount")}, {6017U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InsufficientItemAmount, "Not enough items")}, {6018U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.MissingRequiredKey, "Missing required key item")}, {6019U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidLockKind, "Invalid lock kind")}, {6020U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NoChest, "Room has no chest")}, {6021U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.AlreadyLooted, "Already looted this chest")}, {6022U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.TreasuryInsufficientFunds, "Treasury has insufficient SOL to reimburse room rent")}, {6023U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NotInRoom, "Player not in this room")}, {6024U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NotAtEntranceRoom, "Player is not at the entrance room")}, {6025U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.EntranceStairsRequired, "Entrance stairs are required to exit")}, {6026U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.CannotExitWithActiveJobs, "Cannot exit while having active jobs")}, {6027U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NoBoss, "No boss in this room center")}, {6028U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.BossAlreadyDefeated, "Boss is already defeated")}, {6029U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.BossNotDefeated, "Boss has not been defeated yet")}, {6030U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.AlreadyFightingBoss, "Player is already fighting this boss")}, {6031U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NotBossFighter, "Player is not a fighter for this boss")}, {6032U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.PlayerDead, "Player has no HP and must recover before fighting")}, {6033U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidCenterType, "Invalid center type")}, {6034U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.DisplayNameTooLong, "Display name is too long")}, {6035U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidSessionExpiry, "Invalid session expiry values")}, {6036U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidSessionAllowlist, "Session instruction allowlist cannot be empty")}, {6037U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.SessionExpired, "Session has expired")}, {6038U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.SessionInactive, "Session is inactive")}, {6039U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.SessionInstructionNotAllowed, "Instruction is not allowed by session policy")}, {6040U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.SessionSpendCapExceeded, "Session spend cap exceeded")}, {6041U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.SeasonNotEnded, "Season has not ended yet")}, {6042U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.Unauthorized, "Unauthorized: only admin can perform this action")}, {6043U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InsufficientBalance, "Insufficient balance for stake")}, {6044U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.TransferFailed, "Token transfer failed")}, {6045U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.Overflow, "Arithmetic overflow")}, };
+            return new Dictionary<uint, ProgramError<ChaindepthErrorKind>>{{6000U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NotAdjacent, "Invalid move: target room is not adjacent")}, {6001U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.WallNotOpen, "Invalid move: wall is not open")}, {6002U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.WallNotLocked, "Wall is not locked")}, {6003U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.OutOfBounds, "Invalid move: coordinates out of bounds")}, {6004U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidDirection, "Invalid direction: must be 0-3 (N/S/E/W)")}, {6005U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NotRubble, "Wall is not rubble: cannot start job")}, {6006U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.AlreadyJoined, "Already joined this job")}, {6007U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.JobFull, "Job is full: maximum helpers reached")}, {6008U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NotHelper, "Not a helper on this job")}, {6009U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.JobNotReady, "Job not ready: progress insufficient")}, {6010U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NoActiveJob, "No active job at this location")}, {6011U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.JobAlreadyCompleted, "Job has already been completed")}, {6012U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.JobNotCompleted, "Job has not been completed yet")}, {6013U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.TooManyActiveJobs, "Too many active jobs: abandon one first")}, {6014U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InventoryFull, "Inventory is full")}, {6015U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidItemId, "Invalid item id")}, {6016U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidItemAmount, "Invalid item amount")}, {6017U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InsufficientItemAmount, "Not enough items")}, {6018U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.MissingRequiredKey, "Missing required key item")}, {6019U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidLockKind, "Invalid lock kind")}, {6020U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NoChest, "Room has no chest")}, {6021U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.AlreadyLooted, "Already looted this chest")}, {6022U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.TreasuryInsufficientFunds, "Treasury has insufficient SOL to reimburse room rent")}, {6023U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NotInRoom, "Player not in this room")}, {6024U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NotAtEntranceRoom, "Player is not at the entrance room")}, {6025U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.EntranceStairsRequired, "Entrance stairs are required to exit")}, {6026U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.CannotExitWithActiveJobs, "Cannot exit while having active jobs")}, {6027U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NoBoss, "No boss in this room center")}, {6028U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.BossAlreadyDefeated, "Boss is already defeated")}, {6029U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.BossNotDefeated, "Boss has not been defeated yet")}, {6030U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.AlreadyFightingBoss, "Player is already fighting this boss")}, {6031U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.NotBossFighter, "Player is not a fighter for this boss")}, {6032U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.PlayerDead, "Player has no HP and must recover before fighting")}, {6033U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidCenterType, "Invalid center type")}, {6034U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.DisplayNameTooLong, "Display name is too long")}, {6035U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidSessionExpiry, "Invalid session expiry values")}, {6036U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidSessionAllowlist, "Session instruction allowlist cannot be empty")}, {6037U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.SessionExpired, "Session has expired")}, {6038U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.SessionInactive, "Session is inactive")}, {6039U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.SessionInstructionNotAllowed, "Instruction is not allowed by session policy")}, {6040U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.SessionSpendCapExceeded, "Session spend cap exceeded")}, {6041U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.SeasonNotEnded, "Season has not ended yet")}, {6042U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.Unauthorized, "Unauthorized: only admin can perform this action")}, {6043U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InsufficientBalance, "Insufficient balance for stake")}, {6044U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.TransferFailed, "Token transfer failed")}, {6045U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.Overflow, "Arithmetic overflow")}, {6046U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidSeason, "Invalid season for this operation")}, {6047U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidDuelOpponent, "Invalid duel opponent")}, {6048U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidDuelStake, "Invalid duel stake")}, {6049U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidDuelExpiry, "Invalid duel expiry")}, {6050U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.PlayersNotInSameRoom, "Players must be in the same room to duel")}, {6051U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidDuelState, "Invalid duel state transition")}, {6052U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.InvalidDuelEscrow, "Invalid duel escrow account")}, {6053U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.DuelChallengeExpired, "Duel challenge has already expired")}, {6054U, new ProgramError<ChaindepthErrorKind>(ChaindepthErrorKind.DuelChallengeNotExpired, "Duel challenge has not yet expired")}, };
         }
     }
 
@@ -1215,6 +1372,35 @@ namespace Chaindepth
             public PublicKey SessionAuthority { get; set; }
 
             public PublicKey TokenProgram { get; set; } = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+        }
+
+        public class AcceptDuelChallengeAccounts
+        {
+            public PublicKey Opponent { get; set; }
+
+            public PublicKey Challenger { get; set; }
+
+            public PublicKey Global { get; set; }
+
+            public PublicKey DuelChallenge { get; set; }
+
+            public PublicKey DuelEscrow { get; set; }
+
+            public PublicKey ChallengerPlayerAccount { get; set; }
+
+            public PublicKey OpponentPlayerAccount { get; set; }
+
+            public PublicKey ChallengerTokenAccount { get; set; }
+
+            public PublicKey OpponentTokenAccount { get; set; }
+
+            public PublicKey OracleQueue { get; set; } = new PublicKey("Cuj97ggrhhidhbu39TijNVqE74xvKJ69gDervRUXAxGh");
+            public PublicKey TokenProgram { get; set; } = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+            public PublicKey ProgramIdentity { get; set; }
+
+            public PublicKey VrfProgram { get; set; } = new PublicKey("Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz");
+            public PublicKey SlotHashes { get; set; } = new PublicKey("SysvarS1otHashes111111111111111111111111111");
+            public PublicKey SystemProgram { get; set; } = new PublicKey("11111111111111111111111111111111");
         }
 
         public class AddInventoryItemAccounts
@@ -1314,6 +1500,50 @@ namespace Chaindepth
             public PublicKey SystemProgram { get; set; } = new PublicKey("11111111111111111111111111111111");
         }
 
+        public class ConsumeDuelRandomnessAccounts
+        {
+            public PublicKey VrfProgramIdentity { get; set; } = new PublicKey("9irBy75QS2BN81FUgXuHcjqceJJRuc9oDkAe8TKVvvAw");
+            public PublicKey Global { get; set; }
+
+            public PublicKey DuelChallenge { get; set; }
+
+            public PublicKey DuelEscrow { get; set; }
+
+            public PublicKey ChallengerTokenAccount { get; set; }
+
+            public PublicKey OpponentTokenAccount { get; set; }
+
+            public PublicKey TokenProgram { get; set; } = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+        }
+
+        public class CreateDuelChallengeAccounts
+        {
+            public PublicKey Challenger { get; set; }
+
+            public PublicKey Opponent { get; set; }
+
+            public PublicKey Global { get; set; }
+
+            public PublicKey ChallengerPlayerAccount { get; set; }
+
+            public PublicKey OpponentPlayerAccount { get; set; }
+
+            public PublicKey ChallengerProfile { get; set; }
+
+            public PublicKey OpponentProfile { get; set; }
+
+            public PublicKey DuelChallenge { get; set; }
+
+            public PublicKey DuelEscrow { get; set; }
+
+            public PublicKey ChallengerTokenAccount { get; set; }
+
+            public PublicKey SkrMint { get; set; }
+
+            public PublicKey TokenProgram { get; set; } = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+            public PublicKey SystemProgram { get; set; } = new PublicKey("11111111111111111111111111111111");
+        }
+
         public class CreatePlayerProfileAccounts
         {
             public PublicKey Authority { get; set; }
@@ -1333,6 +1563,23 @@ namespace Chaindepth
             public PublicKey SessionAuthority { get; set; }
 
             public PublicKey SystemProgram { get; set; } = new PublicKey("11111111111111111111111111111111");
+        }
+
+        public class DeclineDuelChallengeAccounts
+        {
+            public PublicKey Opponent { get; set; }
+
+            public PublicKey Challenger { get; set; }
+
+            public PublicKey Global { get; set; }
+
+            public PublicKey DuelChallenge { get; set; }
+
+            public PublicKey DuelEscrow { get; set; }
+
+            public PublicKey ChallengerTokenAccount { get; set; }
+
+            public PublicKey TokenProgram { get; set; } = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
         }
 
         public class EndSessionAccounts
@@ -1357,6 +1604,27 @@ namespace Chaindepth
             public PublicKey Global { get; set; }
 
             public PublicKey StartRoom { get; set; }
+
+            public PublicKey SystemProgram { get; set; } = new PublicKey("11111111111111111111111111111111");
+        }
+
+        public class EnterDungeonAccounts
+        {
+            public PublicKey Authority { get; set; }
+
+            public PublicKey Player { get; set; }
+
+            public PublicKey Global { get; set; }
+
+            public PublicKey PlayerAccount { get; set; }
+
+            public PublicKey Profile { get; set; }
+
+            public PublicKey StartRoom { get; set; }
+
+            public PublicKey RoomPresence { get; set; }
+
+            public PublicKey SessionAuthority { get; set; }
 
             public PublicKey SystemProgram { get; set; } = new PublicKey("11111111111111111111111111111111");
         }
@@ -1399,6 +1667,25 @@ namespace Chaindepth
             public PublicKey SessionAuthority { get; set; }
 
             public PublicKey SystemProgram { get; set; } = new PublicKey("11111111111111111111111111111111");
+        }
+
+        public class ExpireDuelChallengeAccounts
+        {
+            public PublicKey Authority { get; set; }
+
+            public PublicKey Challenger { get; set; }
+
+            public PublicKey Opponent { get; set; }
+
+            public PublicKey Global { get; set; }
+
+            public PublicKey DuelChallenge { get; set; }
+
+            public PublicKey DuelEscrow { get; set; }
+
+            public PublicKey ChallengerTokenAccount { get; set; }
+
+            public PublicKey TokenProgram { get; set; } = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
         }
 
         public class ForceExitOnDeathAccounts
@@ -1762,6 +2049,22 @@ namespace Chaindepth
                 return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
             }
 
+            public static Solana.Unity.Rpc.Models.TransactionInstruction AcceptDuelChallenge(AcceptDuelChallengeAccounts accounts, ulong challenge_seed, PublicKey programId = null)
+            {
+                programId ??= new(ID);
+                List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
+                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Opponent, true), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Challenger, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Global, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.DuelChallenge, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.DuelEscrow, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.ChallengerPlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.OpponentPlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.ChallengerTokenAccount, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.OpponentTokenAccount, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.OracleQueue, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.TokenProgram, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.ProgramIdentity, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.VrfProgram, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SlotHashes, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
+                byte[] _data = new byte[1200];
+                int offset = 0;
+                _data.WriteU64(5657644814158671898UL, offset);
+                offset += 8;
+                _data.WriteU64(challenge_seed, offset);
+                offset += 8;
+                byte[] resultData = new byte[offset];
+                Array.Copy(_data, resultData, offset);
+                return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
+            }
+
             public static Solana.Unity.Rpc.Models.TransactionInstruction AddInventoryItem(AddInventoryItemAccounts accounts, ushort item_id, uint amount, ushort durability, PublicKey programId = null)
             {
                 programId ??= new(ID);
@@ -1854,6 +2157,42 @@ namespace Chaindepth
                 return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
             }
 
+            public static Solana.Unity.Rpc.Models.TransactionInstruction ConsumeDuelRandomness(ConsumeDuelRandomnessAccounts accounts, byte[] randomness, PublicKey programId = null)
+            {
+                programId ??= new(ID);
+                List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
+                {Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.VrfProgramIdentity, true), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Global, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.DuelChallenge, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.DuelEscrow, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.ChallengerTokenAccount, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.OpponentTokenAccount, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.TokenProgram, false)};
+                byte[] _data = new byte[1200];
+                int offset = 0;
+                _data.WriteU64(4553619578841933328UL, offset);
+                offset += 8;
+                _data.WriteSpan(randomness, offset);
+                offset += randomness.Length;
+                byte[] resultData = new byte[offset];
+                Array.Copy(_data, resultData, offset);
+                return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
+            }
+
+            public static Solana.Unity.Rpc.Models.TransactionInstruction CreateDuelChallenge(CreateDuelChallengeAccounts accounts, ulong challenge_seed, ulong stake_amount, ulong expires_at_slot, PublicKey programId = null)
+            {
+                programId ??= new(ID);
+                List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
+                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Challenger, true), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Opponent, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Global, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.ChallengerPlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.OpponentPlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.ChallengerProfile, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.OpponentProfile, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.DuelChallenge, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.DuelEscrow, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.ChallengerTokenAccount, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SkrMint, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.TokenProgram, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
+                byte[] _data = new byte[1200];
+                int offset = 0;
+                _data.WriteU64(1820261883948273793UL, offset);
+                offset += 8;
+                _data.WriteU64(challenge_seed, offset);
+                offset += 8;
+                _data.WriteU64(stake_amount, offset);
+                offset += 8;
+                _data.WriteU64(expires_at_slot, offset);
+                offset += 8;
+                byte[] resultData = new byte[offset];
+                Array.Copy(_data, resultData, offset);
+                return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
+            }
+
             public static Solana.Unity.Rpc.Models.TransactionInstruction CreatePlayerProfile(CreatePlayerProfileAccounts accounts, ushort skin_id, string display_name, PublicKey programId = null)
             {
                 programId ??= new(ID);
@@ -1866,6 +2205,22 @@ namespace Chaindepth
                 _data.WriteU16(skin_id, offset);
                 offset += 2;
                 offset += _data.WriteBorshString(display_name, offset);
+                byte[] resultData = new byte[offset];
+                Array.Copy(_data, resultData, offset);
+                return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
+            }
+
+            public static Solana.Unity.Rpc.Models.TransactionInstruction DeclineDuelChallenge(DeclineDuelChallengeAccounts accounts, ulong challenge_seed, PublicKey programId = null)
+            {
+                programId ??= new(ID);
+                List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
+                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Opponent, true), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Challenger, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Global, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.DuelChallenge, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.DuelEscrow, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.ChallengerTokenAccount, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.TokenProgram, false)};
+                byte[] _data = new byte[1200];
+                int offset = 0;
+                _data.WriteU64(17993572088236621907UL, offset);
+                offset += 8;
+                _data.WriteU64(challenge_seed, offset);
+                offset += 8;
                 byte[] resultData = new byte[offset];
                 Array.Copy(_data, resultData, offset);
                 return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
@@ -1899,6 +2254,20 @@ namespace Chaindepth
                 return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
             }
 
+            public static Solana.Unity.Rpc.Models.TransactionInstruction EnterDungeon(EnterDungeonAccounts accounts, PublicKey programId = null)
+            {
+                programId ??= new(ID);
+                List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
+                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Authority, true), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Player, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Global, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.PlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Profile, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.StartRoom, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.RoomPresence, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.SessionAuthority == null ? programId : accounts.SessionAuthority, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
+                byte[] _data = new byte[1200];
+                int offset = 0;
+                _data.WriteU64(16581699431354939603UL, offset);
+                offset += 8;
+                byte[] resultData = new byte[offset];
+                Array.Copy(_data, resultData, offset);
+                return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
+            }
+
             public static Solana.Unity.Rpc.Models.TransactionInstruction EquipItem(EquipItemAccounts accounts, ushort item_id, PublicKey programId = null)
             {
                 programId ??= new(ID);
@@ -1923,6 +2292,22 @@ namespace Chaindepth
                 byte[] _data = new byte[1200];
                 int offset = 0;
                 _data.WriteU64(2950877880480132764UL, offset);
+                offset += 8;
+                byte[] resultData = new byte[offset];
+                Array.Copy(_data, resultData, offset);
+                return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
+            }
+
+            public static Solana.Unity.Rpc.Models.TransactionInstruction ExpireDuelChallenge(ExpireDuelChallengeAccounts accounts, ulong challenge_seed, PublicKey programId = null)
+            {
+                programId ??= new(ID);
+                List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
+                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Authority, true), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Challenger, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Opponent, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Global, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.DuelChallenge, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.DuelEscrow, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.ChallengerTokenAccount, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.TokenProgram, false)};
+                byte[] _data = new byte[1200];
+                int offset = 0;
+                _data.WriteU64(7453064910369947366UL, offset);
+                offset += 8;
+                _data.WriteU64(challenge_seed, offset);
                 offset += 8;
                 byte[] resultData = new byte[offset];
                 Array.Copy(_data, resultData, offset);

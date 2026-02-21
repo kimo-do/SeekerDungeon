@@ -43,7 +43,7 @@
             <ui:Label text="Player Actions" class="section-title" />
             <ui:Label name="player-status" text="Player: Not Initialized" class="info-label" />
             <ui:VisualElement class="button-row">
-                <ui:Button name="btn-init-player" text="Initialize Player" class="button primary" tooltip="Create player account at spawn (5,5)" />
+                <ui:Button name="btn-init-player" text="Initialize Player" class="button primary" tooltip="Create player account at spawn (10,10)" />
             </ui:VisualElement>
         </ui:VisualElement>
         
@@ -61,7 +61,7 @@
                 <ui:VisualElement class="direction-row">
                     <ui:Button name="btn-move-west" text="← West" class="button direction" />
                     <ui:VisualElement class="center-indicator">
-                        <ui:Label name="current-pos" text="(5,5)" class="position-text" />
+                        <ui:Label name="current-pos" text="(10,10)" class="position-text" />
                     </ui:VisualElement>
                     <ui:Button name="btn-move-east" text="East →" class="button direction" />
                 </ui:VisualElement>

@@ -299,13 +299,26 @@ namespace SeekerDungeon.Dungeon
 
         private LGPlayerController _playerController;
         private SpriteRenderer[] _spriteRenderers;
+        private int[] _baseSortingOrders;
         private Tween _spawnTween;
         private Vector3 _baseScale = Vector3.one;
+
+        public string BoundWalletKey { get; private set; }
+        public string BoundDisplayName { get; private set; }
 
         private void Awake()
         {
             _playerController = GetComponent<LGPlayerController>();
             _spriteRenderers = GetComponentsInChildren<SpriteRenderer>(true);
+            if (_spriteRenderers != null && _spriteRenderers.Length > 0)
+            {
+                _baseSortingOrders = new int[_spriteRenderers.Length];
+                for (var index = 0; index < _spriteRenderers.Length; index += 1)
+                {
+                    var spriteRenderer = _spriteRenderers[index];
+                    _baseSortingOrders[index] = spriteRenderer != null ? spriteRenderer.sortingOrder : 0;
+                }
+            }
             _baseScale = transform.localScale;
         }
 
@@ -338,19 +351,27 @@ namespace SeekerDungeon.Dungeon
                 }
             }
 
+            BoundWalletKey = occupant?.WalletKey ?? string.Empty;
+            BoundDisplayName = occupant?.DisplayName ?? string.Empty;
+
             ApplyFacing(facingDirection);
 
             if (_spriteRenderers != null)
             {
-                var sortingOrder = BaseSortingOrder + stackIndex;
-                foreach (var spriteRenderer in _spriteRenderers)
+                var sortingOffset = BaseSortingOrder + stackIndex;
+                for (var index = 0; index < _spriteRenderers.Length; index += 1)
                 {
+                    var spriteRenderer = _spriteRenderers[index];
                     if (spriteRenderer == null)
                     {
                         continue;
                     }
 
-                    spriteRenderer.sortingOrder = sortingOrder;
+                    var baseSortingOrder =
+                        _baseSortingOrders != null && index < _baseSortingOrders.Length
+                            ? _baseSortingOrders[index]
+                            : spriteRenderer.sortingOrder;
+                    spriteRenderer.sortingOrder = baseSortingOrder + sortingOffset;
                 }
             }
 
@@ -378,6 +399,8 @@ namespace SeekerDungeon.Dungeon
         {
             KillSpawnTween();
             transform.localScale = _baseScale;
+            BoundWalletKey = string.Empty;
+            BoundDisplayName = string.Empty;
         }
 
         private void ApplyFacing(OccupantFacingDirection facingDirection)

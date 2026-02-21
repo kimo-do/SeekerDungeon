@@ -31,8 +31,8 @@ describe("chaindepth", () => {
   let playerPda: anchor.web3.PublicKey;
 
   // Constants
-  const START_X = 5;
-  const START_Y = 5;
+  const START_X = 10;
+  const START_Y = 10;
   const DIRECTION_NORTH = 0;
   const DIRECTION_SOUTH = 1;
   const DIRECTION_EAST = 2;

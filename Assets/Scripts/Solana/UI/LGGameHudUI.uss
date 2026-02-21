@@ -455,11 +455,13 @@
 
 .hud-modal-close-button {
     position: absolute;
-    top: 14px;
-    right: 12px;
-    width: 64px;
-    height: 64px;
-    font-size: 34px;
+    top: 10px;
+    right: 8px;
+    width: 92px;
+    height: 92px;
+    min-width: 92px;
+    min-height: 92px;
+    font-size: 44px;
     -unity-font-style: bold;
     color: rgb(232, 239, 252);
     background-color: rgba(0, 0, 0, 0);
@@ -505,6 +507,17 @@
     row-gap: 12px;
 }
 
+.hud-modal-action-row-horizontal {
+    flex-direction: row;
+    column-gap: 14px;
+}
+
+.hud-modal-action-row-horizontal > .hud-modal-button {
+    width: 48%;
+    min-width: 220px;
+    max-width: 320px;
+}
+
 .hud-modal-button {
     width: 520px;
     max-width: 100%;
@@ -533,6 +546,21 @@
 .hud-modal-button-primary {
     background-color: rgba(0, 0, 0, 0);
     color: rgb(255, 236, 172);
+}
+
+.hud-modal-button-secondary-small {
+    min-width: 320px;
+    width: 360px;
+    height: 84px;
+    min-height: 84px;
+    font-size: 24px;
+    padding-bottom: 4px;
+}
+
+.hud-modal-button:disabled {
+    opacity: 0.38;
+    color: rgb(188, 188, 188);
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.35);
 }
 
 .hud-session-fee-card {
@@ -738,4 +766,541 @@
     border-bottom-right-radius: 28px;
     background-color: rgba(122, 255, 164, 0.45);
     opacity: 0;
+}
+
+.hud-duel-inbox-button {
+    min-width: 372px;
+    height: 168px;
+    margin-top: 4px;
+    margin-right: 6px;
+    font-size: 56px;
+    color: rgb(255, 241, 198);
+    -unity-font-style: bold;
+    background-color: rgba(58, 43, 15, 0.82);
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    border-top-width: 2px;
+    border-right-width: 2px;
+    border-bottom-width: 2px;
+    border-left-width: 2px;
+    border-top-color: rgb(233, 192, 105);
+    border-right-color: rgb(233, 192, 105);
+    border-bottom-color: rgb(233, 192, 105);
+    border-left-color: rgb(233, 192, 105);
+}
+
+.hud-duel-inbox-count {
+    position: absolute;
+    right: -8px;
+    top: 264px;
+    min-width: 44px;
+    height: 44px;
+    padding-left: 10px;
+    padding-right: 10px;
+    font-size: 28px;
+    color: rgb(255, 248, 240);
+    -unity-text-align: middle-center;
+    background-color: rgb(194, 45, 45);
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
+}
+
+.hud-duel-incoming-cta-button {
+    min-width: 372px;
+    height: 96px;
+    margin-top: 10px;
+    margin-right: 6px;
+    padding-left: 20px;
+    padding-right: 20px;
+    font-size: 34px;
+    color: rgb(255, 245, 210);
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    white-space: nowrap;
+    text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.9);
+    background-color: rgba(41, 88, 52, 0.95);
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
+    border-top-width: 2px;
+    border-right-width: 2px;
+    border-bottom-width: 2px;
+    border-left-width: 2px;
+    border-top-color: rgb(154, 244, 181);
+    border-right-color: rgb(154, 244, 181);
+    border-bottom-color: rgb(108, 194, 137);
+    border-left-color: rgb(154, 244, 181);
+    opacity: 1;
+}
+
+.hud-duel-incoming-cta-button:active {
+    margin-top: 12px;
+    margin-bottom: -2px;
+}
+
+.hud-duel-card {
+    max-width: 860px;
+}
+
+.hud-duel-breakdown {
+    width: 100%;
+    max-width: 640px;
+    margin-top: 10px;
+    margin-bottom: 2px;
+    padding-top: 8px;
+    padding-right: 14px;
+    padding-bottom: 8px;
+    padding-left: 14px;
+    background-color: rgba(13, 19, 30, 0.52);
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-color: rgba(145, 165, 195, 0.45);
+}
+
+.hud-duel-breakdown-row {
+    width: 100%;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 2px;
+    margin-bottom: 2px;
+}
+
+.hud-duel-breakdown-key {
+    font-size: 26px;
+    color: rgb(205, 218, 240);
+    -unity-text-align: middle-left;
+}
+
+.hud-duel-breakdown-value {
+    font-size: 26px;
+    color: rgb(255, 236, 172);
+    -unity-text-align: middle-right;
+    -unity-font-style: bold;
+}
+
+.hud-duel-icon {
+    width: 72px;
+    height: 72px;
+    margin-bottom: 10px;
+    background-color: rgba(80, 59, 23, 0.82);
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
+    border-top-width: 2px;
+    border-right-width: 2px;
+    border-bottom-width: 2px;
+    border-left-width: 2px;
+    border-top-color: rgb(232, 201, 130);
+    border-right-color: rgb(232, 201, 130);
+    border-bottom-color: rgb(232, 201, 130);
+    border-left-color: rgb(232, 201, 130);
+}
+
+.hud-duel-fee-line {
+    font-size: 24px;
+    color: rgb(195, 203, 224);
+    -unity-text-align: upper-center;
+    white-space: normal;
+    width: 100%;
+    min-width: 0;
+    max-width: 640px;
+    padding-left: 14px;
+    padding-right: 14px;
+    margin-top: 8px;
+    margin-bottom: 8px;
+}
+
+.hud-duel-submit-confirm-card {
+    max-width: 760px;
+}
+
+.hud-duel-inbox-card {
+    width: 94%;
+    max-width: 1320px;
+    min-width: 760px;
+}
+
+.hud-duel-inbox-content {
+    width: 100%;
+    flex-direction: row;
+    column-gap: 22px;
+    align-items: stretch;
+    min-height: 560px;
+}
+
+.hud-duel-inbox-list {
+    flex-basis: 50%;
+    flex-grow: 1;
+    min-height: 520px;
+    max-height: 620px;
+    background-color: rgba(8, 13, 24, 0.55);
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-color: rgba(145, 165, 195, 0.62);
+}
+
+.duel-inbox-row {
+    min-height: 116px;
+    margin-top: 8px;
+    margin-left: 8px;
+    margin-right: 8px;
+    font-size: 22px;
+    color: rgb(228, 234, 247);
+    background-color: rgba(32, 43, 66, 0.82);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    border-top-width: 2px;
+    border-right-width: 2px;
+    border-bottom-width: 2px;
+    border-left-width: 2px;
+    border-color: rgba(144, 161, 197, 0.9);
+    padding: 0;
+}
+
+.duel-row-layout {
+    width: 100%;
+    height: 100%;
+    padding-top: 8px;
+    padding-right: 10px;
+    padding-bottom: 8px;
+    padding-left: 10px;
+    justify-content: center;
+}
+
+.duel-row-top {
+    width: 100%;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.duel-row-status-wrap {
+    flex-direction: column;
+    align-items: flex-end;
+    row-gap: 4px;
+}
+
+.duel-row-name {
+    font-size: 24px;
+    color: rgb(246, 244, 224);
+    -unity-font-style: bold;
+}
+
+.duel-row-bottom {
+    width: 100%;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.duel-row-metrics {
+    font-size: 20px;
+    color: rgb(215, 227, 246);
+    -unity-font-style: bold;
+}
+
+.duel-row-chip {
+    min-width: 124px;
+    height: 36px;
+    padding-left: 10px;
+    padding-right: 10px;
+    font-size: 18px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    color: rgb(241, 245, 255);
+    background-color: rgba(70, 80, 103, 0.9);
+    border-color: rgba(171, 181, 206, 0.9);
+}
+
+.duel-row-chip-open {
+    background-color: rgba(47, 122, 73, 0.95);
+    border-color: rgb(125, 234, 163);
+}
+
+.duel-row-chip-expired {
+    background-color: rgba(144, 80, 31, 0.95);
+    border-color: rgb(255, 181, 121);
+}
+
+.duel-row-chip-win {
+    background-color: rgba(51, 136, 79, 0.95);
+    border-color: rgb(151, 255, 188);
+}
+
+.duel-row-chip-loss {
+    background-color: rgba(153, 64, 62, 0.95);
+    border-color: rgb(255, 159, 159);
+}
+
+.duel-row-chip-draw {
+    background-color: rgba(97, 95, 121, 0.95);
+    border-color: rgb(207, 199, 255);
+}
+
+.duel-row-chip-declined {
+    background-color: rgba(100, 81, 121, 0.95);
+    border-color: rgb(204, 173, 255);
+}
+
+.duel-row-expiry-radial {
+    width: 28px;
+    height: 28px;
+    margin-top: 2px;
+    border-top-left-radius: 14px;
+    border-top-right-radius: 14px;
+    border-bottom-left-radius: 14px;
+    border-bottom-right-radius: 14px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-color: rgba(173, 226, 193, 0.92);
+    background-color: rgba(7, 16, 13, 0.8);
+}
+
+.duel-inbox-row-active {
+    border-top-color: rgb(94, 224, 142);
+    border-right-color: rgb(94, 224, 142);
+    border-bottom-color: rgb(94, 224, 142);
+    border-left-color: rgb(94, 224, 142);
+}
+
+.duel-inbox-row-expired {
+    border-top-color: rgb(235, 142, 76);
+    border-right-color: rgb(235, 142, 76);
+    border-bottom-color: rgb(235, 142, 76);
+    border-left-color: rgb(235, 142, 76);
+}
+
+.duel-inbox-row-terminal {
+    border-top-color: rgba(182, 189, 203, 0.75);
+    border-right-color: rgba(182, 189, 203, 0.75);
+    border-bottom-color: rgba(182, 189, 203, 0.75);
+    border-left-color: rgba(182, 189, 203, 0.75);
+}
+
+.duel-inbox-row-win {
+    border-top-color: rgba(121, 234, 167, 0.95);
+    border-right-color: rgba(121, 234, 167, 0.95);
+    border-bottom-color: rgba(121, 234, 167, 0.95);
+    border-left-color: rgba(121, 234, 167, 0.95);
+}
+
+.duel-inbox-row-loss {
+    border-top-color: rgba(245, 150, 150, 0.95);
+    border-right-color: rgba(245, 150, 150, 0.95);
+    border-bottom-color: rgba(245, 150, 150, 0.95);
+    border-left-color: rgba(245, 150, 150, 0.95);
+}
+
+.duel-inbox-row-draw {
+    border-top-color: rgba(199, 188, 255, 0.95);
+    border-right-color: rgba(199, 188, 255, 0.95);
+    border-bottom-color: rgba(199, 188, 255, 0.95);
+    border-left-color: rgba(199, 188, 255, 0.95);
+}
+
+.duel-inbox-row-selected {
+    background-color: rgba(74, 98, 140, 0.95);
+    border-top-color: rgb(173, 204, 255);
+    border-right-color: rgb(173, 204, 255);
+    border-bottom-color: rgb(173, 204, 255);
+    border-left-color: rgb(173, 204, 255);
+}
+
+.hud-duel-inbox-detail {
+    flex-grow: 1;
+    min-width: 0;
+    padding-top: 16px;
+    padding-right: 16px;
+    padding-bottom: 16px;
+    padding-left: 16px;
+    align-items: center;
+    background-color: rgba(10, 16, 30, 0.62);
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-color: rgba(145, 165, 195, 0.62);
+}
+
+.hud-duel-inbox-detail-title {
+    font-size: 38px;
+    margin-bottom: 0;
+}
+
+.hud-duel-inbox-detail-header {
+    width: 100%;
+    max-width: 620px;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.hud-duel-pill-row {
+    flex-direction: row;
+    column-gap: 10px;
+    margin-bottom: 12px;
+}
+
+.hud-duel-pill {
+    min-width: 148px;
+    height: 40px;
+    padding-left: 12px;
+    padding-right: 12px;
+    font-size: 20px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    color: rgb(245, 247, 255);
+}
+
+.hud-duel-pill-neutral {
+    background-color: rgba(74, 79, 95, 0.95);
+    border-color: rgba(181, 188, 206, 0.95);
+}
+
+.hud-duel-pill-open {
+    background-color: rgba(49, 128, 77, 0.95);
+    border-color: rgb(140, 245, 175);
+}
+
+.hud-duel-pill-expired {
+    background-color: rgba(152, 83, 40, 0.95);
+    border-color: rgb(255, 184, 131);
+}
+
+.hud-duel-pill-win {
+    background-color: rgba(56, 144, 87, 0.95);
+    border-color: rgb(161, 255, 196);
+}
+
+.hud-duel-pill-loss {
+    background-color: rgba(162, 63, 63, 0.95);
+    border-color: rgb(255, 165, 165);
+}
+
+.hud-duel-pill-draw {
+    background-color: rgba(97, 95, 121, 0.95);
+    border-color: rgb(207, 199, 255);
+}
+
+.hud-duel-pill-hidden {
+    display: none;
+}
+
+.hud-duel-stat-grid {
+    width: 100%;
+    max-width: 620px;
+    row-gap: 10px;
+    margin-bottom: 10px;
+}
+
+.hud-duel-stat-card {
+    width: 100%;
+    min-height: 78px;
+    padding-top: 8px;
+    padding-right: 12px;
+    padding-bottom: 8px;
+    padding-left: 12px;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(22, 29, 45, 0.85);
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-color: rgba(150, 170, 207, 0.62);
+}
+
+.hud-duel-stat-key {
+    font-size: 16px;
+    color: rgb(177, 194, 220);
+    -unity-font-style: bold;
+    margin-bottom: 2px;
+}
+
+.hud-duel-stat-value {
+    font-size: 30px;
+    color: rgb(250, 236, 171);
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+}
+
+.hud-duel-disclaimer {
+    width: 100%;
+    max-width: 620px;
+    margin-top: 8px;
+    margin-bottom: 8px;
+    font-size: 20px;
+    color: rgb(195, 203, 224);
+    white-space: normal;
+    -unity-text-align: upper-center;
+}
+
+.hud-duel-expiry-radial-large {
+    width: 72px;
+    height: 72px;
+    margin-top: 0;
+    margin-bottom: 0;
+    border-top-left-radius: 36px;
+    border-top-right-radius: 36px;
+    border-bottom-left-radius: 36px;
+    border-bottom-right-radius: 36px;
+    border-top-width: 2px;
+    border-right-width: 2px;
+    border-bottom-width: 2px;
+    border-left-width: 2px;
+    border-color: rgba(173, 226, 193, 0.95);
+    background-color: rgba(7, 16, 13, 0.82);
+}
+
+.hud-duel-result-card {
+    max-width: 620px;
 }

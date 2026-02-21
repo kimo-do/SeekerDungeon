@@ -13,8 +13,8 @@ export const MIN_SOL_BALANCE_LAMPORTS = 500_000_000n; // 0.5 SOL
 export const AIRDROP_AMOUNT_LAMPORTS = 2_000_000_000n; // 2 SOL
 
 // Game configuration
-export const START_X = 5;
-export const START_Y = 5;
+export const START_X = 10;
+export const START_Y = 10;
 export const INITIAL_PRIZE_POOL_AMOUNT = 100 * SKR_MULTIPLIER; // 100 SKR
 export const DEFAULT_MINT_AMOUNT = 1000 * SKR_MULTIPLIER; // 1000 SKR
 export const DEFAULT_TEST_MINT_AMOUNT = 10 * SKR_MULTIPLIER; // 10 SKR

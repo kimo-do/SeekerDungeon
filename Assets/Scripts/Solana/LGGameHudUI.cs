@@ -24,6 +24,8 @@ namespace SeekerDungeon.Solana
         private const int FallbackVisibleSlotLimit = 6;
         private static readonly double[] SolTopUpPresetValues = { 0.05d, 0.1d, 0.5d, 1d };
         private static readonly int[] SkrTopUpPresetValues = { 1, 5, 20, 50 };
+        private static readonly int[] DuelStakePresetValues = { 1, 5, 20, 50 };
+        private const double PlannedDuelFeeBps = 200d;
 
         [Header("References")]
         [SerializeField] private LGManager manager;
@@ -46,6 +48,10 @@ namespace SeekerDungeon.Solana
         /// Listeners should open the full inventory panel.
         /// </summary>
         public event Action OnBagClicked;
+        public event Action<PublicKey, ulong> OnDuelChallengeRequested;
+        public event Action<PublicKey> OnDuelAcceptRequested;
+        public event Action<PublicKey> OnDuelDeclineRequested;
+        public event Action<PublicKey> OnDuelClaimExpiredRequested;
 
         private UIDocument _document;
         private Label _solBalanceLabel;
@@ -83,6 +89,48 @@ namespace SeekerDungeon.Solana
         private TextField _sessionFeeSkrCustomInput;
         private readonly List<Button> _sessionFeeSolPresetButtons = new();
         private readonly List<Button> _sessionFeeSkrPresetButtons = new();
+        private VisualElement _duelChallengeOverlay;
+        private VisualElement _duelChallengeCard;
+        private Label _duelChallengeSubtitle;
+        private Label _duelBreakdownStakeValue;
+        private Label _duelBreakdownTaxValue;
+        private Label _duelBreakdownWinnerValue;
+        private Label _duelChallengeFeeLine;
+        private Button _duelChallengeConfirmButton;
+        private Button _duelChallengeCancelButton;
+        private VisualElement _duelSubmitConfirmOverlay;
+        private VisualElement _duelSubmitConfirmCard;
+        private Label _duelSubmitConfirmMessageLabel;
+        private Button _duelSubmitConfirmCloseButton;
+        private Button _duelSubmitConfirmCancelButton;
+        private Button _duelSubmitConfirmConfirmButton;
+        private readonly List<Button> _duelStakePresetButtons = new();
+        private Button _duelInboxButton;
+        private Button _duelIncomingCtaButton;
+        private Label _duelInboxCountLabel;
+        private VisualElement _duelInboxOverlay;
+        private VisualElement _duelInboxCard;
+        private ScrollView _duelInboxList;
+        private Label _duelInboxDetailTitle;
+        private Label _duelInboxDetailStatusPill;
+        private Label _duelInboxDetailResultPill;
+        private Label _duelInboxDetailPlayerValue;
+        private Label _duelInboxDetailStakeValue;
+        private Label _duelInboxDetailWinnerValue;
+        private VisualElement _duelInboxDetailExpiryRadial;
+        private Label _duelInboxDetailFee;
+        private Button _duelInboxAcceptButton;
+        private Button _duelInboxDeclineButton;
+        private Button _duelInboxClaimExpiredButton;
+        private Button _duelInboxCloseButton;
+        private VisualElement _duelResultOverlay;
+        private VisualElement _duelResultCard;
+        private Label _duelResultTitle;
+        private Label _duelResultMessage;
+        private Button _duelResultDismissButton;
+        private readonly List<DuelChallengeView> _duelInboxItems = new();
+        private readonly Dictionary<Button, DuelChallengeView> _duelInboxRows = new();
+        private ulong? _duelInboxCurrentSlot;
         private UniTaskCompletionSource<bool> _exitConfirmTcs;
         private VisualElement _root;
         private TxIndicatorVisualController _txIndicatorController;
@@ -97,6 +145,43 @@ namespace SeekerDungeon.Solana
         private bool _isSkrCustomSelected;
         private double _selectedSolTopUp = SolTopUpPresetValues[0];
         private int _selectedSkrTopUp = SkrTopUpPresetValues[0];
+        private int _selectedDuelStakeSkr = DuelStakePresetValues[0];
+        private PublicKey _selectedDuelTarget;
+        private string _selectedDuelTargetDisplayName = string.Empty;
+        private DuelChallengeView _selectedDuelInboxItem;
+        private PublicKey _localWalletForDuelInbox;
+        private string _duelIncomingCtaChallengePdaKey = string.Empty;
+        private float _duelSlotSampleRealtime;
+        private float _lastDuelExpiryVisualRefreshRealtime;
+        private const string DuelInboxRowClass = "duel-inbox-row";
+        private const string DuelInboxRowActiveClass = "duel-inbox-row-active";
+        private const string DuelInboxRowExpiredClass = "duel-inbox-row-expired";
+        private const string DuelInboxRowTerminalClass = "duel-inbox-row-terminal";
+        private const string DuelInboxRowWinClass = "duel-inbox-row-win";
+        private const string DuelInboxRowLossClass = "duel-inbox-row-loss";
+        private const string DuelInboxRowDrawClass = "duel-inbox-row-draw";
+        private const string DuelInboxRowSelectedClass = "duel-inbox-row-selected";
+        private const string DuelRowChipClass = "duel-row-chip";
+        private const string DuelRowChipOpenClass = "duel-row-chip-open";
+        private const string DuelRowChipExpiredClass = "duel-row-chip-expired";
+        private const string DuelRowChipWinClass = "duel-row-chip-win";
+        private const string DuelRowChipLossClass = "duel-row-chip-loss";
+        private const string DuelRowChipDrawClass = "duel-row-chip-draw";
+        private const string DuelRowChipDeclinedClass = "duel-row-chip-declined";
+        private const string DuelPillNeutralClass = "hud-duel-pill-neutral";
+        private const string DuelPillOpenClass = "hud-duel-pill-open";
+        private const string DuelPillExpiredClass = "hud-duel-pill-expired";
+        private const string DuelPillWinClass = "hud-duel-pill-win";
+        private const string DuelPillLossClass = "hud-duel-pill-loss";
+        private const string DuelPillDrawClass = "hud-duel-pill-draw";
+        private const string DuelPillHiddenClass = "hud-duel-pill-hidden";
+        private sealed class DuelExpiryRadialState
+        {
+            public float Progress;
+            public Color FillColor;
+            public Color TrackColor;
+            public Color CenterColor;
+        }
 
         private bool _isLoadingScene;
 
@@ -133,6 +218,11 @@ namespace SeekerDungeon.Solana
 
         private void OnEnable()
         {
+            if (FindFirstObjectByType<DuelCoordinator>() == null)
+            {
+                gameObject.AddComponent<DuelCoordinator>();
+            }
+
             _root = _document?.rootVisualElement;
             if (_root == null)
             {
@@ -171,12 +261,55 @@ namespace SeekerDungeon.Solana
             _sessionFeeSkrCustomButton = _root.Q<Button>("btn-session-skr-custom");
             _sessionFeeSolCustomInput = _root.Q<TextField>("session-sol-custom-input");
             _sessionFeeSkrCustomInput = _root.Q<TextField>("session-skr-custom-input");
+            _duelInboxButton = _root.Q<Button>("btn-duel-inbox");
+            _duelIncomingCtaButton = _root.Q<Button>("btn-duel-incoming-cta");
+            _duelInboxCountLabel = _root.Q<Label>("duel-inbox-count");
+            _duelChallengeOverlay = _root.Q<VisualElement>("duel-challenge-overlay");
+            _duelChallengeCard = _root.Q<VisualElement>("duel-challenge-card");
+            _duelChallengeSubtitle = _root.Q<Label>("duel-challenge-subtitle");
+            _duelBreakdownStakeValue = _root.Q<Label>("duel-breakdown-stake");
+            _duelBreakdownTaxValue = _root.Q<Label>("duel-breakdown-tax");
+            _duelBreakdownWinnerValue = _root.Q<Label>("duel-breakdown-winner");
+            _duelChallengeFeeLine = _root.Q<Label>("duel-challenge-fee-line");
+            _duelChallengeConfirmButton = _root.Q<Button>("btn-duel-challenge-confirm");
+            _duelChallengeCancelButton = _root.Q<Button>("btn-duel-challenge-cancel");
+            _duelSubmitConfirmOverlay = _root.Q<VisualElement>("duel-submit-confirm-overlay");
+            _duelSubmitConfirmCard = _root.Q<VisualElement>("duel-submit-confirm-card");
+            _duelSubmitConfirmMessageLabel = _root.Q<Label>("duel-submit-confirm-message");
+            _duelSubmitConfirmCloseButton = _root.Q<Button>("btn-duel-submit-confirm-close");
+            _duelSubmitConfirmCancelButton = _root.Q<Button>("btn-duel-submit-cancel");
+            _duelSubmitConfirmConfirmButton = _root.Q<Button>("btn-duel-submit-confirm");
+            _duelInboxOverlay = _root.Q<VisualElement>("duel-inbox-overlay");
+            _duelInboxCard = _root.Q<VisualElement>("duel-inbox-card");
+            _duelInboxList = _root.Q<ScrollView>("duel-inbox-list");
+            _duelInboxDetailTitle = _root.Q<Label>("duel-inbox-detail-title");
+            _duelInboxDetailStatusPill = _root.Q<Label>("duel-inbox-detail-status-pill");
+            _duelInboxDetailResultPill = _root.Q<Label>("duel-inbox-detail-result-pill");
+            _duelInboxDetailPlayerValue = _root.Q<Label>("duel-inbox-detail-player-value");
+            _duelInboxDetailStakeValue = _root.Q<Label>("duel-inbox-detail-stake-value");
+            _duelInboxDetailWinnerValue = _root.Q<Label>("duel-inbox-detail-winner-value");
+            _duelInboxDetailExpiryRadial = _root.Q<VisualElement>("duel-inbox-detail-expiry-radial");
+            _duelInboxDetailFee = _root.Q<Label>("duel-inbox-detail-fee");
+            _duelInboxAcceptButton = _root.Q<Button>("btn-duel-inbox-accept");
+            _duelInboxDeclineButton = _root.Q<Button>("btn-duel-inbox-decline");
+            _duelInboxClaimExpiredButton = _root.Q<Button>("btn-duel-inbox-claim-expired");
+            _duelInboxCloseButton = _root.Q<Button>("btn-duel-inbox-close");
+            _duelResultOverlay = _root.Q<VisualElement>("duel-result-overlay");
+            _duelResultCard = _root.Q<VisualElement>("duel-result-card");
+            _duelResultTitle = _root.Q<Label>("duel-result-title");
+            _duelResultMessage = _root.Q<Label>("duel-result-message");
+            _duelResultDismissButton = _root.Q<Button>("btn-duel-result-dismiss");
             HideExitConfirmModal();
             HideSessionFeeModal();
+            HideDuelChallengeModal();
+            HideDuelSubmitConfirmModal();
+            HideDuelInboxModal();
+            HideDuelResultModal();
             HideItemTooltip();
             CacheTooltipDefaultStyles();
             ResolveHotbarGlowSpriteIfMissing();
             InitializeSessionFeeModalUi();
+            InitializeDuelUi();
 
             SetLabel(_networkLabel, "DEVNET");
 
@@ -208,6 +341,14 @@ namespace SeekerDungeon.Solana
             if (_sessionFeeCloseButton != null)
             {
                 _sessionFeeCloseButton.clicked += HandleSessionFeeCloseClicked;
+            }
+            if (_duelInboxButton != null)
+            {
+                _duelInboxButton.clicked += HandleDuelInboxOpenClicked;
+            }
+            if (_duelIncomingCtaButton != null)
+            {
+                _duelIncomingCtaButton.clicked += HandleDuelIncomingCtaClicked;
             }
             if (_root != null)
             {
@@ -273,6 +414,15 @@ namespace SeekerDungeon.Solana
             {
                 _sessionFeeCloseButton.clicked -= HandleSessionFeeCloseClicked;
             }
+            if (_duelInboxButton != null)
+            {
+                _duelInboxButton.clicked -= HandleDuelInboxOpenClicked;
+            }
+            if (_duelIncomingCtaButton != null)
+            {
+                _duelIncomingCtaButton.clicked -= HandleDuelIncomingCtaClicked;
+            }
+            UnbindDuelUiHandlers();
             UnbindSessionFeePresetHandlers();
             if (_root != null)
             {
@@ -305,6 +455,8 @@ namespace SeekerDungeon.Solana
             HideExitConfirmModal();
             HideSessionFeeModal();
             HideItemTooltip();
+            HideDuelSubmitConfirmModal();
+            HideDuelResultModal();
             _exitConfirmTcs?.TrySetResult(false);
             _exitConfirmTcs = null;
         }
@@ -313,6 +465,11 @@ namespace SeekerDungeon.Solana
         {
             _txIndicatorController?.Tick(Time.unscaledDeltaTime);
             _centerToastController?.Tick(Time.unscaledDeltaTime);
+            if (Time.realtimeSinceStartup - _lastDuelExpiryVisualRefreshRealtime >= 0.12f)
+            {
+                _lastDuelExpiryVisualRefreshRealtime = Time.realtimeSinceStartup;
+                RefreshDuelExpiryVisuals();
+            }
         }
 
         public void ShowCenterToast(string message, float holdSeconds = 1.5f)
@@ -612,6 +769,1179 @@ namespace SeekerDungeon.Solana
         private void HandleSessionFeeFundingRequired(string message)
         {
             ShowSessionFeeModal(message);
+        }
+
+        private void InitializeDuelUi()
+        {
+            _duelStakePresetButtons.Clear();
+            BindDuelStakePresetButton("btn-duel-stake-1", DuelStakePresetValues[0]);
+            BindDuelStakePresetButton("btn-duel-stake-5", DuelStakePresetValues[1]);
+            BindDuelStakePresetButton("btn-duel-stake-20", DuelStakePresetValues[2]);
+            BindDuelStakePresetButton("btn-duel-stake-50", DuelStakePresetValues[3]);
+
+            if (_duelChallengeConfirmButton != null)
+            {
+                _duelChallengeConfirmButton.clicked += HandleDuelChallengeConfirmClicked;
+            }
+
+            if (_duelChallengeCancelButton != null)
+            {
+                _duelChallengeCancelButton.clicked += HandleDuelChallengeCancelClicked;
+            }
+
+            if (_duelSubmitConfirmCloseButton != null)
+            {
+                _duelSubmitConfirmCloseButton.clicked += HandleDuelSubmitConfirmCancelClicked;
+            }
+
+            if (_duelSubmitConfirmCancelButton != null)
+            {
+                _duelSubmitConfirmCancelButton.clicked += HandleDuelSubmitConfirmCancelClicked;
+            }
+
+            if (_duelSubmitConfirmConfirmButton != null)
+            {
+                _duelSubmitConfirmConfirmButton.clicked += HandleDuelSubmitConfirmConfirmedClicked;
+            }
+
+            if (_duelInboxCloseButton != null)
+            {
+                _duelInboxCloseButton.clicked += HandleDuelInboxCloseClicked;
+            }
+
+            if (_duelInboxAcceptButton != null)
+            {
+                _duelInboxAcceptButton.clicked += HandleDuelInboxAcceptClicked;
+            }
+
+            if (_duelInboxDeclineButton != null)
+            {
+                _duelInboxDeclineButton.clicked += HandleDuelInboxDeclineClicked;
+            }
+
+            if (_duelInboxClaimExpiredButton != null)
+            {
+                _duelInboxClaimExpiredButton.clicked += HandleDuelInboxClaimExpiredClicked;
+            }
+            if (_duelResultDismissButton != null)
+            {
+                _duelResultDismissButton.clicked += HandleDuelResultDismissClicked;
+            }
+
+            RefreshDuelSelectionStyles();
+            RefreshDuelInboxCountLabel();
+            RefreshDuelInboxDetail();
+        }
+
+        private void UnbindDuelUiHandlers()
+        {
+            for (var i = 0; i < _duelStakePresetButtons.Count; i += 1)
+            {
+                var button = _duelStakePresetButtons[i];
+                button?.UnregisterCallback<ClickEvent>(HandleDuelStakePresetClicked);
+            }
+
+            if (_duelChallengeConfirmButton != null)
+            {
+                _duelChallengeConfirmButton.clicked -= HandleDuelChallengeConfirmClicked;
+            }
+
+            if (_duelChallengeCancelButton != null)
+            {
+                _duelChallengeCancelButton.clicked -= HandleDuelChallengeCancelClicked;
+            }
+
+            if (_duelSubmitConfirmCloseButton != null)
+            {
+                _duelSubmitConfirmCloseButton.clicked -= HandleDuelSubmitConfirmCancelClicked;
+            }
+
+            if (_duelSubmitConfirmCancelButton != null)
+            {
+                _duelSubmitConfirmCancelButton.clicked -= HandleDuelSubmitConfirmCancelClicked;
+            }
+
+            if (_duelSubmitConfirmConfirmButton != null)
+            {
+                _duelSubmitConfirmConfirmButton.clicked -= HandleDuelSubmitConfirmConfirmedClicked;
+            }
+
+            if (_duelInboxCloseButton != null)
+            {
+                _duelInboxCloseButton.clicked -= HandleDuelInboxCloseClicked;
+            }
+
+            if (_duelInboxAcceptButton != null)
+            {
+                _duelInboxAcceptButton.clicked -= HandleDuelInboxAcceptClicked;
+            }
+
+            if (_duelInboxDeclineButton != null)
+            {
+                _duelInboxDeclineButton.clicked -= HandleDuelInboxDeclineClicked;
+            }
+
+            if (_duelInboxClaimExpiredButton != null)
+            {
+                _duelInboxClaimExpiredButton.clicked -= HandleDuelInboxClaimExpiredClicked;
+            }
+            if (_duelResultDismissButton != null)
+            {
+                _duelResultDismissButton.clicked -= HandleDuelResultDismissClicked;
+            }
+        }
+
+        private void BindDuelStakePresetButton(string buttonName, int stakeSkr)
+        {
+            var button = _root?.Q<Button>(buttonName);
+            if (button == null)
+            {
+                return;
+            }
+
+            button.userData = stakeSkr;
+            _duelStakePresetButtons.Add(button);
+            button.RegisterCallback<ClickEvent>(HandleDuelStakePresetClicked);
+        }
+
+        public void OpenDuelChallengeForTarget(string walletKey, string displayName, PublicKey targetWallet)
+        {
+            if (targetWallet == null)
+            {
+                return;
+            }
+
+            _selectedDuelTarget = targetWallet;
+            _selectedDuelTargetDisplayName = string.IsNullOrWhiteSpace(displayName)
+                ? ShortWallet(walletKey)
+                : displayName.Trim();
+            if (string.IsNullOrWhiteSpace(_selectedDuelTargetDisplayName))
+            {
+                _selectedDuelTargetDisplayName = ShortWallet(targetWallet.Key);
+            }
+
+            if (_duelChallengeSubtitle != null)
+            {
+                _duelChallengeSubtitle.text = $"Challenge {_selectedDuelTargetDisplayName}";
+            }
+
+            RefreshDuelSelectionStyles();
+            SetOverlayVisible(_duelChallengeOverlay, _duelChallengeCard, true);
+        }
+
+        public void UpdateDuelInbox(IReadOnlyList<DuelChallengeView> items, PublicKey localWallet, ulong? currentSlot = null)
+        {
+            _localWalletForDuelInbox = localWallet;
+            _duelInboxCurrentSlot = currentSlot;
+            if (_duelInboxCurrentSlot.HasValue)
+            {
+                _duelSlotSampleRealtime = Time.realtimeSinceStartup;
+            }
+
+            SetDuelInboxItems(items);
+        }
+
+        public void SetDuelActionBusy(bool isBusy)
+        {
+            _duelChallengeConfirmButton?.SetEnabled(!isBusy);
+            _duelChallengeCancelButton?.SetEnabled(!isBusy);
+            _duelSubmitConfirmCloseButton?.SetEnabled(!isBusy);
+            _duelSubmitConfirmCancelButton?.SetEnabled(!isBusy);
+            _duelSubmitConfirmConfirmButton?.SetEnabled(!isBusy);
+            _duelInboxAcceptButton?.SetEnabled(!isBusy && _selectedDuelInboxItem != null);
+            _duelInboxDeclineButton?.SetEnabled(!isBusy && _selectedDuelInboxItem != null);
+            _duelInboxClaimExpiredButton?.SetEnabled(!isBusy && _selectedDuelInboxItem != null);
+            _duelInboxCloseButton?.SetEnabled(!isBusy);
+            _duelIncomingCtaButton?.SetEnabled(!isBusy && _duelIncomingCtaButton.resolvedStyle.display == DisplayStyle.Flex);
+        }
+
+        private void SetDuelInboxItems(IReadOnlyList<DuelChallengeView> items)
+        {
+            _duelInboxItems.Clear();
+            if (items != null)
+            {
+                for (var i = 0; i < items.Count; i += 1)
+                {
+                    var challenge = items[i];
+                    if (challenge == null)
+                    {
+                        continue;
+                    }
+
+                    _duelInboxItems.Add(challenge);
+                }
+            }
+
+            if (_duelInboxList != null)
+            {
+                _duelInboxList.Clear();
+            }
+
+            _duelInboxRows.Clear();
+            for (var i = 0; i < _duelInboxItems.Count; i += 1)
+            {
+                var challenge = _duelInboxItems[i];
+                var rowButton = new Button { name = $"duel-inbox-row-{i}" };
+                rowButton.AddToClassList(DuelInboxRowClass);
+                BuildDuelInboxRowVisual(rowButton, challenge);
+                rowButton.clicked += () => SelectDuelInboxItem(challenge);
+                _duelInboxRows[rowButton] = challenge;
+                _duelInboxList?.Add(rowButton);
+            }
+
+            if (_selectedDuelInboxItem == null || !_duelInboxItems.Any(item => item.Pda?.Key == _selectedDuelInboxItem.Pda?.Key))
+            {
+                _selectedDuelInboxItem = _duelInboxItems.Count > 0 ? _duelInboxItems[0] : null;
+            }
+            else
+            {
+                _selectedDuelInboxItem = _duelInboxItems.FirstOrDefault(item => item.Pda?.Key == _selectedDuelInboxItem.Pda?.Key);
+            }
+
+            RefreshDuelInboxRowVisualState();
+            RefreshDuelInboxCountLabel();
+            RefreshIncomingDuelRequestButton();
+            RefreshDuelInboxDetail();
+        }
+
+        private void BuildDuelInboxRowVisual(Button rowButton, DuelChallengeView challenge)
+        {
+            if (rowButton == null || challenge == null)
+            {
+                return;
+            }
+
+            rowButton.Clear();
+            var incoming = _localWalletForDuelInbox != null && challenge.IsIncomingFor(_localWalletForDuelInbox);
+            var otherName = GetDuelDisplayNameForChallenge(challenge, incoming);
+            var stake = challenge.StakeRaw / (double)LGConfig.SKR_MULTIPLIER;
+            var winnerPayout = stake * 2d * (1d - (PlannedDuelFeeBps / 10_000d));
+
+            var layout = new VisualElement();
+            layout.AddToClassList("duel-row-layout");
+
+            var top = new VisualElement();
+            top.AddToClassList("duel-row-top");
+            var nameLabel = new Label(incoming ? $"From {otherName}" : $"Vs {otherName}");
+            nameLabel.AddToClassList("duel-row-name");
+            top.Add(nameLabel);
+
+            var statusChip = new Label(GetStatusChipText(challenge));
+            statusChip.AddToClassList(DuelRowChipClass);
+            AddStatusChipClass(statusChip, challenge);
+            var statusWrap = new VisualElement();
+            statusWrap.AddToClassList("duel-row-status-wrap");
+            statusWrap.Add(statusChip);
+            if (incoming &&
+                challenge.IsOpenLike &&
+                !IsChallengeExpiredOpen(challenge) &&
+                TryGetExpiryProgress(challenge, out var rowProgress))
+            {
+                var expiryRadial = new VisualElement();
+                expiryRadial.AddToClassList("duel-row-expiry-radial");
+                ApplyExpiryRadialState(expiryRadial, rowProgress);
+                statusWrap.Add(expiryRadial);
+            }
+
+            top.Add(statusWrap);
+
+            var bottom = new VisualElement();
+            bottom.AddToClassList("duel-row-bottom");
+            var metricLabel = new Label($"Stake {stake:F3} SKR");
+            metricLabel.AddToClassList("duel-row-metrics");
+            bottom.Add(metricLabel);
+            var payoutLabel = new Label(BuildDuelSidebarPayoutText(challenge, winnerPayout));
+            payoutLabel.AddToClassList("duel-row-metrics");
+            bottom.Add(payoutLabel);
+
+            layout.Add(top);
+            layout.Add(bottom);
+            rowButton.Add(layout);
+        }
+
+        private void HandleDuelStakePresetClicked(ClickEvent clickEvent)
+        {
+            if (clickEvent.currentTarget is not Button button || button.userData is not int stake)
+            {
+                return;
+            }
+
+            _selectedDuelStakeSkr = Mathf.Max(1, stake);
+            RefreshDuelSelectionStyles();
+        }
+
+        private void RefreshDuelSelectionStyles()
+        {
+            for (var i = 0; i < _duelStakePresetButtons.Count; i += 1)
+            {
+                var button = _duelStakePresetButtons[i];
+                if (button == null || button.userData is not int stake)
+                {
+                    continue;
+                }
+
+                SetSelectedClass(button, stake == _selectedDuelStakeSkr);
+            }
+
+            var winnerPayoutSkr = (_selectedDuelStakeSkr * 2d) * (1d - (PlannedDuelFeeBps / 10_000d));
+            var stakeSkr = _selectedDuelStakeSkr;
+            var taxSkr = (stakeSkr * 2d) * (PlannedDuelFeeBps / 10_000d);
+            SetLabel(_duelBreakdownStakeValue, $"{FormatSkrAmount(stakeSkr)} SKR");
+            SetLabel(_duelBreakdownTaxValue, $"{FormatSkrAmount(taxSkr)} SKR");
+            SetLabel(_duelBreakdownWinnerValue, $"{FormatSkrAmount(winnerPayoutSkr)} SKR");
+            if (_duelChallengeFeeLine != null)
+            {
+                _duelChallengeFeeLine.text = "Draw refunds both players.";
+            }
+
+            if (_duelChallengeConfirmButton != null)
+            {
+                var canCreate = !HasOpenOutgoingDuel();
+                _duelChallengeConfirmButton.SetEnabled(canCreate);
+                if (!canCreate && _duelChallengeFeeLine != null)
+                {
+                    _duelChallengeFeeLine.text =
+                        "You already have an outgoing duel request. Resolve or expire it before sending a new one.";
+                }
+            }
+        }
+
+        private void HandleDuelChallengeConfirmClicked()
+        {
+            if (_selectedDuelTarget == null)
+            {
+                return;
+            }
+
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Primary);
+            ShowDuelSubmitConfirmModal();
+        }
+
+        private void HandleDuelChallengeCancelClicked()
+        {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Secondary);
+            HideDuelChallengeModal();
+        }
+
+        private void ShowDuelSubmitConfirmModal()
+        {
+            var stakeSkr = _selectedDuelStakeSkr;
+            SetLabel(
+                _duelSubmitConfirmMessageLabel,
+                $"You are about to stake {FormatSkrAmount(stakeSkr)} SKR in a random duel.\nThis can potentially be lost and not retrieved.");
+            SetOverlayVisible(_duelSubmitConfirmOverlay, _duelSubmitConfirmCard, true);
+        }
+
+        private void HideDuelSubmitConfirmModal()
+        {
+            SetOverlayVisible(_duelSubmitConfirmOverlay, _duelSubmitConfirmCard, false);
+        }
+
+        private void HandleDuelSubmitConfirmCancelClicked()
+        {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Secondary);
+            HideDuelSubmitConfirmModal();
+        }
+
+        private void HandleDuelSubmitConfirmConfirmedClicked()
+        {
+            if (_selectedDuelTarget == null)
+            {
+                return;
+            }
+
+            // Prevent accidental double-submit from rapid taps on mobile.
+            _duelSubmitConfirmConfirmButton?.SetEnabled(false);
+            _duelSubmitConfirmCancelButton?.SetEnabled(false);
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Confirm);
+            var stakeRaw = (ulong)_selectedDuelStakeSkr * LGConfig.SKR_MULTIPLIER;
+            OnDuelChallengeRequested?.Invoke(_selectedDuelTarget, stakeRaw);
+            HideDuelSubmitConfirmModal();
+            HideDuelChallengeModal();
+        }
+
+        private void HandleDuelInboxOpenClicked()
+        {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Nav);
+            SetOverlayVisible(_duelInboxOverlay, _duelInboxCard, true);
+            RefreshDuelInboxDetail();
+        }
+
+        private void HandleDuelIncomingCtaClicked()
+        {
+            var incomingChallenge = GetPrimaryIncomingOpenChallenge();
+            if (incomingChallenge == null)
+            {
+                HandleDuelInboxOpenClicked();
+                return;
+            }
+
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Nav);
+            _selectedDuelInboxItem = incomingChallenge;
+            SetOverlayVisible(_duelInboxOverlay, _duelInboxCard, true);
+            RefreshDuelInboxRowVisualState();
+            RefreshDuelInboxDetail();
+        }
+
+        private void HandleDuelInboxCloseClicked()
+        {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Secondary);
+            HideDuelInboxModal();
+        }
+
+        private void SelectDuelInboxItem(DuelChallengeView challenge)
+        {
+            _selectedDuelInboxItem = challenge;
+            RefreshDuelInboxRowVisualState();
+            RefreshDuelInboxDetail();
+        }
+
+        private void RefreshDuelInboxDetail()
+        {
+            if (_selectedDuelInboxItem == null)
+            {
+                SetDetailStatusPillVisible(true);
+                SetLabel(_duelInboxDetailTitle, "DUELS");
+                SetLabel(_duelInboxDetailPlayerValue, "-");
+                SetLabel(_duelInboxDetailStakeValue, "- SKR");
+                SetLabel(_duelInboxDetailWinnerValue, "- SKR");
+                SetDetailStatusPill("NO REQUEST", DuelPillNeutralClass);
+                SetDetailResultPill(string.Empty, string.Empty);
+                if (_duelInboxDetailExpiryRadial != null)
+                {
+                    _duelInboxDetailExpiryRadial.style.display = DisplayStyle.None;
+                }
+                SetLabel(_duelInboxDetailFee, string.Empty);
+                _duelInboxAcceptButton?.SetEnabled(false);
+                _duelInboxDeclineButton?.SetEnabled(false);
+                _duelInboxClaimExpiredButton?.SetEnabled(false);
+                return;
+            }
+
+            var challenge = _selectedDuelInboxItem;
+            var incoming = _localWalletForDuelInbox != null && challenge.IsIncomingFor(_localWalletForDuelInbox);
+            var stake = challenge.StakeRaw / (double)LGConfig.SKR_MULTIPLIER;
+            var winnerPayout = stake * 2d * (1d - (PlannedDuelFeeBps / 10_000d));
+            var isExpiredOpen = IsChallengeExpiredOpen(challenge);
+            var statusText = GetStatusChipText(challenge);
+            var localWon = _localWalletForDuelInbox != null &&
+                           challenge.Status == DuelChallengeStatus.Settled &&
+                           string.Equals(challenge.Winner?.Key, _localWalletForDuelInbox.Key, StringComparison.Ordinal);
+            var localLost = _localWalletForDuelInbox != null &&
+                            challenge.Status == DuelChallengeStatus.Settled &&
+                            !challenge.IsDraw &&
+                            challenge.Winner != null &&
+                            !string.Equals(challenge.Winner.Key, _localWalletForDuelInbox.Key, StringComparison.Ordinal);
+
+            SetLabel(_duelInboxDetailTitle, incoming ? "INCOMING DUEL" : "OUTGOING DUEL");
+            SetLabel(_duelInboxDetailPlayerValue, GetDuelDisplayNameForChallenge(challenge, incoming));
+            SetLabel(_duelInboxDetailStakeValue, $"{stake:F3} SKR");
+            SetLabel(_duelInboxDetailWinnerValue, $"{winnerPayout:F3} SKR");
+            if (challenge.Status == DuelChallengeStatus.Settled)
+            {
+                SetDetailStatusPillVisible(false);
+                if (challenge.IsDraw)
+                {
+                    SetDetailResultPill("DRAW", DuelPillDrawClass);
+                }
+                else if (localWon)
+                {
+                    SetDetailResultPill("YOU WON", DuelPillWinClass);
+                }
+                else if (localLost)
+                {
+                    SetDetailResultPill("YOU LOST", DuelPillLossClass);
+                }
+                else
+                {
+                    SetDetailResultPill("SETTLED", DuelPillNeutralClass);
+                }
+            }
+            else
+            {
+                SetDetailStatusPillVisible(true);
+                SetDetailStatusPill(statusText, GetDetailStatusPillClass(challenge));
+                SetDetailResultPill(string.Empty, string.Empty);
+            }
+
+            if (incoming &&
+                challenge.IsOpenLike &&
+                !isExpiredOpen &&
+                TryGetExpiryProgress(challenge, out var detailProgress))
+            {
+                if (_duelInboxDetailExpiryRadial != null)
+                {
+                    _duelInboxDetailExpiryRadial.style.display = DisplayStyle.Flex;
+                    ApplyExpiryRadialState(_duelInboxDetailExpiryRadial, detailProgress);
+                }
+            }
+            else if (_duelInboxDetailExpiryRadial != null)
+            {
+                _duelInboxDetailExpiryRadial.style.display = DisplayStyle.None;
+            }
+
+            SetLabel(_duelInboxDetailFee, "Draw refunds both players.");
+
+            var canAcceptOrDecline = incoming && challenge.IsOpenLike && !isExpiredOpen;
+            var canClaimExpired = isExpiredOpen;
+            _duelInboxAcceptButton?.SetEnabled(canAcceptOrDecline);
+            _duelInboxDeclineButton?.SetEnabled(canAcceptOrDecline);
+            _duelInboxClaimExpiredButton?.SetEnabled(canClaimExpired);
+        }
+
+        private void HandleDuelInboxAcceptClicked()
+        {
+            if (_selectedDuelInboxItem?.Pda == null)
+            {
+                return;
+            }
+
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Confirm);
+            HideDuelInboxModal();
+            OnDuelAcceptRequested?.Invoke(_selectedDuelInboxItem.Pda);
+        }
+
+        private void HandleDuelInboxDeclineClicked()
+        {
+            if (_selectedDuelInboxItem?.Pda == null)
+            {
+                return;
+            }
+
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Secondary);
+            OnDuelDeclineRequested?.Invoke(_selectedDuelInboxItem.Pda);
+        }
+
+        private void HandleDuelInboxClaimExpiredClicked()
+        {
+            if (_selectedDuelInboxItem?.Pda == null)
+            {
+                return;
+            }
+
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Primary);
+            OnDuelClaimExpiredRequested?.Invoke(_selectedDuelInboxItem.Pda);
+        }
+
+        public void ShowDuelResultModal(string title, string message)
+        {
+            SetLabel(_duelResultTitle, string.IsNullOrWhiteSpace(title) ? "DUEL RESULT" : title.Trim());
+            SetLabel(_duelResultMessage, string.IsNullOrWhiteSpace(message) ? string.Empty : message.Trim());
+            SetOverlayVisible(_duelResultOverlay, _duelResultCard, true);
+        }
+
+        public void PrepareForDuelReplay()
+        {
+            HideDuelSubmitConfirmModal();
+            HideDuelChallengeModal();
+            HideDuelInboxModal();
+            HideDuelResultModal();
+        }
+
+        private void HandleDuelResultDismissClicked()
+        {
+            GameAudioManager.Instance?.PlayButton(ButtonSfxCategory.Secondary);
+            HideDuelResultModal();
+        }
+
+        private void RefreshDuelInboxCountLabel()
+        {
+            if (_duelInboxCountLabel == null)
+            {
+                return;
+            }
+
+            var incomingOpen = _duelInboxItems.Count(item =>
+                _localWalletForDuelInbox != null &&
+                item.IsIncomingFor(_localWalletForDuelInbox) &&
+                item.IsOpenLike &&
+                !IsChallengeExpiredOpen(item));
+            _duelInboxCountLabel.text = incomingOpen > 0 ? incomingOpen.ToString() : string.Empty;
+            _duelInboxCountLabel.style.display = incomingOpen > 0 ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
+        private void RefreshIncomingDuelRequestButton()
+        {
+            if (_duelIncomingCtaButton == null)
+            {
+                return;
+            }
+
+            var incomingChallenge = GetPrimaryIncomingOpenChallenge();
+            if (incomingChallenge == null)
+            {
+                _duelIncomingCtaChallengePdaKey = string.Empty;
+                _duelIncomingCtaButton.style.display = DisplayStyle.None;
+                _duelIncomingCtaButton.SetEnabled(false);
+                return;
+            }
+
+            var stakeSkr = incomingChallenge.StakeRaw / (double)LGConfig.SKR_MULTIPLIER;
+            var pdaKey = incomingChallenge.Pda?.Key ?? string.Empty;
+            _duelIncomingCtaButton.text = $"DUEL REQUEST [{FormatSkrAmount(stakeSkr)} SKR]";
+            _duelIncomingCtaButton.style.display = DisplayStyle.Flex;
+            _duelIncomingCtaButton.SetEnabled(true);
+
+            if (!string.Equals(_duelIncomingCtaChallengePdaKey, pdaKey, StringComparison.Ordinal))
+            {
+                _duelIncomingCtaChallengePdaKey = pdaKey;
+                ModalPopAnimator.PlayOpen(_duelIncomingCtaButton);
+            }
+        }
+
+        private DuelChallengeView GetPrimaryIncomingOpenChallenge()
+        {
+            if (_localWalletForDuelInbox == null)
+            {
+                return null;
+            }
+
+            for (var i = 0; i < _duelInboxItems.Count; i += 1)
+            {
+                var challenge = _duelInboxItems[i];
+                if (challenge == null)
+                {
+                    continue;
+                }
+
+                if (!challenge.IsIncomingFor(_localWalletForDuelInbox))
+                {
+                    continue;
+                }
+
+                if (!challenge.IsOpenLike || IsChallengeExpiredOpen(challenge))
+                {
+                    continue;
+                }
+
+                return challenge;
+            }
+
+            return null;
+        }
+
+        private void RefreshDuelExpiryVisuals()
+        {
+            if (_duelInboxRows != null && _duelInboxRows.Count > 0)
+            {
+                foreach (var kvp in _duelInboxRows)
+                {
+                    var rowButton = kvp.Key;
+                    var challenge = kvp.Value;
+                    if (rowButton == null || challenge == null)
+                    {
+                        continue;
+                    }
+
+                    var radial = rowButton.Q<VisualElement>(className: "duel-row-expiry-radial");
+                    if (radial == null)
+                    {
+                        continue;
+                    }
+
+                    if (TryGetExpiryProgress(challenge, out var rowProgress))
+                    {
+                        ApplyExpiryRadialState(radial, rowProgress);
+                    }
+                }
+            }
+
+            if (_duelInboxDetailExpiryRadial != null &&
+                _selectedDuelInboxItem != null &&
+                TryGetExpiryProgress(_selectedDuelInboxItem, out var detailProgress))
+            {
+                ApplyExpiryRadialState(_duelInboxDetailExpiryRadial, detailProgress);
+            }
+        }
+
+        private ulong? GetEstimatedCurrentSlot()
+        {
+            if (!_duelInboxCurrentSlot.HasValue)
+            {
+                return null;
+            }
+
+            var elapsedSeconds = Mathf.Max(0f, Time.realtimeSinceStartup - _duelSlotSampleRealtime);
+            var slotDelta = (ulong)Mathf.FloorToInt(elapsedSeconds / 0.4f);
+            return _duelInboxCurrentSlot.Value + slotDelta;
+        }
+
+        private bool IsChallengeExpiredOpen(DuelChallengeView challenge)
+        {
+            var estimatedSlot = GetEstimatedCurrentSlot();
+            return challenge != null &&
+                   challenge.Status == DuelChallengeStatus.Open &&
+                   estimatedSlot.HasValue &&
+                   estimatedSlot.Value > challenge.ExpiresAtSlot;
+        }
+
+        private bool TryGetExpiryProgress(DuelChallengeView challenge, out float progress)
+        {
+            progress = 0f;
+            var estimatedSlot = GetEstimatedCurrentSlot();
+            if (challenge == null || !estimatedSlot.HasValue)
+            {
+                return false;
+            }
+
+            var currentSlot = estimatedSlot.Value;
+            var durationSlots = challenge.ExpiresAtSlot > challenge.RequestedSlot
+                ? challenge.ExpiresAtSlot - challenge.RequestedSlot
+                : 1UL;
+            var remainingSlots = challenge.ExpiresAtSlot > currentSlot
+                ? challenge.ExpiresAtSlot - currentSlot
+                : 0UL;
+            progress = Mathf.Clamp01((float)remainingSlots / Mathf.Max(1f, durationSlots));
+            return true;
+        }
+
+        private static Color GetExpiryFillColor(float progress)
+        {
+            var low = new Color(0.82f, 0.22f, 0.20f, 0.98f);
+            var high = new Color(0.28f, 0.78f, 0.42f, 0.98f);
+            return Color.Lerp(low, high, Mathf.Clamp01(progress));
+        }
+
+        private void ApplyExpiryRadialState(VisualElement element, float progress)
+        {
+            if (element == null)
+            {
+                return;
+            }
+
+            var state = element.userData as DuelExpiryRadialState;
+            if (state == null)
+            {
+                state = new DuelExpiryRadialState();
+                element.userData = state;
+                element.generateVisualContent += context => DrawExpiryRadial(context, element);
+            }
+
+            state.Progress = Mathf.Clamp01(progress);
+            state.TrackColor = new Color(0.15f, 0.20f, 0.23f, 0.95f);
+            state.FillColor = GetExpiryFillColor(state.Progress);
+            state.CenterColor = new Color(0.05f, 0.09f, 0.10f, 0.92f);
+            element.MarkDirtyRepaint();
+        }
+
+        private static void DrawExpiryRadial(MeshGenerationContext context, VisualElement element)
+        {
+            if (element?.userData is not DuelExpiryRadialState state)
+            {
+                return;
+            }
+
+            var rect = element.contentRect;
+            if (rect.width <= 0f || rect.height <= 0f)
+            {
+                return;
+            }
+
+            var center = rect.center;
+            var radius = Mathf.Min(rect.width, rect.height) * 0.5f - 1f;
+            if (radius <= 0f)
+            {
+                return;
+            }
+
+            var painter = context.painter2D;
+            DrawFilledCircle(painter, center, radius, state.TrackColor);
+            if (state.Progress > 0f)
+            {
+                DrawFilledSector(painter, center, radius, state.Progress, state.FillColor);
+            }
+
+            DrawFilledCircle(painter, center, radius * 0.58f, state.CenterColor);
+        }
+
+        private static void DrawFilledCircle(Painter2D painter, Vector2 center, float radius, Color color)
+        {
+            const int segments = 48;
+            painter.fillColor = color;
+            painter.BeginPath();
+            for (var i = 0; i <= segments; i += 1)
+            {
+                var angleDeg = -90f + (360f * i / segments);
+                var angleRad = angleDeg * Mathf.Deg2Rad;
+                var point = new Vector2(
+                    center.x + Mathf.Cos(angleRad) * radius,
+                    center.y + Mathf.Sin(angleRad) * radius);
+                if (i == 0)
+                {
+                    painter.MoveTo(point);
+                }
+                else
+                {
+                    painter.LineTo(point);
+                }
+            }
+
+            painter.ClosePath();
+            painter.Fill();
+        }
+
+        private static void DrawFilledSector(Painter2D painter, Vector2 center, float radius, float progress, Color color)
+        {
+            progress = Mathf.Clamp01(progress);
+            var sweepDeg = 360f * progress;
+            var segments = Mathf.Max(4, Mathf.CeilToInt(48f * progress));
+            painter.fillColor = color;
+            painter.BeginPath();
+            painter.MoveTo(center);
+            for (var i = 0; i <= segments; i += 1)
+            {
+                var angleDeg = -90f - (sweepDeg * i / Mathf.Max(1, segments));
+                var angleRad = angleDeg * Mathf.Deg2Rad;
+                var point = new Vector2(
+                    center.x + Mathf.Cos(angleRad) * radius,
+                    center.y + Mathf.Sin(angleRad) * radius);
+                painter.LineTo(point);
+            }
+
+            painter.ClosePath();
+            painter.Fill();
+        }
+
+        private string GetStatusChipText(DuelChallengeView challenge)
+        {
+            if (challenge == null)
+            {
+                return "UNKNOWN";
+            }
+
+            if (IsChallengeExpiredOpen(challenge))
+            {
+                return "EXPIRED";
+            }
+
+            return challenge.Status switch
+            {
+                DuelChallengeStatus.Open => "OPEN",
+                DuelChallengeStatus.PendingRandomness => "ROLLING",
+                DuelChallengeStatus.Settled => GetSettledOutcomeLabel(challenge),
+                DuelChallengeStatus.Declined => "DECLINED",
+                DuelChallengeStatus.Expired => "EXPIRED",
+                _ => "UNKNOWN"
+            };
+        }
+
+        private string GetSettledOutcomeLabel(DuelChallengeView challenge)
+        {
+            if (challenge == null)
+            {
+                return "SETTLED";
+            }
+
+            if (challenge.IsDraw)
+            {
+                return "DRAW";
+            }
+
+            var localWallet = _localWalletForDuelInbox;
+            if (localWallet != null && challenge.Winner != null)
+            {
+                return string.Equals(challenge.Winner.Key, localWallet.Key, StringComparison.Ordinal)
+                    ? "WIN"
+                    : "LOSE";
+            }
+
+            return "SETTLED";
+        }
+
+        private string BuildDuelSidebarPayoutText(DuelChallengeView challenge, double winnerPayout)
+        {
+            if (challenge == null)
+            {
+                return string.Empty;
+            }
+
+            if (challenge.Status == DuelChallengeStatus.Settled)
+            {
+                if (challenge.IsDraw)
+                {
+                    return "Draw";
+                }
+
+                if (_localWalletForDuelInbox != null && challenge.Winner != null)
+                {
+                    var localWon = string.Equals(
+                        challenge.Winner.Key,
+                        _localWalletForDuelInbox.Key,
+                        StringComparison.Ordinal);
+                    return localWon ? $"Won {winnerPayout:F3} SKR" : "Lost";
+                }
+
+                return "Settled";
+            }
+
+            if (IsChallengeExpiredOpen(challenge))
+            {
+                return "No payout";
+            }
+
+            if (challenge.Status == DuelChallengeStatus.Declined)
+            {
+                return "Declined";
+            }
+
+            return "Pending";
+        }
+
+        private string GetDuelDisplayNameForChallenge(DuelChallengeView challenge, bool incoming)
+        {
+            if (challenge == null)
+            {
+                return "Unknown";
+            }
+
+            var snapshot = incoming
+                ? challenge.ChallengerDisplayNameSnapshot
+                : challenge.OpponentDisplayNameSnapshot;
+            if (!string.IsNullOrWhiteSpace(snapshot))
+            {
+                return snapshot.Trim();
+            }
+
+            var wallet = incoming ? challenge.Challenger?.Key : challenge.Opponent?.Key;
+            return ShortWallet(wallet);
+        }
+
+        private void AddStatusChipClass(VisualElement chip, DuelChallengeView challenge)
+        {
+            if (chip == null || challenge == null)
+            {
+                return;
+            }
+
+            if (IsChallengeExpiredOpen(challenge) || challenge.Status == DuelChallengeStatus.Expired)
+            {
+                chip.AddToClassList(DuelRowChipExpiredClass);
+                return;
+            }
+
+            if (challenge.Status == DuelChallengeStatus.Open || challenge.Status == DuelChallengeStatus.PendingRandomness)
+            {
+                chip.AddToClassList(DuelRowChipOpenClass);
+                return;
+            }
+
+            if (challenge.Status == DuelChallengeStatus.Declined)
+            {
+                chip.AddToClassList(DuelRowChipDeclinedClass);
+                return;
+            }
+
+            if (challenge.Status == DuelChallengeStatus.Settled)
+            {
+                if (challenge.IsDraw)
+                {
+                    chip.AddToClassList(DuelRowChipDrawClass);
+                    return;
+                }
+
+                var localWallet = _localWalletForDuelInbox;
+                if (localWallet != null && challenge.Winner != null)
+                {
+                    var localWon = string.Equals(challenge.Winner.Key, localWallet.Key, StringComparison.Ordinal);
+                    chip.AddToClassList(localWon ? DuelRowChipWinClass : DuelRowChipLossClass);
+                    return;
+                }
+            }
+        }
+
+        private string GetDetailStatusPillClass(DuelChallengeView challenge)
+        {
+            if (challenge == null)
+            {
+                return DuelPillNeutralClass;
+            }
+
+            if (IsChallengeExpiredOpen(challenge) || challenge.Status == DuelChallengeStatus.Expired)
+            {
+                return DuelPillExpiredClass;
+            }
+
+            if (challenge.Status == DuelChallengeStatus.Open || challenge.Status == DuelChallengeStatus.PendingRandomness)
+            {
+                return DuelPillOpenClass;
+            }
+
+            if (challenge.Status == DuelChallengeStatus.Settled)
+            {
+                return challenge.IsDraw ? DuelPillDrawClass : DuelPillNeutralClass;
+            }
+
+            return DuelPillNeutralClass;
+        }
+
+        private void SetDetailStatusPill(string text, string stateClass)
+        {
+            if (_duelInboxDetailStatusPill == null)
+            {
+                return;
+            }
+
+            _duelInboxDetailStatusPill.RemoveFromClassList(DuelPillNeutralClass);
+            _duelInboxDetailStatusPill.RemoveFromClassList(DuelPillOpenClass);
+            _duelInboxDetailStatusPill.RemoveFromClassList(DuelPillExpiredClass);
+            _duelInboxDetailStatusPill.RemoveFromClassList(DuelPillWinClass);
+            _duelInboxDetailStatusPill.RemoveFromClassList(DuelPillLossClass);
+            _duelInboxDetailStatusPill.RemoveFromClassList(DuelPillDrawClass);
+            _duelInboxDetailStatusPill.AddToClassList(string.IsNullOrWhiteSpace(stateClass) ? DuelPillNeutralClass : stateClass);
+            SetLabel(_duelInboxDetailStatusPill, text);
+        }
+
+        private void SetDetailResultPill(string text, string stateClass)
+        {
+            if (_duelInboxDetailResultPill == null)
+            {
+                return;
+            }
+
+            _duelInboxDetailResultPill.RemoveFromClassList(DuelPillHiddenClass);
+            _duelInboxDetailResultPill.RemoveFromClassList(DuelPillNeutralClass);
+            _duelInboxDetailResultPill.RemoveFromClassList(DuelPillOpenClass);
+            _duelInboxDetailResultPill.RemoveFromClassList(DuelPillExpiredClass);
+            _duelInboxDetailResultPill.RemoveFromClassList(DuelPillWinClass);
+            _duelInboxDetailResultPill.RemoveFromClassList(DuelPillLossClass);
+            _duelInboxDetailResultPill.RemoveFromClassList(DuelPillDrawClass);
+
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                SetLabel(_duelInboxDetailResultPill, string.Empty);
+                _duelInboxDetailResultPill.AddToClassList(DuelPillHiddenClass);
+                return;
+            }
+
+            _duelInboxDetailResultPill.AddToClassList(string.IsNullOrWhiteSpace(stateClass) ? DuelPillNeutralClass : stateClass);
+            SetLabel(_duelInboxDetailResultPill, text);
+        }
+
+        private void SetDetailStatusPillVisible(bool visible)
+        {
+            if (_duelInboxDetailStatusPill == null)
+            {
+                return;
+            }
+
+            _duelInboxDetailStatusPill.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
+        private void RefreshDuelInboxRowVisualState()
+        {
+            if (_duelInboxRows == null || _duelInboxRows.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var kvp in _duelInboxRows)
+            {
+                var row = kvp.Key;
+                var challenge = kvp.Value;
+                if (row == null || challenge == null)
+                {
+                    continue;
+                }
+
+                row.RemoveFromClassList(DuelInboxRowActiveClass);
+                row.RemoveFromClassList(DuelInboxRowExpiredClass);
+                row.RemoveFromClassList(DuelInboxRowTerminalClass);
+                row.RemoveFromClassList(DuelInboxRowWinClass);
+                row.RemoveFromClassList(DuelInboxRowLossClass);
+                row.RemoveFromClassList(DuelInboxRowDrawClass);
+                row.RemoveFromClassList(DuelInboxRowSelectedClass);
+
+                if (IsChallengeExpiredOpen(challenge))
+                {
+                    row.AddToClassList(DuelInboxRowExpiredClass);
+                }
+                else if (challenge.IsOpenLike)
+                {
+                    row.AddToClassList(DuelInboxRowActiveClass);
+                }
+                else
+                {
+                    row.AddToClassList(DuelInboxRowTerminalClass);
+
+                    if (challenge.Status == DuelChallengeStatus.Settled)
+                    {
+                        if (challenge.IsDraw)
+                        {
+                            row.AddToClassList(DuelInboxRowDrawClass);
+                        }
+                        else if (_localWalletForDuelInbox != null && challenge.Winner != null)
+                        {
+                            var localWon = string.Equals(
+                                challenge.Winner.Key,
+                                _localWalletForDuelInbox.Key,
+                                StringComparison.Ordinal);
+                            row.AddToClassList(localWon ? DuelInboxRowWinClass : DuelInboxRowLossClass);
+                        }
+                    }
+                }
+
+                if (_selectedDuelInboxItem != null &&
+                    string.Equals(challenge.Pda?.Key, _selectedDuelInboxItem.Pda?.Key, StringComparison.Ordinal))
+                {
+                    row.AddToClassList(DuelInboxRowSelectedClass);
+                }
+            }
+        }
+
+        private void HideDuelChallengeModal()
+        {
+            SetOverlayVisible(_duelChallengeOverlay, _duelChallengeCard, false);
+            HideDuelSubmitConfirmModal();
+        }
+
+        private void HideDuelInboxModal()
+        {
+            SetOverlayVisible(_duelInboxOverlay, _duelInboxCard, false);
+        }
+
+        private void HideDuelResultModal()
+        {
+            SetOverlayVisible(_duelResultOverlay, _duelResultCard, false);
+        }
+
+        private static string ShortWallet(string walletKey)
+        {
+            if (string.IsNullOrWhiteSpace(walletKey))
+            {
+                return "Unknown";
+            }
+
+            var trimmed = walletKey.Trim();
+            if (trimmed.Length <= 10)
+            {
+                return trimmed;
+            }
+
+            return $"{trimmed.Substring(0, 4)}...{trimmed.Substring(trimmed.Length - 4)}";
+        }
+
+        private static string FormatSkrAmount(double value)
+        {
+            return value.ToString("0.###", CultureInfo.InvariantCulture);
+        }
+
+        private bool HasOpenOutgoingDuel()
+        {
+            if (_localWalletForDuelInbox == null)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < _duelInboxItems.Count; i += 1)
+            {
+                var item = _duelInboxItems[i];
+                if (item != null && item.IsOutgoingFrom(_localWalletForDuelInbox) && item.IsOpenLike)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void InitializeSessionFeeModalUi()

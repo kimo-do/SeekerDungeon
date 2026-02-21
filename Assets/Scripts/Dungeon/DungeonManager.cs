@@ -142,6 +142,13 @@ namespace SeekerDungeon.Dungeon
             try
             {
                 await _lgManager.RefreshAllState();
+                var playerState = _lgManager.CurrentPlayerState;
+                var walletKey = ResolveLocalWalletKey();
+                Log(
+                    $"Init post-RefreshAllState wallet={ShortWalletForLog(walletKey)} " +
+                    $"playerInDungeon={(playerState != null ? playerState.InDungeon.ToString() : "<null>")} " +
+                    $"playerPos={(playerState != null ? $"({playerState.CurrentRoomX},{playerState.CurrentRoomY})" : "<null>")} " +
+                    $"resumeMarked={DungeonRunResumeStore.IsMarkedInRun(walletKey)}");
                 SyncLocalPlayerVisual();
                 await ResolveCurrentRoomCoordinatesAsync();
                 await RefreshCurrentRoomSnapshotAsync();
@@ -1063,10 +1070,13 @@ namespace SeekerDungeon.Dungeon
             }
 
             var walletKey = occupant.Wallet?.Key ?? string.Empty;
+            var displayName = string.IsNullOrWhiteSpace(occupant.DisplayName)
+                ? ShortWallet(walletKey)
+                : occupant.DisplayName.Trim();
             return new DungeonOccupantVisual
             {
                 WalletKey = walletKey,
-                DisplayName = ShortWallet(walletKey),
+                DisplayName = displayName,
                 SkinId = skin,
                 EquippedItemId = occupant.EquippedItemId,
                 Activity = occupant.Activity,
@@ -1528,6 +1538,16 @@ namespace SeekerDungeon.Dungeon
         private static void LogError(string message)
         {
             Debug.LogError($"[DungeonManager] {message}");
+        }
+
+        private static string ShortWalletForLog(string walletKey)
+        {
+            if (string.IsNullOrWhiteSpace(walletKey) || walletKey.Length < 10)
+            {
+                return walletKey ?? "<null>";
+            }
+
+            return $"{walletKey.Substring(0, 4)}...{walletKey.Substring(walletKey.Length - 4)}";
         }
     }
 }

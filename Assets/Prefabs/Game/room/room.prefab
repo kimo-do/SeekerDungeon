@@ -101,7 +101,7 @@ MonoBehaviour:
   - {fileID: 128914223583262951}
   - {fileID: 8089502131580766733}
   - {fileID: 163413451262132217}
-  occupantVisualPrefab: {fileID: 0}
+  occupantVisualPrefab: {fileID: 4752332143254669612, guid: 801d1000ca6b4874a85a4ca31780a2ec, type: 3}
   visualSpawnRoot: {fileID: 0}
   minDistanceBetweenOccupants: 0.1
   maxSpawnAttemptsPerOccupant: 18

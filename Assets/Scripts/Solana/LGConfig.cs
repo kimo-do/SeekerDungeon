@@ -39,10 +39,10 @@ namespace SeekerDungeon.Solana
         public const string LOOT_RECEIPT_SEED = "loot_receipt";
         
         // Game constants
-        public const int START_X = 5;
-        public const int START_Y = 5;
+        public const int START_X = 10;
+        public const int START_Y = 10;
         public const int MIN_COORD = 0;
-        public const int MAX_COORD = 9;
+        public const int MAX_COORD = 19;
         
         // Direction constants
         public const byte DIRECTION_NORTH = 0;

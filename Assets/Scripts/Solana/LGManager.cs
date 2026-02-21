@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -72,6 +73,8 @@ namespace SeekerDungeon.Solana
         public event Action<IReadOnlyList<RoomOccupantView>> OnRoomOccupantsUpdated;
         public event Action<InventoryAccount> OnInventoryUpdated;
         public event Action<StorageAccount> OnStorageUpdated;
+        public event Action<IReadOnlyList<DuelChallengeView>> OnDuelChallengesUpdated;
+        public event Action<SessionExpenseEntry> OnSessionExpenseLogged;
         public event Action<LootResult> OnChestLootResult;
         public event Action<string> OnTransactionSent;
         public event Action<string> OnError;
@@ -86,6 +89,14 @@ namespace SeekerDungeon.Solana
         private readonly HashSet<string> _roomPresenceSubscriptionKeys = new();
         private uint? _lastProgramErrorCode;
         private string _lastTransactionFailureReason;
+        private bool _useLenientDuelFetch = true;
+        private bool _useLenientRoomPresenceFetch;
+        private List<DuelChallengeView> _lastRelevantDuelChallenges = new();
+        private DateTime _lastDuelRateLimitLogUtc = DateTime.MinValue;
+        private DateTime _lastDuelCachedFallbackLogUtc = DateTime.MinValue;
+        private readonly List<SessionExpenseEntry> _sessionExpenseEntries = new();
+        private readonly Dictionary<string, OccupantDisplayNameCacheEntry> _occupantDisplayNameCache =
+            new(StringComparer.Ordinal);
 
         private struct GameplaySigningContext
         {
@@ -100,6 +111,52 @@ namespace SeekerDungeon.Solana
         private const int BaseTransientRetryDelayMs = 300;
         private const int RawHttpProbeTimeoutSeconds = 20;
         private const int RawHttpBodyLogLimit = 2000;
+        private const int OccupantDisplayNameCacheTtlSeconds = 60;
+        private const string DuelChallengeSeed = "duel_challenge";
+        private const string DuelEscrowSeed = "duel_escrow";
+        private const string ProgramIdentitySeed = "identity";
+        private const ulong DuelDefaultExpirySlots = 300UL;
+        private const ulong DuelMaxExpirySlots = 21600UL;
+        private const string SessionExpenseLogFileName = "session-expense-log.jsonl";
+        private const int DuelFetchLogThrottleSeconds = 20;
+
+        [Serializable]
+        public sealed class SessionExpenseEntry
+        {
+            public string TimestampUtc;
+            public string ActionName;
+            public string Signature;
+            public string FeePayer;
+            public bool IsSessionFeePayer;
+            public ulong SolFeeLamports;
+            public long FeePayerSolDeltaLamports;
+            public long PlayerSkrDeltaRaw;
+            public ulong PlayerSkrSpentRaw;
+            public ulong PlayerSkrReceivedRaw;
+        }
+
+        [Serializable]
+        public struct SessionExpenseTotals
+        {
+            public int TxCount;
+            public ulong TotalSolFeesLamports;
+            public ulong SessionSolFeesLamports;
+            public ulong WalletSolFeesLamports;
+            public ulong TotalPlayerSkrSpentRaw;
+            public ulong TotalPlayerSkrReceivedRaw;
+        }
+
+        private sealed class OccupantDisplayNameCacheEntry
+        {
+            public string DisplayName;
+            public DateTime CachedAtUtc;
+        }
+
+        private sealed class ParsedDuelChallengeRecord
+        {
+            public PublicKey Pda;
+            public Chaindepth.Accounts.DuelChallenge Challenge;
+        }
 
         private static LGManager FindExistingInstance()
         {
@@ -434,6 +491,57 @@ namespace SeekerDungeon.Solana
                 out var pda,
                 out _
             );
+            return success ? pda : null;
+        }
+
+        public PublicKey DeriveDuelChallengePda(PublicKey challenger, PublicKey opponent, ulong challengeSeed)
+        {
+            var challengeSeedBytes = BitConverter.GetBytes(challengeSeed);
+            if (!BitConverter.IsLittleEndian)
+            {
+                Array.Reverse(challengeSeedBytes);
+            }
+
+            var success = PublicKey.TryFindProgramAddress(
+                new List<byte[]>
+                {
+                    Encoding.UTF8.GetBytes(DuelChallengeSeed),
+                    challenger.KeyBytes,
+                    opponent.KeyBytes,
+                    challengeSeedBytes
+                },
+                _programId,
+                out var pda,
+                out _
+            );
+            return success ? pda : null;
+        }
+
+        public PublicKey DeriveDuelEscrowPda(PublicKey duelChallengePda)
+        {
+            var success = PublicKey.TryFindProgramAddress(
+                new List<byte[]>
+                {
+                    Encoding.UTF8.GetBytes(DuelEscrowSeed),
+                    duelChallengePda.KeyBytes
+                },
+                _programId,
+                out var pda,
+                out _
+            );
+            return success ? pda : null;
+        }
+
+        public PublicKey DeriveProgramIdentityPda()
+        {
+            var success = PublicKey.TryFindProgramAddress(
+                new List<byte[]>
+                {
+                    Encoding.UTF8.GetBytes(ProgramIdentitySeed)
+                },
+                _programId,
+                out var pda,
+                out _);
             return success ? pda : null;
         }
 
@@ -852,8 +960,33 @@ namespace SeekerDungeon.Solana
 
             try
             {
-                var roomPresenceResult = await _client.GetRoomPresencesAsync(_programId.Key, Commitment.Confirmed);
-                var allPresences = roomPresenceResult?.ParsedResult ?? new List<RoomPresence>();
+                List<RoomPresence> allPresences;
+                if (_useLenientRoomPresenceFetch)
+                {
+                    allPresences = await FetchRoomPresencesLenientAsync();
+                }
+                else
+                {
+                    try
+                    {
+                        var roomPresenceResult = await _client.GetRoomPresencesAsync(_programId.Key, Commitment.Confirmed);
+                        allPresences = roomPresenceResult?.ParsedResult ?? new List<RoomPresence>();
+                    }
+                    catch (ArgumentOutOfRangeException decodeError)
+                    {
+                        _useLenientRoomPresenceFetch = true;
+                        Log(
+                            $"Room presence decode hit incompatible layout once. Using lenient room presence parsing for this session. {decodeError.Message}");
+                        allPresences = await FetchRoomPresencesLenientAsync();
+                    }
+                    catch (ArgumentException decodeError) when (string.Equals(decodeError.ParamName, "offset", StringComparison.Ordinal))
+                    {
+                        _useLenientRoomPresenceFetch = true;
+                        Log(
+                            $"Room presence decode hit incompatible layout once. Using lenient room presence parsing for this session. {decodeError.Message}");
+                        allPresences = await FetchRoomPresencesLenientAsync();
+                    }
+                }
 
                 var roomPresences = allPresences
                     .Where(presence =>
@@ -864,10 +997,15 @@ namespace SeekerDungeon.Solana
                         presence.IsCurrent)
                     .ToList();
 
-                var occupants = roomPresences
-                    .Select(presence => new RoomOccupantView
+                var occupants = new RoomOccupantView[roomPresences.Count];
+                for (var index = 0; index < roomPresences.Count; index += 1)
+                {
+                    var presence = roomPresences[index];
+                    var displayName = await ResolveOccupantDisplayNameAsync(presence.Player);
+                    occupants[index] = new RoomOccupantView
                     {
                         Wallet = presence.Player,
+                        DisplayName = displayName,
                         EquippedItemId = LGDomainMapper.ToItemId(presence.EquippedItemId),
                         SkinId = presence.SkinId,
                         Activity = LGDomainMapper.ToOccupantActivity(presence.Activity),
@@ -876,8 +1014,8 @@ namespace SeekerDungeon.Solana
                             ? mappedDirection
                             : null,
                         IsFightingBoss = presence.Activity == 2
-                    })
-                    .ToArray();
+                    };
+                }
 
                 if (logDebugMessages)
                 {
@@ -903,6 +1041,106 @@ namespace SeekerDungeon.Solana
                 LogError($"FetchRoomOccupants failed: {error.Message}");
                 return Array.Empty<RoomOccupantView>();
             }
+        }
+
+        private async UniTask<List<RoomPresence>> FetchRoomPresencesLenientAsync()
+        {
+            var rpc = GetRpcClient();
+            if (rpc == null)
+            {
+                return new List<RoomPresence>();
+            }
+
+            var filters = new List<MemCmp>
+            {
+                new MemCmp
+                {
+                    Bytes = RoomPresence.ACCOUNT_DISCRIMINATOR_B58,
+                    Offset = 0
+                }
+            };
+            var raw = await rpc.GetProgramAccountsAsync(_programId.Key, Commitment.Confirmed, memCmpList: filters);
+            if (!raw.WasSuccessful || !(raw.Result?.Count > 0))
+            {
+                return new List<RoomPresence>();
+            }
+
+            var parsed = new List<RoomPresence>(raw.Result.Count);
+            for (var index = 0; index < raw.Result.Count; index += 1)
+            {
+                var account = raw.Result[index];
+                var encodedData = account?.Account?.Data != null && account.Account.Data.Count > 0
+                    ? account.Account.Data[0]
+                    : null;
+                if (string.IsNullOrWhiteSpace(encodedData))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var bytes = Convert.FromBase64String(encodedData);
+                    var presence = RoomPresence.Deserialize(bytes);
+                    if (presence != null)
+                    {
+                        parsed.Add(presence);
+                    }
+                }
+                catch (Exception decodeError) when (
+                    decodeError is ArgumentOutOfRangeException ||
+                    decodeError is ArgumentException ||
+                    decodeError is FormatException)
+                {
+                    // Ignore stale or incompatible historical room presence accounts on devnet.
+                }
+            }
+
+            return parsed;
+        }
+
+        private async UniTask<string> ResolveOccupantDisplayNameAsync(PublicKey wallet)
+        {
+            var walletKey = wallet?.Key;
+            if (string.IsNullOrWhiteSpace(walletKey))
+            {
+                return string.Empty;
+            }
+
+            if (_occupantDisplayNameCache.TryGetValue(walletKey, out var cachedEntry))
+            {
+                var cacheAgeSeconds = (DateTime.UtcNow - cachedEntry.CachedAtUtc).TotalSeconds;
+                if (cacheAgeSeconds >= 0 && cacheAgeSeconds <= OccupantDisplayNameCacheTtlSeconds)
+                {
+                    return cachedEntry.DisplayName ?? string.Empty;
+                }
+            }
+
+            var displayName = string.Empty;
+            try
+            {
+                var profilePda = DeriveProfilePda(wallet);
+                if (profilePda != null)
+                {
+                    var profileResult = await _client.GetPlayerProfileAsync(profilePda.Key, Commitment.Confirmed);
+                    if (profileResult != null && profileResult.WasSuccessful && profileResult.ParsedResult != null)
+                    {
+                        displayName = profileResult.ParsedResult.DisplayName?.Trim() ?? string.Empty;
+                    }
+                }
+            }
+            catch
+            {
+                // Keep fallback behavior if profile lookup fails for any reason.
+                displayName = string.Empty;
+            }
+
+            _occupantDisplayNameCache[walletKey] = new OccupantDisplayNameCacheEntry
+            {
+                DisplayName = displayName,
+                CachedAtUtc = DateTime.UtcNow
+            };
+
+            return displayName;
         }
 
         /// <summary>
@@ -1556,6 +1794,1063 @@ namespace SeekerDungeon.Solana
                 LogError($"InitPlayer failed: {e.Message}");
                 return null;
             }
+        }
+
+        /// <summary>
+        /// Explicitly enter dungeon at the start room (10,10).
+        /// This should be used when player exists but is currently out of dungeon.
+        /// </summary>
+        public async UniTask<TxResult> EnterDungeonAtStart()
+        {
+            if (Web3.Wallet?.Account == null)
+            {
+                LogError("Wallet not connected");
+                return TxResult.Fail("Wallet not connected");
+            }
+
+            if (CurrentGlobalState == null)
+            {
+                await FetchGlobalState();
+                if (CurrentGlobalState == null)
+                {
+                    LogError("Global state not loaded");
+                    return TxResult.Fail("Global state not loaded");
+                }
+            }
+
+            try
+            {
+                var wallet = Web3.Wallet.Account.PublicKey;
+                var playerPda = DerivePlayerPda(wallet);
+                var profilePda = DeriveProfilePda(wallet);
+                var startRoomPda = DeriveRoomPda(CurrentGlobalState.SeasonSeed, LGConfig.START_X, LGConfig.START_Y);
+                var roomPresencePda = DeriveRoomPresencePda(
+                    CurrentGlobalState.SeasonSeed,
+                    LGConfig.START_X,
+                    LGConfig.START_Y,
+                    wallet);
+
+                if (playerPda == null || profilePda == null || startRoomPda == null || roomPresencePda == null)
+                {
+                    return TxResult.Fail("Failed to derive enter_dungeon accounts");
+                }
+
+                var result = await ExecuteGameplayActionAsync(
+                    "EnterDungeon",
+                    context =>
+                        ChaindepthProgram.EnterDungeon(
+                            new EnterDungeonAccounts
+                            {
+                                Authority = context.Authority,
+                                Player = context.Player,
+                                Global = _globalPda,
+                                PlayerAccount = playerPda,
+                                Profile = profilePda,
+                                StartRoom = startRoomPda,
+                                RoomPresence = roomPresencePda,
+                                SessionAuthority = context.SessionAuthority,
+                                SystemProgram = SystemProgram.ProgramIdKey
+                            },
+                            _programId));
+
+                if (result.Success)
+                {
+                    Log($"Entered dungeon at start room. TX: {result.Signature}");
+                    await RefreshAllState();
+                }
+
+                return result;
+            }
+            catch (Exception exception)
+            {
+                LogError($"EnterDungeonAtStart failed: {exception.Message}");
+                return TxResult.Fail(exception.Message);
+            }
+        }
+
+        public bool IsDuelOpenStatus(byte status)
+        {
+            return status == (byte)DuelChallengeStatus.Open ||
+                   status == (byte)DuelChallengeStatus.PendingRandomness;
+        }
+
+        public async UniTask<ulong?> GetCurrentSlotAsync()
+        {
+            var rpc = GetRpcClient();
+            if (rpc == null)
+            {
+                return null;
+            }
+
+            var slotResult = await rpc.GetSlotAsync(Commitment.Confirmed);
+            if (!slotResult.WasSuccessful)
+            {
+                return null;
+            }
+
+            return slotResult.Result;
+        }
+
+        public async UniTask<IReadOnlyList<DuelChallengeView>> FetchRelevantDuelChallengesAsync()
+        {
+            if (Web3.Wallet?.Account?.PublicKey == null)
+            {
+                _lastRelevantDuelChallenges = new List<DuelChallengeView>();
+                return Array.Empty<DuelChallengeView>();
+            }
+
+            if (CurrentGlobalState == null)
+            {
+                await FetchGlobalState();
+            }
+
+            var localWallet = Web3.Wallet.Account.PublicKey;
+            List<ParsedDuelChallengeRecord> parsedChallenges = null;
+            if (_useLenientDuelFetch)
+            {
+                parsedChallenges = await FetchDuelChallengesLenientAsync();
+            }
+            else
+            {
+                try
+                {
+                    var response = await _client.GetDuelChallengesAsync(_programId.Key, Commitment.Confirmed);
+                    if (!response.WasSuccessful || response.ParsedResult == null)
+                    {
+                        LogError("FetchRelevantDuelChallengesAsync failed.");
+                        return Array.Empty<DuelChallengeView>();
+                    }
+
+                    parsedChallenges = new List<ParsedDuelChallengeRecord>(response.ParsedResult.Count);
+                    for (var index = 0; index < response.ParsedResult.Count; index += 1)
+                    {
+                        var rawChallenge = response.ParsedResult[index];
+                        if (rawChallenge == null)
+                        {
+                            continue;
+                        }
+
+                        var derivedPda = DeriveDuelChallengePda(
+                            rawChallenge.Challenger,
+                            rawChallenge.Opponent,
+                            rawChallenge.ChallengeSeed);
+                        if (derivedPda == null)
+                        {
+                            continue;
+                        }
+
+                        parsedChallenges.Add(new ParsedDuelChallengeRecord
+                        {
+                            Pda = derivedPda,
+                            Challenge = rawChallenge
+                        });
+                    }
+                }
+                catch (ArgumentOutOfRangeException decodeError)
+                {
+                    _useLenientDuelFetch = true;
+                    Log(
+                        $"Duel account decode hit incompatible layout once. Using lenient duel parsing for this session. {decodeError.Message}");
+                    parsedChallenges = await FetchDuelChallengesLenientAsync();
+                }
+                catch (ArgumentException decodeError) when (string.Equals(decodeError.ParamName, "offset", StringComparison.Ordinal))
+                {
+                    _useLenientDuelFetch = true;
+                    Log(
+                        $"Duel account decode hit incompatible layout once. Using lenient duel parsing for this session. {decodeError.Message}");
+                    parsedChallenges = await FetchDuelChallengesLenientAsync();
+                }
+            }
+
+            if (parsedChallenges == null)
+            {
+                if ((DateTime.UtcNow - _lastDuelCachedFallbackLogUtc).TotalSeconds >= DuelFetchLogThrottleSeconds)
+                {
+                    Log("FetchRelevantDuelChallengesAsync: using cached duel snapshot after transient fetch failure.");
+                    _lastDuelCachedFallbackLogUtc = DateTime.UtcNow;
+                }
+
+                return _lastRelevantDuelChallenges;
+            }
+
+            var openLike = new List<DuelChallengeView>();
+            var terminal = new List<DuelChallengeView>();
+            var seenKeys = new HashSet<string>(StringComparer.Ordinal);
+            for (var index = 0; index < parsedChallenges.Count; index += 1)
+            {
+                var parsedChallenge = parsedChallenges[index];
+                var rawChallenge = parsedChallenge?.Challenge;
+                if (rawChallenge == null)
+                {
+                    continue;
+                }
+
+                var isRelevant =
+                    string.Equals(rawChallenge.Challenger?.Key, localWallet.Key, StringComparison.Ordinal) ||
+                    string.Equals(rawChallenge.Opponent?.Key, localWallet.Key, StringComparison.Ordinal);
+                if (!isRelevant)
+                {
+                    continue;
+                }
+
+                if (CurrentGlobalState != null && rawChallenge.SeasonSeed != CurrentGlobalState.SeasonSeed)
+                {
+                    continue;
+                }
+
+                var challengePda = parsedChallenge.Pda;
+                var uniqueKey = BuildDuelChallengeUniqueKey(rawChallenge, challengePda);
+                if (!seenKeys.Add(uniqueKey))
+                {
+                    continue;
+                }
+
+                var view = ToDuelChallengeView(rawChallenge, challengePda);
+                if (view.IsTerminal)
+                {
+                    terminal.Add(view);
+                }
+                else
+                {
+                    openLike.Add(view);
+                }
+            }
+
+            openLike.Sort((left, right) =>
+                CompareDuelSortKey(right.RequestedSlot, right.ExpiresAtSlot, right.SettledSlot)
+                    .CompareTo(CompareDuelSortKey(left.RequestedSlot, left.ExpiresAtSlot, left.SettledSlot)));
+            terminal.Sort((left, right) =>
+                CompareDuelSortKey(right.RequestedSlot, right.ExpiresAtSlot, right.SettledSlot)
+                    .CompareTo(CompareDuelSortKey(left.RequestedSlot, left.ExpiresAtSlot, left.SettledSlot)));
+
+            var result = new List<DuelChallengeView>(openLike.Count + Math.Min(10, terminal.Count));
+            result.AddRange(openLike);
+            for (var index = 0; index < terminal.Count && index < 10; index += 1)
+            {
+                result.Add(terminal[index]);
+            }
+
+            _lastRelevantDuelChallenges = new List<DuelChallengeView>(result);
+            OnDuelChallengesUpdated?.Invoke(result);
+            return result;
+        }
+
+        private async UniTask<List<ParsedDuelChallengeRecord>> FetchDuelChallengesLenientAsync()
+        {
+            var rpc = GetRpcClient();
+            if (rpc == null)
+            {
+                return null;
+            }
+
+            var filters = new List<MemCmp>
+            {
+                new MemCmp
+                {
+                    Bytes = Chaindepth.Accounts.DuelChallenge.ACCOUNT_DISCRIMINATOR_B58,
+                    Offset = 0
+                }
+            };
+            var raw = await rpc.GetProgramAccountsAsync(_programId.Key, Commitment.Confirmed, memCmpList: filters);
+            if (!raw.WasSuccessful)
+            {
+                var reason = raw?.Reason ?? "<unknown>";
+                var isRateLimited = reason.IndexOf("too many requests", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                    reason.IndexOf("429", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (!isRateLimited ||
+                    (DateTime.UtcNow - _lastDuelRateLimitLogUtc).TotalSeconds >= DuelFetchLogThrottleSeconds)
+                {
+                    Log($"FetchDuelChallengesLenientAsync RPC failure: {reason}");
+                    if (isRateLimited)
+                    {
+                        _lastDuelRateLimitLogUtc = DateTime.UtcNow;
+                    }
+                }
+
+                return null;
+            }
+
+            if (!(raw.Result?.Count > 0))
+            {
+                return new List<ParsedDuelChallengeRecord>();
+            }
+
+            var parsed = new List<ParsedDuelChallengeRecord>(raw.Result.Count);
+            for (var index = 0; index < raw.Result.Count; index += 1)
+            {
+                var account = raw.Result[index];
+                var encodedData = account?.Account?.Data != null && account.Account.Data.Count > 0
+                    ? account.Account.Data[0]
+                    : null;
+                if (string.IsNullOrWhiteSpace(encodedData))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var bytes = Convert.FromBase64String(encodedData);
+                    var duel = Chaindepth.Accounts.DuelChallenge.Deserialize(bytes);
+                    if (duel != null)
+                    {
+                        PublicKey accountPda = null;
+                        if (!string.IsNullOrWhiteSpace(account?.PublicKey))
+                        {
+                            accountPda = new PublicKey(account.PublicKey);
+                        }
+
+                        var derivedPda = DeriveDuelChallengePda(
+                            duel.Challenger,
+                            duel.Opponent,
+                            duel.ChallengeSeed);
+                        if (accountPda != null && derivedPda != null &&
+                            !string.Equals(accountPda.Key, derivedPda.Key, StringComparison.Ordinal))
+                        {
+                            // If the account's actual pubkey does not match the decoded seed fields,
+                            // this is stale/malformed data. Skip to avoid seed constraint failures on accept.
+                            continue;
+                        }
+
+                        parsed.Add(new ParsedDuelChallengeRecord
+                        {
+                            Pda = accountPda ?? derivedPda,
+                            Challenge = duel
+                        });
+                    }
+                }
+                catch (Exception decodeError) when (
+                    decodeError is ArgumentOutOfRangeException ||
+                    decodeError is ArgumentException ||
+                    decodeError is FormatException)
+                {
+                    // Ignore stale or incompatible historical duel accounts on devnet.
+                }
+            }
+
+            return parsed;
+        }
+
+        private static string BuildDuelChallengeUniqueKey(Chaindepth.Accounts.DuelChallenge challenge, PublicKey pda)
+        {
+            if (!string.IsNullOrWhiteSpace(pda?.Key))
+            {
+                return pda.Key;
+            }
+
+            if (challenge == null)
+            {
+                return string.Empty;
+            }
+
+            return string.Join(
+                ":",
+                challenge.SeasonSeed.ToString(),
+                challenge.Challenger?.Key ?? string.Empty,
+                challenge.Opponent?.Key ?? string.Empty,
+                challenge.ChallengeSeed.ToString());
+        }
+
+        public async UniTask<TxResult> CreateDuelChallengeAsync(PublicKey opponentWallet, ulong stakeRaw, ulong expiresAtSlot)
+        {
+            if (Web3.Wallet?.Account?.PublicKey == null)
+            {
+                return TxResult.Fail("Wallet not connected");
+            }
+
+            if (opponentWallet == null)
+            {
+                return TxResult.Fail("Opponent wallet missing");
+            }
+
+            if (CurrentGlobalState == null || CurrentPlayerState == null)
+            {
+                await RefreshAllState();
+            }
+
+            if (CurrentGlobalState == null || CurrentPlayerState == null)
+            {
+                return TxResult.Fail("Player or global state not loaded");
+            }
+
+            var localWallet = Web3.Wallet.Account.PublicKey;
+            var preflightError = await ValidateCreateDuelChallengePreflightAsync(
+                localWallet,
+                opponentWallet,
+                stakeRaw,
+                expiresAtSlot);
+            if (!string.IsNullOrWhiteSpace(preflightError))
+            {
+                Log($"CreateDuelChallenge preflight blocked: {preflightError}");
+                return TxResult.Fail(preflightError);
+            }
+
+            var relevant = await FetchRelevantDuelChallengesAsync();
+            var hasOpenOutgoing = relevant.Any(challenge =>
+                challenge.IsOutgoingFrom(localWallet) &&
+                challenge.IsOpenLike);
+            if (hasOpenOutgoing)
+            {
+                return TxResult.Fail("You already have an outstanding duel request.");
+            }
+
+            var challengeSeed = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var duelChallengePda = DeriveDuelChallengePda(localWallet, opponentWallet, challengeSeed);
+            if (duelChallengePda == null)
+            {
+                return TxResult.Fail("Failed to derive duel challenge PDA.");
+            }
+
+            var duelEscrowPda = DeriveDuelEscrowPda(duelChallengePda);
+            if (duelEscrowPda == null)
+            {
+                return TxResult.Fail("Failed to derive duel escrow PDA.");
+            }
+
+            var playerTokenAccount = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(
+                localWallet,
+                CurrentGlobalState.SkrMint);
+            var challengerPlayerPda = DerivePlayerPda(localWallet);
+            var opponentPlayerPda = DerivePlayerPda(opponentWallet);
+            var challengerProfilePda = DeriveProfilePda(localWallet);
+            var opponentProfilePda = DeriveProfilePda(opponentWallet);
+
+            try
+            {
+                var result = await ExecuteGameplayActionAsync(
+                    "CreateDuelChallenge",
+                    _ =>
+                        ChaindepthProgram.CreateDuelChallenge(
+                            new CreateDuelChallengeAccounts
+                            {
+                                Challenger = localWallet,
+                                Opponent = opponentWallet,
+                                Global = _globalPda,
+                                ChallengerPlayerAccount = challengerPlayerPda,
+                                OpponentPlayerAccount = opponentPlayerPda,
+                                ChallengerProfile = challengerProfilePda,
+                                OpponentProfile = opponentProfilePda,
+                                DuelChallenge = duelChallengePda,
+                                DuelEscrow = duelEscrowPda,
+                                ChallengerTokenAccount = playerTokenAccount,
+                                SkrMint = CurrentGlobalState.SkrMint
+                            },
+                            challengeSeed,
+                            stakeRaw,
+                            expiresAtSlot,
+                            _programId),
+                    ensureSessionIfPossible: false,
+                    useSessionSignerIfPossible: false);
+                if (result.Success)
+                {
+                    await FetchRelevantDuelChallengesAsync();
+                }
+
+                return result;
+            }
+            catch (Exception exception)
+            {
+                LogError($"CreateDuelChallengeAsync failed: {exception.Message}");
+                return TxResult.Fail(exception.Message);
+            }
+        }
+
+        private async UniTask<string> ValidateCreateDuelChallengePreflightAsync(
+            PublicKey localWallet,
+            PublicKey opponentWallet,
+            ulong stakeRaw,
+            ulong expiresAtSlot)
+        {
+            if (localWallet == null || opponentWallet == null)
+            {
+                return "Invalid challenger or opponent wallet.";
+            }
+
+            if (string.Equals(localWallet.Key, opponentWallet.Key, StringComparison.Ordinal))
+            {
+                return "You cannot challenge yourself.";
+            }
+
+            if (stakeRaw == 0)
+            {
+                return "Stake must be greater than zero.";
+            }
+
+            var slot = await GetCurrentSlotAsync();
+            if (slot.HasValue)
+            {
+                if (expiresAtSlot <= slot.Value)
+                {
+                    return "Duel request expiry is already in the past.";
+                }
+
+                if (expiresAtSlot > slot.Value + DuelMaxExpirySlots)
+                {
+                    return "Duel expiry is too far in the future.";
+                }
+            }
+
+            var challengerPlayerPda = DerivePlayerPda(localWallet);
+            var opponentPlayerPda = DerivePlayerPda(opponentWallet);
+            var challengerPlayer = await FetchPlayerAccountByPdaAsync(challengerPlayerPda);
+            var opponentPlayer = await FetchPlayerAccountByPdaAsync(opponentPlayerPda);
+            if (challengerPlayer == null)
+            {
+                return "Your player account could not be loaded.";
+            }
+
+            if (opponentPlayer == null)
+            {
+                return "Opponent player account could not be loaded.";
+            }
+
+            var challengerProfilePda = DeriveProfilePda(localWallet);
+            var opponentProfilePda = DeriveProfilePda(opponentWallet);
+            if (!await AccountHasData(challengerProfilePda))
+            {
+                return "Your profile is missing. Create profile first.";
+            }
+
+            if (!await AccountHasData(opponentProfilePda))
+            {
+                return "Opponent profile is missing.";
+            }
+
+            if (CurrentGlobalState == null)
+            {
+                return "Global state not loaded.";
+            }
+
+            if (challengerPlayer.SeasonSeed != CurrentGlobalState.SeasonSeed ||
+                opponentPlayer.SeasonSeed != CurrentGlobalState.SeasonSeed)
+            {
+                return "Both players must be in the current season.";
+            }
+
+            if (!challengerPlayer.InDungeon || !opponentPlayer.InDungeon)
+            {
+                return "Both players must be in the dungeon.";
+            }
+
+            if (challengerPlayer.CurrentHp == 0 || opponentPlayer.CurrentHp == 0)
+            {
+                return "Both players must be alive to duel.";
+            }
+
+            if (challengerPlayer.CurrentRoomX != opponentPlayer.CurrentRoomX ||
+                challengerPlayer.CurrentRoomY != opponentPlayer.CurrentRoomY)
+            {
+                return "Both players must be in the same room.";
+            }
+
+            var challengerTokenAccount = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(
+                localWallet,
+                CurrentGlobalState.SkrMint);
+            if (!await AccountHasData(challengerTokenAccount))
+            {
+                return "Your SKR token account is missing.";
+            }
+
+            var tokenBalance = await TryGetTokenBalanceRawAsync(challengerTokenAccount);
+            if (!tokenBalance.Success)
+            {
+                return "Could not read your SKR balance.";
+            }
+
+            if (tokenBalance.Amount < stakeRaw)
+            {
+                return "Insufficient SKR balance for this stake.";
+            }
+
+            return null;
+        }
+
+        private async UniTask<PlayerAccount> FetchPlayerAccountByPdaAsync(PublicKey playerPda)
+        {
+            if (playerPda == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                var result = await _client.GetPlayerAccountAsync(playerPda.Key, Commitment.Confirmed);
+                if (!result.WasSuccessful || result.ParsedResult == null)
+                {
+                    return null;
+                }
+
+                return result.ParsedResult;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private async UniTask<(bool Success, ulong Amount)> TryGetTokenBalanceRawAsync(PublicKey tokenAccount)
+        {
+            var rpc = GetRpcClient();
+            if (rpc == null || tokenAccount == null)
+            {
+                return (false, 0UL);
+            }
+
+            try
+            {
+                var tokenBalanceResult = await rpc.GetTokenAccountBalanceAsync(tokenAccount, Commitment.Confirmed);
+                var amountRaw = tokenBalanceResult?.Result?.Value?.Amount;
+                if (!tokenBalanceResult.WasSuccessful || string.IsNullOrWhiteSpace(amountRaw))
+                {
+                    return (false, 0UL);
+                }
+
+                return ulong.TryParse(amountRaw, out var amount)
+                    ? (true, amount)
+                    : (false, 0UL);
+            }
+            catch
+            {
+                return (false, 0UL);
+            }
+        }
+
+        public async UniTask<TxResult> AcceptDuelChallengeAsync(DuelChallengeView challenge)
+        {
+            return await ProcessDuelChallengeAsync(
+                challenge,
+                "AcceptDuelChallenge",
+                accounts =>
+                    ChaindepthProgram.AcceptDuelChallenge(
+                        accounts,
+                        challenge.ChallengeSeed,
+                        _programId));
+        }
+
+        public async UniTask<TxResult> DeclineDuelChallengeAsync(DuelChallengeView challenge)
+        {
+            return await ProcessDuelChallengeAsync(
+                challenge,
+                "DeclineDuelChallenge",
+                accounts =>
+                    ChaindepthProgram.DeclineDuelChallenge(
+                        new DeclineDuelChallengeAccounts
+                        {
+                            Opponent = accounts.Opponent,
+                            Challenger = accounts.Challenger,
+                            Global = accounts.Global,
+                            DuelChallenge = accounts.DuelChallenge,
+                            DuelEscrow = accounts.DuelEscrow,
+                            ChallengerTokenAccount = accounts.ChallengerTokenAccount
+                        },
+                        challenge.ChallengeSeed,
+                        _programId));
+        }
+
+        public async UniTask<TxResult> ExpireDuelChallengeAsync(DuelChallengeView challenge)
+        {
+            if (challenge == null)
+            {
+                return TxResult.Fail("Challenge missing");
+            }
+
+            if (Web3.Wallet?.Account?.PublicKey == null)
+            {
+                return TxResult.Fail("Wallet not connected");
+            }
+
+            if (CurrentGlobalState == null)
+            {
+                await FetchGlobalState();
+            }
+
+            var challengerTokenAccount = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(
+                challenge.Challenger,
+                CurrentGlobalState.SkrMint);
+            var duelChallengePda = challenge.Pda ??
+                                   DeriveDuelChallengePda(challenge.Challenger, challenge.Opponent, challenge.ChallengeSeed);
+            var duelEscrow = challenge.DuelEscrow ?? DeriveDuelEscrowPda(duelChallengePda);
+            var authority = Web3.Wallet.Account.PublicKey;
+
+            var result = await ExecuteGameplayActionAsync(
+                "ExpireDuelChallenge",
+                _ =>
+                    ChaindepthProgram.ExpireDuelChallenge(
+                        new ExpireDuelChallengeAccounts
+                        {
+                            Authority = authority,
+                            Challenger = challenge.Challenger,
+                            Opponent = challenge.Opponent,
+                            Global = _globalPda,
+                            DuelChallenge = duelChallengePda,
+                            DuelEscrow = duelEscrow,
+                            ChallengerTokenAccount = challengerTokenAccount
+                        },
+                        challenge.ChallengeSeed,
+                        _programId),
+                ensureSessionIfPossible: false,
+                useSessionSignerIfPossible: false);
+            if (result.Success)
+            {
+                await FetchRelevantDuelChallengesAsync();
+            }
+
+            return result;
+        }
+
+        public string FormatDuelTranscriptForLog(DuelChallengeView challenge)
+        {
+            if (challenge == null)
+            {
+                return "[Duel] Challenge is null.";
+            }
+
+            var winnerText = challenge.IsDraw
+                ? "DRAW"
+                : challenge.Winner?.Key ?? "<unknown>";
+            var builder = new StringBuilder();
+            builder.AppendLine($"[Duel] pda={challenge.Pda?.Key ?? "<unknown>"} status={challenge.Status}");
+            builder.AppendLine(
+                $"[Duel] challenger={challenge.Challenger?.Key} opponent={challenge.Opponent?.Key} winner={winnerText}");
+            builder.AppendLine(
+                $"[Duel] hp challenger={challenge.ChallengerFinalHp} opponent={challenge.OpponentFinalHp} turns={challenge.TurnsPlayed}");
+            var rounds = Math.Min(challenge.ChallengerHits?.Count ?? 0, challenge.OpponentHits?.Count ?? 0);
+            for (var index = 0; index < rounds; index += 1)
+            {
+                builder.AppendLine(
+                    $"[Duel] round {index + 1}: challenger={challenge.ChallengerHits[index]} opponent={challenge.OpponentHits[index]}");
+            }
+
+            return builder.ToString();
+        }
+
+        private async UniTask<TxResult> ProcessDuelChallengeAsync(
+            DuelChallengeView challenge,
+            string actionName,
+            Func<AcceptDuelChallengeAccounts, TransactionInstruction> buildInstruction)
+        {
+            if (challenge == null)
+            {
+                return TxResult.Fail("Challenge missing");
+            }
+
+            if (Web3.Wallet?.Account?.PublicKey == null)
+            {
+                return TxResult.Fail("Wallet not connected");
+            }
+
+            if (string.Equals(actionName, "AcceptDuelChallenge", StringComparison.Ordinal))
+            {
+                if (challenge?.Pda == null)
+                {
+                    return TxResult.Fail("Accept failed: duel PDA missing.");
+                }
+
+                var canonicalChallenge = await FetchDuelChallengeByPdaAsync(challenge.Pda);
+                if (canonicalChallenge == null)
+                {
+                    return TxResult.Fail("Accept failed: could not load duel challenge from chain.");
+                }
+
+                challenge = canonicalChallenge;
+                Log(
+                    $"AcceptDuelChallenge using canonical onchain challenge data: " +
+                    $"pda={challenge.Pda?.Key} seed={challenge.ChallengeSeed} " +
+                    $"challenger={challenge.Challenger?.Key} opponent={challenge.Opponent?.Key} status={challenge.Status}");
+            }
+
+            if (CurrentGlobalState == null)
+            {
+                await FetchGlobalState();
+            }
+
+            var duelChallengePda = challenge.Pda ??
+                                   DeriveDuelChallengePda(challenge.Challenger, challenge.Opponent, challenge.ChallengeSeed);
+            var duelEscrow = challenge.DuelEscrow ?? DeriveDuelEscrowPda(duelChallengePda);
+            var challengerPlayerPda = DerivePlayerPda(challenge.Challenger);
+            var opponentPlayerPda = DerivePlayerPda(challenge.Opponent);
+            var challengerTokenAccount = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(
+                challenge.Challenger,
+                CurrentGlobalState.SkrMint);
+            var opponentTokenAccount = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(
+                challenge.Opponent,
+                CurrentGlobalState.SkrMint);
+            var programIdentityPda = DeriveProgramIdentityPda();
+            if (programIdentityPda == null)
+            {
+                return TxResult.Fail("Failed to derive program identity PDA.");
+            }
+
+            if (string.Equals(actionName, "AcceptDuelChallenge", StringComparison.Ordinal))
+            {
+                await LogDuelAcceptDiagnosticsAsync(
+                    challenge,
+                    duelChallengePda,
+                    duelEscrow,
+                    challengerPlayerPda,
+                    opponentPlayerPda,
+                    challengerTokenAccount,
+                    opponentTokenAccount);
+            }
+
+            var result = await ExecuteGameplayActionAsync(
+                actionName,
+                context =>
+                    buildInstruction(new AcceptDuelChallengeAccounts
+                    {
+                        Opponent = context.Player,
+                        Challenger = challenge.Challenger,
+                        Global = _globalPda,
+                        DuelChallenge = duelChallengePda,
+                        DuelEscrow = duelEscrow,
+                        ChallengerPlayerAccount = challengerPlayerPda,
+                        OpponentPlayerAccount = opponentPlayerPda,
+                        ChallengerTokenAccount = challengerTokenAccount,
+                        OpponentTokenAccount = opponentTokenAccount,
+                        ProgramIdentity = programIdentityPda
+                    }),
+                ensureSessionIfPossible: false,
+                useSessionSignerIfPossible: false);
+            if (!result.Success && string.Equals(actionName, "AcceptDuelChallenge", StringComparison.Ordinal))
+            {
+                Log(
+                    $"Duel accept failed: programErrorCode={_lastProgramErrorCode?.ToString() ?? "<null>"} " +
+                    $"reason={_lastTransactionFailureReason ?? "<null>"}");
+            }
+
+            if (result.Success)
+            {
+                await FetchRelevantDuelChallengesAsync();
+            }
+
+            return result;
+        }
+
+        private async UniTask<DuelChallengeView> FetchDuelChallengeByPdaAsync(PublicKey duelPda)
+        {
+            if (duelPda == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                var duelResult = await _client.GetDuelChallengeAsync(duelPda.Key, Commitment.Confirmed);
+                if (!duelResult.WasSuccessful || duelResult.ParsedResult == null)
+                {
+                    Log(
+                        $"FetchDuelChallengeByPdaAsync failed for {duelPda.Key}. " +
+                        $"wasSuccessful={duelResult.WasSuccessful} parsedNull={duelResult.ParsedResult == null}");
+                    return null;
+                }
+
+                return ToDuelChallengeView(duelResult.ParsedResult, duelPda);
+            }
+            catch (Exception error)
+            {
+                Log($"FetchDuelChallengeByPdaAsync exception for {duelPda.Key}: {error.Message}");
+                return null;
+            }
+        }
+
+        private async UniTask LogDuelAcceptDiagnosticsAsync(
+            DuelChallengeView challenge,
+            PublicKey duelChallengePda,
+            PublicKey duelEscrow,
+            PublicKey challengerPlayerPda,
+            PublicKey opponentPlayerPda,
+            PublicKey challengerTokenAccount,
+            PublicKey opponentTokenAccount)
+        {
+            try
+            {
+                var localWallet = Web3.Wallet?.Account?.PublicKey;
+                Log(
+                    "Duel accept diag: " +
+                    $"local={ShortKey(localWallet)} challenger={ShortKey(challenge.Challenger)} opponent={ShortKey(challenge.Opponent)} " +
+                    $"seed={challenge.ChallengeSeed} stakeRaw={challenge.StakeRaw} statusView={challenge.Status} " +
+                    $"roomView=({challenge.RoomX},{challenge.RoomY}) expiresSlot={challenge.ExpiresAtSlot}");
+                Log(
+                    "Duel accept diag accounts: " +
+                    $"duel={ShortKey(duelChallengePda)} escrow={ShortKey(duelEscrow)} " +
+                    $"challengerPlayer={ShortKey(challengerPlayerPda)} opponentPlayer={ShortKey(opponentPlayerPda)} " +
+                    $"challengerATA={ShortKey(challengerTokenAccount)} opponentATA={ShortKey(opponentTokenAccount)} " +
+                    $"global={ShortKey(_globalPda)} skrMint={ShortKey(CurrentGlobalState?.SkrMint)}");
+                var programIdentity = DeriveProgramIdentityPda();
+                Log($"Duel accept diag vrf identity: {ShortKey(programIdentity)}");
+                var derivedFromFields = DeriveDuelChallengePda(
+                    challenge.Challenger,
+                    challenge.Opponent,
+                    challenge.ChallengeSeed);
+                if (derivedFromFields != null && duelChallengePda != null)
+                {
+                    Log(
+                        $"Duel accept diag seed-check: derived={ShortKey(derivedFromFields)} " +
+                        $"provided={ShortKey(duelChallengePda)} match={string.Equals(derivedFromFields.Key, duelChallengePda.Key, StringComparison.Ordinal)}");
+                }
+
+                var rpc = GetRpcClient();
+                if (rpc != null)
+                {
+                    var slotResult = await rpc.GetSlotAsync(Commitment.Confirmed);
+                    if (slotResult.WasSuccessful)
+                    {
+                        Log($"Duel accept diag: currentSlot={slotResult.Result} expiresAt={challenge.ExpiresAtSlot}");
+                    }
+
+                    await LogTokenAndSolDiagnosticsAsync("challenger", challenge.Challenger, challengerTokenAccount);
+                    await LogTokenAndSolDiagnosticsAsync("opponent", challenge.Opponent, opponentTokenAccount);
+                    await LogAccountExistsDiagnosticsAsync("duelChallenge", duelChallengePda);
+                    await LogAccountExistsDiagnosticsAsync("duelEscrow", duelEscrow);
+                    await LogAccountExistsDiagnosticsAsync("challengerPlayer", challengerPlayerPda);
+                    await LogAccountExistsDiagnosticsAsync("opponentPlayer", opponentPlayerPda);
+                }
+
+                var duelAccountResult = await _client.GetDuelChallengeAsync(duelChallengePda.Key, Commitment.Confirmed);
+                if (duelAccountResult.WasSuccessful && duelAccountResult.ParsedResult != null)
+                {
+                    var duel = duelAccountResult.ParsedResult;
+                    Log(
+                        "Duel accept onchain duel: " +
+                        $"status={duel.Status} season={duel.SeasonSeed} room=({duel.RoomX},{duel.RoomY}) " +
+                        $"expires={duel.ExpiresAtSlot} requested={duel.RequestedSlot} settled={duel.SettledSlot} " +
+                        $"challenger={ShortKey(duel.Challenger)} opponent={ShortKey(duel.Opponent)} " +
+                        $"escrow={ShortKey(duel.DuelEscrow)} stakeRaw={duel.StakeAmount}");
+                }
+                else
+                {
+                    Log("Duel accept diag: failed to load duel challenge account for preflight.");
+                }
+
+                var challengerPlayerResult =
+                    await _client.GetPlayerAccountAsync(challengerPlayerPda.Key, Commitment.Confirmed);
+                if (challengerPlayerResult.WasSuccessful && challengerPlayerResult.ParsedResult != null)
+                {
+                    var player = challengerPlayerResult.ParsedResult;
+                    Log(
+                        "Duel accept onchain challenger player: " +
+                        $"owner={ShortKey(player.Owner)} inDungeon={player.InDungeon} " +
+                        $"room=({player.CurrentRoomX},{player.CurrentRoomY}) hp={player.CurrentHp} season={player.SeasonSeed}");
+                }
+
+                var opponentPlayerResult =
+                    await _client.GetPlayerAccountAsync(opponentPlayerPda.Key, Commitment.Confirmed);
+                if (opponentPlayerResult.WasSuccessful && opponentPlayerResult.ParsedResult != null)
+                {
+                    var player = opponentPlayerResult.ParsedResult;
+                    Log(
+                        "Duel accept onchain opponent player: " +
+                        $"owner={ShortKey(player.Owner)} inDungeon={player.InDungeon} " +
+                        $"room=({player.CurrentRoomX},{player.CurrentRoomY}) hp={player.CurrentHp} season={player.SeasonSeed}");
+                }
+            }
+            catch (Exception diagException)
+            {
+                Log($"Duel accept diag failed: {diagException.Message}");
+            }
+        }
+
+        private async UniTask LogTokenAndSolDiagnosticsAsync(string label, PublicKey wallet, PublicKey tokenAccount)
+        {
+            var rpc = GetRpcClient();
+            if (rpc == null || wallet == null || tokenAccount == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var solBalanceResult = await rpc.GetBalanceAsync(wallet, Commitment.Confirmed);
+                var solLamports = solBalanceResult.WasSuccessful ? solBalanceResult.Result?.Value ?? 0UL : 0UL;
+                var tokenBalanceResult = await rpc.GetTokenAccountBalanceAsync(tokenAccount, Commitment.Confirmed);
+                var tokenRaw = tokenBalanceResult.WasSuccessful
+                    ? tokenBalanceResult.Result?.Value?.Amount ?? "0"
+                    : "<fetch_failed>";
+                Log(
+                    $"Duel accept diag balances {label}: wallet={ShortKey(wallet)} solLamports={solLamports} " +
+                    $"ata={ShortKey(tokenAccount)} skrRaw={tokenRaw}");
+            }
+            catch (Exception error)
+            {
+                Log($"Duel accept diag balance fetch failed ({label}): {error.Message}");
+            }
+        }
+
+        private async UniTask LogAccountExistsDiagnosticsAsync(string label, PublicKey account)
+        {
+            try
+            {
+                var hasData = await AccountHasData(account);
+                Log($"Duel accept diag account: {label}={ShortKey(account)} hasData={hasData}");
+            }
+            catch (Exception error)
+            {
+                Log($"Duel accept diag account check failed ({label}): {error.Message}");
+            }
+        }
+
+        private static string ShortKey(PublicKey key)
+        {
+            if (key == null || string.IsNullOrWhiteSpace(key.Key))
+            {
+                return "<null>";
+            }
+
+            return key.Key.Length <= 10
+                ? key.Key
+                : $"{key.Key.Substring(0, 6)}..{key.Key.Substring(key.Key.Length - 4)}";
+        }
+
+        private static DuelChallengeStatus ToDuelChallengeStatus(byte rawStatus)
+        {
+            return rawStatus switch
+            {
+                0 => DuelChallengeStatus.Open,
+                1 => DuelChallengeStatus.PendingRandomness,
+                2 => DuelChallengeStatus.Settled,
+                3 => DuelChallengeStatus.Declined,
+                4 => DuelChallengeStatus.Expired,
+                _ => DuelChallengeStatus.Unknown
+            };
+        }
+
+        private static ulong CompareDuelSortKey(ulong requestedSlot, ulong expiresAtSlot, ulong settledSlot)
+        {
+            return Math.Max(requestedSlot, Math.Max(expiresAtSlot, settledSlot));
+        }
+
+        private DuelChallengeView ToDuelChallengeView(Chaindepth.Accounts.DuelChallenge source, PublicKey challengePda)
+        {
+            return new DuelChallengeView
+            {
+                Pda = challengePda,
+                Challenger = source.Challenger,
+                Opponent = source.Opponent,
+                ChallengerDisplayNameSnapshot = source.ChallengerDisplayNameSnapshot,
+                OpponentDisplayNameSnapshot = source.OpponentDisplayNameSnapshot,
+                Winner = source.Winner,
+                DuelEscrow = source.DuelEscrow,
+                SeasonSeed = source.SeasonSeed,
+                RoomX = source.RoomX,
+                RoomY = source.RoomY,
+                StakeRaw = source.StakeAmount,
+                ChallengeSeed = source.ChallengeSeed,
+                ExpiresAtSlot = source.ExpiresAtSlot,
+                RequestedSlot = source.RequestedSlot,
+                SettledSlot = source.SettledSlot,
+                Status = ToDuelChallengeStatus(source.Status),
+                Starter = (DuelStarter)source.Starter,
+                IsDraw = source.IsDraw,
+                ChallengerFinalHp = source.ChallengerFinalHp,
+                OpponentFinalHp = source.OpponentFinalHp,
+                TurnsPlayed = source.TurnsPlayed,
+                ChallengerHits = source.ChallengerHits ?? Array.Empty<byte>(),
+                OpponentHits = source.OpponentHits ?? Array.Empty<byte>()
+            };
+        }
+
+        public ulong GetDefaultDuelExpirySlotOffset()
+        {
+            return DuelDefaultExpirySlots;
         }
 
         /// <summary>
@@ -3336,7 +4631,9 @@ namespace SeekerDungeon.Solana
             var signature = await SendTransaction(
                 buildInstruction(signingContext),
                 signingContext.SignerAccount,
-                new List<Account> { signingContext.SignerAccount });
+                new List<Account> { signingContext.SignerAccount },
+                actionName,
+                signingContext.UsesSessionSigner);
 
             if (!string.IsNullOrWhiteSpace(signature))
             {
@@ -3361,7 +4658,9 @@ namespace SeekerDungeon.Solana
                     var walletSignature = await SendTransaction(
                         buildInstruction(walletContext),
                         walletContext.SignerAccount,
-                        new List<Account> { walletContext.SignerAccount });
+                        new List<Account> { walletContext.SignerAccount },
+                        $"{actionName}:wallet-fallback",
+                        false);
                     if (!string.IsNullOrWhiteSpace(walletSignature))
                     {
                         return TxResult.Ok(walletSignature);
@@ -3380,7 +4679,9 @@ namespace SeekerDungeon.Solana
                     var walletSignature = await SendTransaction(
                         buildInstruction(walletContext),
                         walletContext.SignerAccount,
-                        new List<Account> { walletContext.SignerAccount });
+                        new List<Account> { walletContext.SignerAccount },
+                        $"{actionName}:wallet-fallback",
+                        false);
                     if (!string.IsNullOrWhiteSpace(walletSignature))
                     {
                         return TxResult.Ok(walletSignature);
@@ -3423,7 +4724,9 @@ namespace SeekerDungeon.Solana
             var retrySignature = await SendTransaction(
                 buildInstruction(retryContext),
                 retryContext.SignerAccount,
-                new List<Account> { retryContext.SignerAccount });
+                new List<Account> { retryContext.SignerAccount },
+                $"{actionName}:retry",
+                retryContext.UsesSessionSigner);
 
             if (!string.IsNullOrWhiteSpace(retrySignature))
             {
@@ -3440,7 +4743,9 @@ namespace SeekerDungeon.Solana
                     var walletRetrySignature = await SendTransaction(
                         buildInstruction(walletContext),
                         walletContext.SignerAccount,
-                        new List<Account> { walletContext.SignerAccount });
+                        new List<Account> { walletContext.SignerAccount },
+                        $"{actionName}:wallet-retry-fallback",
+                        false);
                     if (!string.IsNullOrWhiteSpace(walletRetrySignature))
                     {
                         return TxResult.Ok(walletRetrySignature);
@@ -3465,13 +4770,17 @@ namespace SeekerDungeon.Solana
             return await SendTransaction(
                 instruction,
                 Web3.Wallet.Account,
-                new List<Account> { Web3.Wallet.Account });
+                new List<Account> { Web3.Wallet.Account },
+                actionName: "DirectWalletTx",
+                isSessionFeePayer: false);
         }
 
         private async UniTask<string> SendTransaction(
             TransactionInstruction instruction,
             Account feePayer,
-            IList<Account> signers)
+            IList<Account> signers,
+            string actionName,
+            bool isSessionFeePayer)
         {
             if (feePayer == null || signers == null || signers.Count == 0)
             {
@@ -3495,9 +4804,19 @@ namespace SeekerDungeon.Solana
                     {
                         _lastProgramErrorCode = null;
                         OnTransactionSent?.Invoke(walletSignedSignature);
+                        RecordSessionExpenseAsync(
+                            actionName,
+                            walletSignedSignature,
+                            feePayer,
+                            isSessionFeePayer).Forget();
                         isSuccess = true;
                         return walletSignedSignature;
                     }
+
+                    // Avoid invalid local-RPC resend when wallet adapter signing fails.
+                    // The local Account object does not hold the mobile wallet's private key,
+                    // so fallback signing can produce misleading signature verification noise.
+                    return null;
                 }
 
                 var rpcCandidates = GetRpcCandidates();
@@ -3544,6 +4863,11 @@ namespace SeekerDungeon.Solana
                             _lastTransactionFailureReason = null;
                             Log($"Transaction sent ({rpcLabel}): {result.Result}");
                             OnTransactionSent?.Invoke(result.Result);
+                            RecordSessionExpenseAsync(
+                                actionName,
+                                result.Result,
+                                feePayer,
+                                isSessionFeePayer).Forget();
                             isSuccess = true;
                             return result.Result;
                         }
@@ -3612,6 +4936,11 @@ namespace SeekerDungeon.Solana
                                 _lastTransactionFailureReason = null;
                                 Log($"Transaction sent via raw HTTP ({rpcLabel}): {rawProbe.Signature}");
                                 OnTransactionSent?.Invoke(rawProbe.Signature);
+                                RecordSessionExpenseAsync(
+                                    actionName,
+                                    rawProbe.Signature,
+                                    feePayer,
+                                    isSessionFeePayer).Forget();
                                 isSuccess = true;
                                 return rawProbe.Signature;
                             }
@@ -3759,6 +5088,426 @@ namespace SeekerDungeon.Solana
                 walletAccount.PublicKey.Key,
                 feePayer.PublicKey.Key,
                 StringComparison.Ordinal);
+        }
+
+        public IReadOnlyList<SessionExpenseEntry> GetSessionExpenseLogSnapshot()
+        {
+            return _sessionExpenseEntries.ToArray();
+        }
+
+        public SessionExpenseTotals GetSessionExpenseTotals()
+        {
+            var totals = new SessionExpenseTotals();
+            for (var i = 0; i < _sessionExpenseEntries.Count; i += 1)
+            {
+                var entry = _sessionExpenseEntries[i];
+                if (entry == null)
+                {
+                    continue;
+                }
+
+                totals.TxCount += 1;
+                totals.TotalSolFeesLamports += entry.SolFeeLamports;
+                if (entry.IsSessionFeePayer)
+                {
+                    totals.SessionSolFeesLamports += entry.SolFeeLamports;
+                }
+                else
+                {
+                    totals.WalletSolFeesLamports += entry.SolFeeLamports;
+                }
+
+                totals.TotalPlayerSkrSpentRaw += entry.PlayerSkrSpentRaw;
+                totals.TotalPlayerSkrReceivedRaw += entry.PlayerSkrReceivedRaw;
+            }
+
+            return totals;
+        }
+
+        public string GetSessionExpenseSummary()
+        {
+            var totals = GetSessionExpenseTotals();
+            var sol = totals.TotalSolFeesLamports / 1_000_000_000d;
+            var sessionSol = totals.SessionSolFeesLamports / 1_000_000_000d;
+            var walletSol = totals.WalletSolFeesLamports / 1_000_000_000d;
+            var skrSpent = totals.TotalPlayerSkrSpentRaw / (double)LGConfig.SKR_MULTIPLIER;
+            var skrReceived = totals.TotalPlayerSkrReceivedRaw / (double)LGConfig.SKR_MULTIPLIER;
+
+            return
+                $"tx={totals.TxCount} " +
+                $"sol_fees_total={sol:F6} " +
+                $"sol_fees_session={sessionSol:F6} " +
+                $"sol_fees_wallet={walletSol:F6} " +
+                $"player_skr_spent={skrSpent:F3} " +
+                $"player_skr_received={skrReceived:F3}";
+        }
+
+        public string GetSessionExpenseLogPath()
+        {
+            return Path.Combine(Application.persistentDataPath, SessionExpenseLogFileName);
+        }
+
+        public void ClearSessionExpenseLog(bool deletePersistedFile = false)
+        {
+            _sessionExpenseEntries.Clear();
+            if (!deletePersistedFile)
+            {
+                return;
+            }
+
+            try
+            {
+                var path = GetSessionExpenseLogPath();
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (Exception exception)
+            {
+                Log($"ClearSessionExpenseLog failed to delete persisted file: {exception.Message}");
+            }
+        }
+
+        private async UniTaskVoid RecordSessionExpenseAsync(
+            string actionName,
+            string signature,
+            Account feePayer,
+            bool isSessionFeePayer)
+        {
+            if (string.IsNullOrWhiteSpace(signature) || feePayer?.PublicKey == null)
+            {
+                return;
+            }
+
+            var rpc = GetRpcClient();
+            if (rpc == null)
+            {
+                return;
+            }
+
+            const int maxAttempts = 5;
+            const int delayMs = 220;
+            object txResultObject = null;
+            for (var attempt = 1; attempt <= maxAttempts; attempt += 1)
+            {
+                try
+                {
+                    var txResult = await rpc.GetTransactionAsync(signature, Commitment.Confirmed, 0);
+                    if (txResult.WasSuccessful && txResult.Result != null)
+                    {
+                        txResultObject = txResult.Result;
+                        break;
+                    }
+                }
+                catch
+                {
+                    // Best-effort diagnostics only.
+                }
+
+                if (attempt < maxAttempts)
+                {
+                    await UniTask.Delay(delayMs);
+                }
+            }
+
+            var meta = GetPropertyObject(txResultObject, "Meta");
+            var transaction = GetPropertyObject(txResultObject, "Transaction");
+            var message = GetPropertyObject(transaction, "Message");
+            var accountKeys = ReadStringListProperty(message, "AccountKeys");
+            var preBalances = ReadUlongListProperty(meta, "PreBalances");
+            var postBalances = ReadUlongListProperty(meta, "PostBalances");
+            var feeLamports = ReadUlongProperty(meta, "Fee");
+            var feePayerKey = feePayer.PublicKey.Key;
+            var feePayerLamportsDelta = ComputeLamportDeltaForAccount(
+                feePayerKey,
+                accountKeys,
+                preBalances,
+                postBalances);
+
+            var playerWalletKey = Web3.Wallet?.Account?.PublicKey?.Key;
+            var skrMintKey = CurrentGlobalState?.SkrMint?.Key ?? LGConfig.ActiveSkrMint;
+            var playerSkrDeltaRaw = ComputeTokenOwnerMintDeltaRaw(meta, playerWalletKey, skrMintKey);
+            var playerSkrSpentRaw = playerSkrDeltaRaw < 0 ? (ulong)(-playerSkrDeltaRaw) : 0UL;
+            var playerSkrReceivedRaw = playerSkrDeltaRaw > 0 ? (ulong)playerSkrDeltaRaw : 0UL;
+
+            var entry = new SessionExpenseEntry
+            {
+                TimestampUtc = DateTime.UtcNow.ToString("o"),
+                ActionName = string.IsNullOrWhiteSpace(actionName) ? "UnknownAction" : actionName.Trim(),
+                Signature = signature.Trim(),
+                FeePayer = feePayerKey,
+                IsSessionFeePayer = isSessionFeePayer,
+                SolFeeLamports = feeLamports,
+                FeePayerSolDeltaLamports = feePayerLamportsDelta,
+                PlayerSkrDeltaRaw = playerSkrDeltaRaw,
+                PlayerSkrSpentRaw = playerSkrSpentRaw,
+                PlayerSkrReceivedRaw = playerSkrReceivedRaw
+            };
+
+            _sessionExpenseEntries.Add(entry);
+            if (_sessionExpenseEntries.Count > 2000)
+            {
+                _sessionExpenseEntries.RemoveRange(0, _sessionExpenseEntries.Count - 2000);
+            }
+
+            OnSessionExpenseLogged?.Invoke(entry);
+            AppendSessionExpenseToFile(entry);
+
+            Debug.Log(
+                "[LG][Expense] " +
+                $"action={entry.ActionName} sessionFeePayer={entry.IsSessionFeePayer} " +
+                $"solFee={entry.SolFeeLamports} feePayerDelta={entry.FeePayerSolDeltaLamports} " +
+                $"playerSkrDelta={entry.PlayerSkrDeltaRaw} sig={entry.Signature}");
+            Debug.Log($"[LG][ExpenseSummary] {GetSessionExpenseSummary()}");
+        }
+
+        private void AppendSessionExpenseToFile(SessionExpenseEntry entry)
+        {
+            if (entry == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var path = GetSessionExpenseLogPath();
+                var directory = Path.GetDirectoryName(path);
+                if (!string.IsNullOrWhiteSpace(directory) && !Directory.Exists(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                File.AppendAllText(path, JsonUtility.ToJson(entry) + Environment.NewLine);
+            }
+            catch (Exception exception)
+            {
+                Log($"AppendSessionExpenseToFile failed: {exception.Message}");
+            }
+        }
+
+        private static long ComputeLamportDeltaForAccount(
+            string accountKey,
+            IReadOnlyList<string> accountKeys,
+            IReadOnlyList<ulong> preBalances,
+            IReadOnlyList<ulong> postBalances)
+        {
+            if (string.IsNullOrWhiteSpace(accountKey) || accountKeys == null || preBalances == null || postBalances == null)
+            {
+                return 0L;
+            }
+
+            var accountIndex = -1;
+            for (var i = 0; i < accountKeys.Count; i += 1)
+            {
+                if (string.Equals(accountKeys[i], accountKey, StringComparison.Ordinal))
+                {
+                    accountIndex = i;
+                    break;
+                }
+            }
+
+            if (accountIndex < 0 || accountIndex >= preBalances.Count || accountIndex >= postBalances.Count)
+            {
+                return 0L;
+            }
+
+            return unchecked((long)postBalances[accountIndex] - (long)preBalances[accountIndex]);
+        }
+
+        private static long ComputeTokenOwnerMintDeltaRaw(object meta, string ownerWalletKey, string mintKey)
+        {
+            if (meta == null || string.IsNullOrWhiteSpace(ownerWalletKey) || string.IsNullOrWhiteSpace(mintKey))
+            {
+                return 0L;
+            }
+
+            var pre = SumTokenBalancesByOwnerAndMint(meta, "PreTokenBalances", ownerWalletKey, mintKey);
+            var post = SumTokenBalancesByOwnerAndMint(meta, "PostTokenBalances", ownerWalletKey, mintKey);
+            return post - pre;
+        }
+
+        private static long SumTokenBalancesByOwnerAndMint(
+            object meta,
+            string propertyName,
+            string ownerWalletKey,
+            string mintKey)
+        {
+            var total = 0L;
+            var balances = ReadObjectListProperty(meta, propertyName);
+            for (var i = 0; i < balances.Count; i += 1)
+            {
+                var balance = balances[i];
+                var owner = ReadStringProperty(balance, "Owner");
+                var mint = ReadStringProperty(balance, "Mint");
+                if (!string.Equals(owner, ownerWalletKey, StringComparison.Ordinal) ||
+                    !string.Equals(mint, mintKey, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var amountRaw = ReadTokenAmountRaw(balance);
+                total += amountRaw;
+            }
+
+            return total;
+        }
+
+        private static long ReadTokenAmountRaw(object tokenBalance)
+        {
+            var uiTokenAmount = GetPropertyObject(tokenBalance, "UiTokenAmount");
+            var amountRawText = ReadStringProperty(uiTokenAmount, "Amount");
+            if (!string.IsNullOrWhiteSpace(amountRawText) && long.TryParse(amountRawText, out var parsed))
+            {
+                return parsed;
+            }
+
+            // Some RPC formats expose amount directly.
+            amountRawText = ReadStringProperty(tokenBalance, "Amount");
+            if (!string.IsNullOrWhiteSpace(amountRawText) && long.TryParse(amountRawText, out parsed))
+            {
+                return parsed;
+            }
+
+            return 0L;
+        }
+
+        private static object GetPropertyObject(object source, string propertyName)
+        {
+            if (source == null || string.IsNullOrWhiteSpace(propertyName))
+            {
+                return null;
+            }
+
+            try
+            {
+                var property = source.GetType().GetProperty(propertyName);
+                return property?.GetValue(source);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string ReadStringProperty(object source, string propertyName)
+        {
+            var value = GetPropertyObject(source, propertyName);
+            return value?.ToString();
+        }
+
+        private static ulong ReadUlongProperty(object source, string propertyName)
+        {
+            var value = GetPropertyObject(source, propertyName);
+            if (value == null)
+            {
+                return 0UL;
+            }
+
+            if (value is ulong asUlong)
+            {
+                return asUlong;
+            }
+
+            if (value is long asLong && asLong >= 0)
+            {
+                return (ulong)asLong;
+            }
+
+            return ulong.TryParse(value.ToString(), out var parsed) ? parsed : 0UL;
+        }
+
+        private static List<string> ReadStringListProperty(object source, string propertyName)
+        {
+            var list = new List<string>();
+            var value = GetPropertyObject(source, propertyName);
+            if (value is IEnumerable<string> typed)
+            {
+                list.AddRange(typed.Where(item => !string.IsNullOrWhiteSpace(item)));
+                return list;
+            }
+
+            if (value is System.Collections.IEnumerable enumerable)
+            {
+                foreach (var item in enumerable)
+                {
+                    var text = item?.ToString();
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        list.Add(text);
+                    }
+                }
+            }
+
+            return list;
+        }
+
+        private static List<ulong> ReadUlongListProperty(object source, string propertyName)
+        {
+            var list = new List<ulong>();
+            var value = GetPropertyObject(source, propertyName);
+            if (value is IEnumerable<ulong> asUlongEnumerable)
+            {
+                list.AddRange(asUlongEnumerable);
+                return list;
+            }
+
+            if (value is IEnumerable<long> asLongEnumerable)
+            {
+                foreach (var item in asLongEnumerable)
+                {
+                    if (item >= 0)
+                    {
+                        list.Add((ulong)item);
+                    }
+                }
+
+                return list;
+            }
+
+            if (value is System.Collections.IEnumerable enumerable)
+            {
+                foreach (var item in enumerable)
+                {
+                    if (item is ulong asUlong)
+                    {
+                        list.Add(asUlong);
+                        continue;
+                    }
+
+                    if (item is long asLong && asLong >= 0)
+                    {
+                        list.Add((ulong)asLong);
+                        continue;
+                    }
+
+                    var text = item?.ToString();
+                    if (ulong.TryParse(text, out var parsed))
+                    {
+                        list.Add(parsed);
+                    }
+                }
+            }
+
+            return list;
+        }
+
+        private static List<object> ReadObjectListProperty(object source, string propertyName)
+        {
+            var list = new List<object>();
+            var value = GetPropertyObject(source, propertyName);
+            if (value is System.Collections.IEnumerable enumerable)
+            {
+                foreach (var item in enumerable)
+                {
+                    if (item != null)
+                    {
+                        list.Add(item);
+                    }
+                }
+            }
+
+            return list;
         }
 
         private List<IRpcClient> GetRpcCandidates()

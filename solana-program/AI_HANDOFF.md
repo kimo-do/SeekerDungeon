@@ -108,7 +108,7 @@ Rooms now have a center type:
 - `2` = boss
 
 Spawn rules implemented:
-- Start room `(5,5)` center is always empty.
+- Start room `(10,10)` center is always empty.
 - Depth 1 rooms: 50% chest chance, with one guaranteed chest among first-ring rooms.
 - Depth 2+ rooms: 50% boss chance.
 
@@ -223,7 +223,7 @@ wsl -d Ubuntu -- bash scripts/wsl/run.sh "export ANCHOR_PROVIDER_URL=https://api
 |--------|---------|
 | `npm run check-state` | Query current game state on devnet |
 | `npm run force-reset-season` | Admin-only immediate season reset override |
-| `ensure_start_room` instruction | Admin helper to bootstrap start room `(5,5)` for current season |
+| `ensure_start_room` instruction | Admin helper to bootstrap start room `(10,10)` for current season |
 | `npm run init-devnet` | Initialize game (create token, global state) |
 | `npm run mint-tokens <wallet> [amount]` | Mint test SKR tokens |
 | `npm run smoke-door` | End-to-end devnet smoke test (init/move/join/tick/complete/claim flow) |

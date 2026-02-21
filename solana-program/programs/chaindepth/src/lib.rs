@@ -80,6 +80,11 @@ pub mod chaindepth {
         instructions::move_player::handler(ctx, new_x, new_y)
     }
 
+    /// Enter dungeon explicitly at start room (10,10).
+    pub fn enter_dungeon(ctx: Context<EnterDungeon>) -> Result<()> {
+        instructions::enter_dungeon::handler(ctx)
+    }
+
     /// Unlock a locked door using the required key item.
     pub fn unlock_door(ctx: Context<UnlockDoor>, direction: u8) -> Result<()> {
         instructions::unlock_door::handler(ctx, direction)

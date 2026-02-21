@@ -108,6 +108,10 @@ PrefabInstance:
       propertyPath: skinId
       value: 8
       objectReference: {fileID: 0}
+    - target: {fileID: 6692289559594081567, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0.06
+      objectReference: {fileID: 0}
     - target: {fileID: 7126410378096323354, guid: 6d4b6cef6c4864c46a59b760534c6463, type: 3}
       propertyPath: m_Sprite
       value: 

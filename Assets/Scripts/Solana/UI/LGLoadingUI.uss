@@ -1,4 +1,4 @@
-.loading-root {
+﻿.loading-root {
     flex-grow: 1;
     justify-content: center;
     align-items: center;
@@ -93,7 +93,7 @@
 
 .connect-status {
     margin-top: 18px;
-    font-size: 26px;
+    font-size: 34px;
     color: rgb(223, 232, 245);
     -unity-text-align: middle-center;
 }
@@ -129,3 +129,4 @@
 .editor-wallet-button {
     flex-grow: 1;
 }
+

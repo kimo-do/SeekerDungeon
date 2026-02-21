@@ -1,6 +1,8 @@
+using System;
 using Cysharp.Threading.Tasks;
 using SeekerDungeon.Audio;
 using SeekerDungeon.Solana;
+using Solana.Unity.SDK;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
@@ -34,6 +36,9 @@ namespace SeekerDungeon.Dungeon
         private Vector2 _pressedScreenPosition;
         private bool _pressedOverUi;
         private bool _isHandlingDeathExitAlreadyApplied;
+        private bool? _lastObservedInDungeon;
+
+        public event Action<string, string> OnRemoteOccupantTapped;
 
         private void Awake()
         {
@@ -89,6 +94,14 @@ namespace SeekerDungeon.Dungeon
         {
             ResolveLocalPlayerController();
             if (_localPlayerController == null || player == null) return;
+
+            if (!_lastObservedInDungeon.HasValue || _lastObservedInDungeon.Value != player.InDungeon)
+            {
+                _lastObservedInDungeon = player.InDungeon;
+                Debug.Log(
+                    $"[DungeonInput] PlayerState inDungeon={player.InDungeon} " +
+                    $"pos=({player.CurrentRoomX},{player.CurrentRoomY}) scene={SceneManager.GetActiveScene().name}");
+            }
 
             // Don't revert wielded items while an optimistic job is pending;
             // stale RPC reads would incorrectly clear them.
@@ -197,6 +210,20 @@ namespace SeekerDungeon.Dungeon
             _isProcessingInteract = true;
             try
             {
+                var occupantVisual = hit.GetComponentInParent<DoorOccupantVisual2D>();
+                if (occupantVisual != null && !string.IsNullOrWhiteSpace(occupantVisual.BoundWalletKey))
+                {
+                    var localWalletKey = Web3.Wallet?.Account?.PublicKey?.Key;
+                    if (!string.Equals(localWalletKey, occupantVisual.BoundWalletKey, StringComparison.Ordinal))
+                    {
+                        OnRemoteOccupantTapped?.Invoke(
+                            occupantVisual.BoundWalletKey,
+                            occupantVisual.BoundDisplayName);
+                        _nextInteractTime = Time.unscaledTime + interactCooldownSeconds;
+                        return;
+                    }
+                }
+
                 var door = hit.GetComponentInParent<DoorInteractable>();
                 if (door != null)
                 {
@@ -221,8 +248,17 @@ namespace SeekerDungeon.Dungeon
 
                     if (wasEntranceStairsBeforeInteraction)
                     {
+                        var playerStateBeforeExitPrompt = _lgManager?.CurrentPlayerState;
+                        Debug.Log(
+                            $"[DungeonInput] Entrance stairs clicked dir={door.Direction} " +
+                            $"playerInDungeon={(playerStateBeforeExitPrompt != null ? playerStateBeforeExitPrompt.InDungeon.ToString() : "<null>")} " +
+                            $"playerPos={(playerStateBeforeExitPrompt != null ? $"({playerStateBeforeExitPrompt.CurrentRoomX},{playerStateBeforeExitPrompt.CurrentRoomY})" : "<null>")}");
+
                         var shouldExitDungeon = gameHudUI == null ||
                                                 await gameHudUI.ShowExitDungeonConfirmationAsync();
+                        Debug.Log(
+                            $"[DungeonInput] Entrance stairs confirm result shouldExit={shouldExitDungeon} " +
+                            $"hasHud={(gameHudUI != null)}");
                         if (!shouldExitDungeon)
                         {
                             _nextInteractTime = Time.unscaledTime + interactCooldownSeconds;
@@ -695,6 +731,12 @@ namespace SeekerDungeon.Dungeon
 
         private async UniTask HandleDungeonExitAsync(byte direction)
         {
+            var playerBeforeExit = _lgManager?.CurrentPlayerState;
+            Debug.Log(
+                $"[DungeonInput] HandleDungeonExitAsync begin dir={(RoomDirection)direction} " +
+                $"playerInDungeonBefore={(playerBeforeExit != null ? playerBeforeExit.InDungeon.ToString() : "<null>")} " +
+                $"playerPosBefore={(playerBeforeExit != null ? $"({playerBeforeExit.CurrentRoomX},{playerBeforeExit.CurrentRoomY})" : "<null>")}");
+
             var sceneLoadController = SceneLoadController.GetOrCreate();
             if (sceneLoadController != null)
             {
@@ -722,6 +764,11 @@ namespace SeekerDungeon.Dungeon
 
             GameAudioManager.Instance?.PlayWorld(WorldSfxId.StairsExit, transform.position);
             await _lgManager.RefreshAllState();
+            var playerAfterExit = _lgManager?.CurrentPlayerState;
+            Debug.Log(
+                $"[DungeonInput] HandleDungeonExitAsync post-refresh " +
+                $"playerInDungeonAfter={(playerAfterExit != null ? playerAfterExit.InDungeon.ToString() : "<null>")} " +
+                $"playerPosAfter={(playerAfterExit != null ? $"({playerAfterExit.CurrentRoomX},{playerAfterExit.CurrentRoomY})" : "<null>")}");
             await LoadExitSceneAsync();
         }
 

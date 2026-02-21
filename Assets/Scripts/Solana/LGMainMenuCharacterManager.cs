@@ -52,6 +52,8 @@ namespace SeekerDungeon.Solana
         private const int DefaultMaxDisplayNameLength = 24;
         private const int PlayerInitFetchMaxAttempts = 12;
         private const int PlayerInitFetchDelayMs = 500;
+        private const int EnterDungeonFetchMaxAttempts = 10;
+        private const int EnterDungeonFetchDelayMs = 350;
         private const int ProfileFetchMaxAttempts = 12;
         private const int ProfileFetchDelayMs = 500;
         private const string LocalSeekerIdentityConfigResourcePath = "LocalSecrets/LocalSeekerIdentityConfig";
@@ -61,6 +63,17 @@ namespace SeekerDungeon.Solana
         private const string LegacyAccountResetMessage =
             "Your account data is from an older game version and is incompatible with this build. " +
             "Please reset your devnet player account and create your character again.";
+        private static readonly string[] EnterDungeonTransitionTexts = new[]
+        {
+            "Entering the dungeon...",
+            "You enter the dark...",
+            "Torchlight flickers as you descend...",
+            "The air turns cold underground...",
+            "You step into the shadows...",
+            "Stone walls echo around you...",
+            "Your boots crunch on ancient dust...",
+            "A deep silence surrounds you..."
+        };
 
         [Header("References")]
         [SerializeField] private LGManager lgManager;
@@ -140,6 +153,7 @@ namespace SeekerDungeon.Solana
         private string _legacyResetMessage = string.Empty;
         private bool _legacyResetConfirmArmed;
         private bool _isResettingLegacyAccount;
+        private int _lastEnterDungeonTransitionTextIndex = -1;
 
         private bool IsSessionAutoPreparationEnabled
         {
@@ -404,6 +418,11 @@ namespace SeekerDungeon.Solana
 
         public void EnterDungeon()
         {
+            EnterDungeonAsync().Forget();
+        }
+
+        private async UniTaskVoid EnterDungeonAsync()
+        {
             if (IsBusy)
             {
                 return;
@@ -434,10 +453,74 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
-            var walletKey = Web3.Wallet?.Account?.PublicKey?.Key;
-            DungeonRunResumeStore.MarkInRun(walletKey);
-            GameAudioManager.Instance?.PlayStinger(StingerSfxId.EnterDungeon);
-            LoadSceneWithFadeAsync(gameplaySceneName).Forget();
+            if (lgManager == null)
+            {
+                EmitError("LGManager not found in scene.");
+                return;
+            }
+
+            IsBusy = true;
+            try
+            {
+                await lgManager.FetchPlayerState();
+                var walletKey = Web3.Wallet?.Account?.PublicKey?.Key;
+                var playerState = lgManager.CurrentPlayerState;
+                if (logDebugMessages)
+                {
+                    Debug.Log(
+                        $"[MainMenuCharacter] EnterDungeon pressed wallet={ShortWalletForLog(walletKey)} " +
+                        $"playerInDungeon={(playerState != null ? playerState.InDungeon.ToString() : "<null>")} " +
+                        $"playerPos={(playerState != null ? $"({playerState.CurrentRoomX},{playerState.CurrentRoomY})" : "<null>")} " +
+                        $"resumeMarkedBefore={DungeonRunResumeStore.IsMarkedInRun(walletKey)}");
+                }
+
+                if (playerState == null)
+                {
+                    EmitState("Initializing player account...");
+                    await EnsurePlayerInitializedAsync();
+                    await lgManager.FetchPlayerState();
+                    playerState = lgManager.CurrentPlayerState;
+                }
+
+                if (playerState != null && !playerState.InDungeon)
+                {
+                    EmitState("Entering dungeon...");
+                    var enterResult = await lgManager.EnterDungeonAtStart();
+                    if (!enterResult.Success)
+                    {
+                        EmitError($"Failed to enter dungeon: {enterResult.Error}");
+                        return;
+                    }
+
+                    var enterReady = await WaitForEnterDungeonStateAsync();
+                    playerState = lgManager.CurrentPlayerState;
+                    if (!enterReady || playerState == null || !playerState.InDungeon)
+                    {
+                        EmitError("Enter dungeon did not complete. Please retry.");
+                        return;
+                    }
+                }
+
+                DungeonRunResumeStore.MarkInRun(walletKey);
+                if (logDebugMessages)
+                {
+                    Debug.Log(
+                        $"[MainMenuCharacter] EnterDungeon marked resume wallet={ShortWalletForLog(walletKey)} " +
+                        $"resumeMarkedAfter={DungeonRunResumeStore.IsMarkedInRun(walletKey)}");
+                }
+
+                GameAudioManager.Instance?.PlayStinger(StingerSfxId.EnterDungeon);
+                LoadSceneWithFadeAsync(gameplaySceneName).Forget();
+            }
+            catch (Exception exception)
+            {
+                EmitError($"Enter dungeon failed: {exception.Message}");
+            }
+            finally
+            {
+                IsBusy = false;
+                EmitState(string.Empty);
+            }
         }
 
         public void DisconnectWallet()
@@ -1164,6 +1247,29 @@ namespace SeekerDungeon.Solana
             return false;
         }
 
+        private async UniTask<bool> WaitForEnterDungeonStateAsync()
+        {
+            for (var attempt = 0; attempt < EnterDungeonFetchMaxAttempts; attempt += 1)
+            {
+                await lgManager.FetchPlayerState();
+                var player = lgManager.CurrentPlayerState;
+                if (player != null &&
+                    player.InDungeon &&
+                    player.CurrentRoomX == LGConfig.START_X &&
+                    player.CurrentRoomY == LGConfig.START_Y)
+                {
+                    return true;
+                }
+
+                if (attempt < EnterDungeonFetchMaxAttempts - 1)
+                {
+                    await UniTask.Delay(EnterDungeonFetchDelayMs);
+                }
+            }
+
+            return false;
+        }
+
         private async UniTask<bool> WaitForProfileAfterCreateAsync()
         {
             for (var attempt = 0; attempt < ProfileFetchMaxAttempts; attempt += 1)
@@ -1252,6 +1358,16 @@ namespace SeekerDungeon.Solana
             }
 
             return $"{key.Substring(0, 4)}...{key.Substring(key.Length - 4)}";
+        }
+
+        private static string ShortWalletForLog(string walletKey)
+        {
+            if (string.IsNullOrWhiteSpace(walletKey) || walletKey.Length < 10)
+            {
+                return walletKey ?? "<null>";
+            }
+
+            return $"{walletKey.Substring(0, 4)}...{walletKey.Substring(walletKey.Length - 4)}";
         }
 
         private string SanitizeDisplayName(string value)
@@ -1555,13 +1671,49 @@ namespace SeekerDungeon.Solana
         private async UniTaskVoid LoadSceneWithFadeAsync(string sceneName)
         {
             var sceneLoadController = SceneLoadController.GetOrCreate();
+            var showsDungeonTransitionText =
+                !string.IsNullOrWhiteSpace(sceneName) &&
+                string.Equals(sceneName, gameplaySceneName, StringComparison.Ordinal);
             if (!string.IsNullOrWhiteSpace(sceneName) &&
                 string.Equals(sceneName, gameplaySceneName, StringComparison.Ordinal))
             {
                 sceneLoadController.HoldBlackScreen("gameplay_doors_ready");
+                sceneLoadController.SetTransitionText(PickEnterDungeonTransitionText());
             }
 
-            await sceneLoadController.LoadSceneAsync(sceneName, LoadSceneMode.Single);
+            try
+            {
+                await sceneLoadController.LoadSceneAsync(sceneName, LoadSceneMode.Single);
+            }
+            finally
+            {
+                if (showsDungeonTransitionText)
+                {
+                    sceneLoadController.ClearTransitionText();
+                }
+            }
+        }
+
+        private string PickEnterDungeonTransitionText()
+        {
+            if (EnterDungeonTransitionTexts.Length == 0)
+            {
+                return "Entering the dungeon...";
+            }
+
+            if (EnterDungeonTransitionTexts.Length == 1)
+            {
+                return EnterDungeonTransitionTexts[0];
+            }
+
+            int index;
+            do
+            {
+                index = UnityEngine.Random.Range(0, EnterDungeonTransitionTexts.Length);
+            } while (index == _lastEnterDungeonTransitionTextIndex);
+
+            _lastEnterDungeonTransitionTextIndex = index;
+            return EnterDungeonTransitionTexts[index];
         }
 
         private void SetPlayerVisible(bool isVisible)

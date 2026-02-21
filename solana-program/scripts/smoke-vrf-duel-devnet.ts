@@ -250,6 +250,8 @@ async function main(): Promise<void> {
       global: globalPda,
       challengerPlayerAccount: challengerPlayerPda,
       opponentPlayerAccount: opponentPlayerPda,
+      challengerProfile: challengerProfilePda,
+      opponentProfile: opponentProfilePda,
       duelChallenge: duelChallengePda,
       duelEscrow: duelEscrowPda,
       challengerTokenAccount,

@@ -116,7 +116,7 @@ This creates a client in `generated/client/` that can replace the Anchor TypeScr
 ## Game Mechanics
 
 ### Core Loop
-1. Players spawn at room (5,5)
+1. Players spawn at room (10,10)
 2. Rooms have 4 walls: solid, rubble (clearable), or open
 3. Join a job to clear rubble by staking 0.01 SKR
 4. Jobs complete after enough slots pass (faster with more helpers)
@@ -136,7 +136,7 @@ This creates a client in `generated/client/` that can replace the Anchor TypeScr
 - `loot_chest` - Collect items from a room's chest
 - `reset_season` - Admin: Start a new season
 - `force_reset_season` - Admin: Immediate season reset override (ignores season end gate)
-- `ensure_start_room` - Admin: Ensure `(5,5)` start room exists for current season
+- `ensure_start_room` - Admin: Ensure `(10,10)` start room exists for current season
 
 ### Accounts
 - **GlobalAccount** - Game state (depth, season, prize pool)

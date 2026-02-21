@@ -227,11 +227,79 @@ namespace SeekerDungeon.Solana
     public sealed class RoomOccupantView
     {
         public PublicKey Wallet { get; init; }
+        public string DisplayName { get; init; }
         public ItemId EquippedItemId { get; init; }
         public int SkinId { get; init; }
         public OccupantActivity Activity { get; init; }
         public RoomDirection? ActivityDirection { get; init; }
         public bool IsFightingBoss { get; init; }
+    }
+
+    public enum DuelChallengeStatus : byte
+    {
+        Open = 0,
+        PendingRandomness = 1,
+        Settled = 2,
+        Declined = 3,
+        Expired = 4,
+        Unknown = 255
+    }
+
+    public enum DuelStarter : byte
+    {
+        Challenger = 0,
+        Opponent = 1,
+        Unset = 255
+    }
+
+    public sealed class DuelChallengeView
+    {
+        public PublicKey Pda { get; init; }
+        public PublicKey Challenger { get; init; }
+        public PublicKey Opponent { get; init; }
+        public string ChallengerDisplayNameSnapshot { get; init; }
+        public string OpponentDisplayNameSnapshot { get; init; }
+        public PublicKey Winner { get; init; }
+        public PublicKey DuelEscrow { get; init; }
+        public ulong SeasonSeed { get; init; }
+        public sbyte RoomX { get; init; }
+        public sbyte RoomY { get; init; }
+        public ulong StakeRaw { get; init; }
+        public ulong ChallengeSeed { get; init; }
+        public ulong ExpiresAtSlot { get; init; }
+        public ulong RequestedSlot { get; init; }
+        public ulong SettledSlot { get; init; }
+        public DuelChallengeStatus Status { get; init; }
+        public DuelStarter Starter { get; init; }
+        public bool IsDraw { get; init; }
+        public ushort ChallengerFinalHp { get; init; }
+        public ushort OpponentFinalHp { get; init; }
+        public byte TurnsPlayed { get; init; }
+        public IReadOnlyList<byte> ChallengerHits { get; init; }
+        public IReadOnlyList<byte> OpponentHits { get; init; }
+
+        public bool IsIncomingFor(PublicKey localWallet)
+        {
+            return localWallet != null &&
+                   Opponent != null &&
+                   string.Equals(Opponent.Key, localWallet.Key, StringComparison.Ordinal);
+        }
+
+        public bool IsOutgoingFrom(PublicKey localWallet)
+        {
+            return localWallet != null &&
+                   Challenger != null &&
+                   string.Equals(Challenger.Key, localWallet.Key, StringComparison.Ordinal);
+        }
+
+        public bool IsOpenLike =>
+            Status == DuelChallengeStatus.Open ||
+            Status == DuelChallengeStatus.PendingRandomness;
+
+        public bool IsTerminal =>
+            Status == DuelChallengeStatus.Settled ||
+            Status == DuelChallengeStatus.Declined ||
+            Status == DuelChallengeStatus.Expired;
     }
 
     public static class LGDomainMapper

@@ -6,7 +6,7 @@
 
 ## Onchain Changes
 - New wall state: `WALL_ENTRANCE_STAIRS = 4`.
-- Spawn room `(5,5)` is now deterministic and fixed:
+- Spawn room `(10,10)` is now deterministic and fixed:
   - `North/East/West = WALL_OPEN`
   - `South = WALL_ENTRANCE_STAIRS`
 - Added `exit_dungeon` instruction.
@@ -41,7 +41,7 @@
   - keep non-loot items (weapons/consumables/etc.)
 
 ## Topology Safety
-- Added special topology guard to prevent opening the spawn south edge from room `(5,4)` north wall.
+- Added special topology guard to prevent opening the spawn south edge from room `(10,9)` north wall.
 - Guard is applied in discovered room init and in adjacency-opening flows (`move_player`, `complete_job`, `unlock_door`) after topology updates.
 
 ## Unity Integration

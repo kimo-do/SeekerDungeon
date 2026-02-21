@@ -158,7 +158,7 @@ pub fn is_bone_room(season_seed: u64, room_x: i8, room_y: i8, depth: u32) -> boo
 
 pub fn enforce_special_room_topology(room: &mut RoomAccount) {
     // Reserve start-room south edge for entrance stairs/extraction only:
-    // room (5,4) north wall must never be passable or lockable.
+    // room (START_X, START_Y - 1) north wall must never be passable or lockable.
     if room.x == GlobalAccount::START_X && room.y == GlobalAccount::START_Y - 1 {
         room.walls[DIRECTION_NORTH as usize] = WALL_SOLID;
         room.door_lock_kinds[DIRECTION_NORTH as usize] = LOCK_KIND_NONE;

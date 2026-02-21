@@ -51,12 +51,12 @@ MonoBehaviour:
   - category: 1
     clips:
     - {fileID: 8300000, guid: 1bf11803964e60a469be72443d993247, type: 3}
-    volume: 0.162
+    volume: 0.038
     pitchRange: {x: 0, y: 1}
   - category: 5
     clips:
     - {fileID: 8300000, guid: 280710d2fcad6ab48b32cfe3a1857e91, type: 3}
-    volume: 0.389
+    volume: 0.076
     pitchRange: {x: 0, y: 1}
   stingers:
   - id: 0
@@ -86,8 +86,8 @@ MonoBehaviour:
     maxDistance: 0
   - id: 4
     clips:
-    - {fileID: 8300000, guid: cf834d8066bc10847b952921071374bd, type: 3}
-    volume: 0.429
+    - {fileID: 8300000, guid: b9d5d122bd36faf46a11bbd53455ce64, type: 3}
+    volume: 0.078
     pitchRange: {x: 0, y: 0}
     spatialized: 0
     spatialBlend: 0
@@ -113,7 +113,7 @@ MonoBehaviour:
     maxDistance: 0
   - id: 2
     clips:
-    - {fileID: 8300000, guid: 4d6d6c02a2de8024d88d2ee9cb82f0f1, type: 3}
+    - {fileID: 8300000, guid: e6e7fe79261d721469f11894ae46d918, type: 3}
     volume: 0.429
     pitchRange: {x: 0, y: 0}
     spatialized: 0

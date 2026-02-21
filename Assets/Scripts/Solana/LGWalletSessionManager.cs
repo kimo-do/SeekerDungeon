@@ -42,7 +42,8 @@ namespace SeekerDungeon.Solana
         ExitDungeon = 1 << 14,
         ForceExitOnDeath = 1 << 15,
         TickBossFight = 1 << 16,
-        LeaveBossFight = 1 << 17
+        LeaveBossFight = 1 << 17,
+        EnterDungeon = 1 << 18
     }
 
     public enum WalletLoginMode
@@ -158,7 +159,8 @@ namespace SeekerDungeon.Solana
                 SessionInstructionAllowlist.ExitDungeon |
                 SessionInstructionAllowlist.ForceExitOnDeath |
                 SessionInstructionAllowlist.TickBossFight |
-                SessionInstructionAllowlist.LeaveBossFight
+                SessionInstructionAllowlist.LeaveBossFight |
+                SessionInstructionAllowlist.EnterDungeon
             );
         private const SessionInstructionAllowlist RequiredGameplayAllowlistBits =
             SessionInstructionAllowlist.UnlockDoor |

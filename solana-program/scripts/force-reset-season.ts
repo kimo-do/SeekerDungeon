@@ -12,6 +12,7 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import type { Chaindepth } from "../target/types/chaindepth";
+import { START_X, START_Y } from "./constants";
 
 async function main(): Promise<void> {
   const provider = anchor.AnchorProvider.env();
@@ -53,8 +54,8 @@ async function main(): Promise<void> {
         [
           Buffer.from("room"),
           afterReset.seasonSeed.toArrayLike(Buffer, "le", 8),
-          Buffer.from([5]),
-          Buffer.from([5]),
+          Buffer.from([START_X]),
+          Buffer.from([START_Y]),
         ],
         program.programId
       )[0],

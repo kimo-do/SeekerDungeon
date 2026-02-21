@@ -668,6 +668,7 @@ MonoBehaviour:
   manager: {fileID: 0}
   itemRegistry: {fileID: 11400000, guid: 6619befcc5582e7418f412c71e74028f, type: 2}
   gameHudUI: {fileID: 883051407}
+  slotGlowSprite: {fileID: 0}
 --- !u!114 &830732549
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -764,6 +765,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Dungeon.DungeonJobAutoCompleter
   lgManager: {fileID: 0}
   dungeonManager: {fileID: 0}
+  dungeonInputController: {fileID: 0}
   autoRun: 1
   idlePollSeconds: 6
   minRecheckSeconds: 0.75
@@ -772,6 +774,18 @@ MonoBehaviour:
   slotSecondsEstimate: 0.4
   readyBufferSlots: 1
   txAttemptCooldownSeconds: 2
+  autoTickBossFight: 1
+  bossTickIntervalSeconds: 2.2
+  bossTickRetryCooldownSeconds: 1.2
+  bossTickRateLimitBaseCooldownSeconds: 3
+  bossTickRateLimitMaxCooldownSeconds: 18
+  bossTickFailureBaseCooldownSeconds: 2.5
+  bossTickFailureMaxCooldownSeconds: 30
+  bossTickFailurePauseThreshold: 6
+  bossTickFailurePauseSeconds: 45
+  bossPropagationMaxAttempts: 4
+  bossPropagationDelayMs: 220
+  logBossCombatTelemetry: 1
   completeJobFailCooldownSeconds: 30
   maxCompleteJobRetries: 3
   confirmTxPollSeconds: 1.5
@@ -1163,6 +1177,7 @@ GameObject:
   - component: {fileID: 1746675756}
   - component: {fileID: 1746675755}
   - component: {fileID: 1746675757}
+  - component: {fileID: 1746675758}
   m_Layer: 0
   m_Name: DungeonManager
   m_TagString: Untagged
@@ -1226,6 +1241,41 @@ MonoBehaviour:
   itemWorldScale: 1.2
   amountTextPrefab: {fileID: 0}
   delayBetweenItems: 0.15
+--- !u!114 &1746675758
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1746675754}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dbac9053a4680c643b44d519d6acb5ff, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Solana.DuelCoordinator
+  manager: {fileID: 0}
+  hud: {fileID: 0}
+  dungeonInputController: {fileID: 0}
+  dungeonManager: {fileID: 0}
+  normalPollSeconds: 5
+  pendingPollSeconds: 2
+  duelReplayHitIntervalSeconds: 1
+  duelReplayPostKillSeconds: 2
+  duelReplaySpacingUnits: 0.8
+  duelReplayResolveTimeoutSeconds: 3
+  duelReplayResolvePollSeconds: 0.2
+  duelReplayCamera: {fileID: 889358092}
+  duelReplayOrthoSize: 3.44
+  duelHitSplatPrefab: {fileID: 372109000803907351, guid: 057b372f587a07a42b2e776f164aba68, type: 3}
+  duelHitSplatSprites:
+  - {fileID: -8660589982938128364, guid: 69d72c9740ff3df4cac4804b2d0e6cd5, type: 3}
+  - {fileID: -6291625113514904504, guid: 69d72c9740ff3df4cac4804b2d0e6cd5, type: 3}
+  - {fileID: -2394137682887518808, guid: 69d72c9740ff3df4cac4804b2d0e6cd5, type: 3}
+  - {fileID: 8047007689095298889, guid: 69d72c9740ff3df4cac4804b2d0e6cd5, type: 3}
+  - {fileID: -6188498483482238571, guid: 69d72c9740ff3df4cac4804b2d0e6cd5, type: 3}
+  - {fileID: -3113608149330834093, guid: 69d72c9740ff3df4cac4804b2d0e6cd5, type: 3}
+  - {fileID: -2193732801904041570, guid: 69d72c9740ff3df4cac4804b2d0e6cd5, type: 3}
+  duelHitSplatYOffset: 0.4
 --- !u!1 &1918680086
 GameObject:
   m_ObjectHideFlags: 0

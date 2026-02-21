@@ -39,11 +39,11 @@ impl GlobalAccount {
     /// At 400ms per slot: 604800 / 0.4 = 1,512,000 slots
     pub const SEASON_DURATION_SLOTS: u64 = 1_512_000;
 
-    /// Starting room coordinates (center of 10x10 grid)
-    pub const START_X: i8 = 5;
-    pub const START_Y: i8 = 5;
+    /// Starting room coordinates (center of 20x20 grid)
+    pub const START_X: i8 = 10;
+    pub const START_Y: i8 = 10;
 
     /// Grid boundaries
     pub const MIN_COORD: i8 = 0;
-    pub const MAX_COORD: i8 = 9;
+    pub const MAX_COORD: i8 = 19;
 }

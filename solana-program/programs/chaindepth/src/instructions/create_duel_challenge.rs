@@ -3,7 +3,7 @@ use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
 use crate::errors::ChainDepthError;
 use crate::events::DuelChallengeCreated;
-use crate::state::{DuelChallenge, GlobalAccount, PlayerAccount};
+use crate::state::{DuelChallenge, GlobalAccount, PlayerAccount, PlayerProfile};
 
 #[derive(Accounts)]
 #[instruction(challenge_seed: u64)]
@@ -32,6 +32,20 @@ pub struct CreateDuelChallenge<'info> {
         bump = opponent_player_account.bump
     )]
     pub opponent_player_account: Account<'info, PlayerAccount>,
+
+    #[account(
+        seeds = [PlayerProfile::SEED_PREFIX, challenger.key().as_ref()],
+        bump = challenger_profile.bump,
+        constraint = challenger_profile.owner == challenger.key()
+    )]
+    pub challenger_profile: Account<'info, PlayerProfile>,
+
+    #[account(
+        seeds = [PlayerProfile::SEED_PREFIX, opponent.key().as_ref()],
+        bump = opponent_profile.bump,
+        constraint = opponent_profile.owner == opponent.key()
+    )]
+    pub opponent_profile: Account<'info, PlayerProfile>,
 
     #[account(
         init,
@@ -120,6 +134,8 @@ pub fn handler(
     let duel_challenge = &mut ctx.accounts.duel_challenge;
     duel_challenge.challenger = challenger;
     duel_challenge.opponent = opponent;
+    duel_challenge.challenger_display_name_snapshot = ctx.accounts.challenger_profile.display_name.clone();
+    duel_challenge.opponent_display_name_snapshot = ctx.accounts.opponent_profile.display_name.clone();
     duel_challenge.season_seed = ctx.accounts.global.season_seed;
     duel_challenge.room_x = challenger_player_account.current_room_x;
     duel_challenge.room_y = challenger_player_account.current_room_y;

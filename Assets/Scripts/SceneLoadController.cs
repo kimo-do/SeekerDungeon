@@ -1,4 +1,4 @@
-using Cysharp.Threading.Tasks;
+﻿using Cysharp.Threading.Tasks;
 using SeekerDungeon.Audio;
 using System.Collections.Generic;
 using TMPro;
@@ -242,7 +242,7 @@ namespace SeekerDungeon
 
             _transitionText = textObject.AddComponent<TextMeshProUGUI>();
             _transitionText.text = string.Empty;
-            _transitionText.fontSize = 28f;
+            _transitionText.fontSize = 42f;
             _transitionText.color = new Color(0.85f, 0.85f, 0.85f, 1f);
             _transitionText.alignment = TextAlignmentOptions.Center;
             _transitionText.fontStyle = FontStyles.Italic;
@@ -291,3 +291,4 @@ namespace SeekerDungeon
         }
     }
 }
+

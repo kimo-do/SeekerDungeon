@@ -50,7 +50,7 @@ namespace SeekerDungeon.Solana
 
     /// <summary>
     /// Local wallet-scoped marker for whether a run should be considered resumable.
-    /// This complements onchain heuristics where some states at (5,5) are ambiguous.
+    /// This complements onchain heuristics where some states at start-room coordinates are ambiguous.
     /// </summary>
     public static class DungeonRunResumeStore
     {
@@ -68,23 +68,39 @@ namespace SeekerDungeon.Solana
 
         public static void MarkInRun(string walletKey)
         {
-            SetMarkedInRun(walletKey, true);
+            SetMarkedInRun(walletKey, true, "menu_enter_dungeon");
         }
 
         public static void ClearRun(string walletKey)
         {
-            SetMarkedInRun(walletKey, false);
+            SetMarkedInRun(walletKey, false, "run_end");
         }
 
-        private static void SetMarkedInRun(string walletKey, bool isInRun)
+        private static void SetMarkedInRun(string walletKey, bool isInRun, string reason)
         {
             if (string.IsNullOrWhiteSpace(walletKey))
             {
                 return;
             }
 
-            UnityEngine.PlayerPrefs.SetInt(PrefKeyPrefix + walletKey, isInRun ? 1 : 0);
+            var prefKey = PrefKeyPrefix + walletKey;
+            var previous = UnityEngine.PlayerPrefs.GetInt(prefKey, 0) == 1;
+            UnityEngine.PlayerPrefs.SetInt(prefKey, isInRun ? 1 : 0);
             UnityEngine.PlayerPrefs.Save();
+            UnityEngine.Debug.Log(
+                $"[DungeonRunResumeStore] wallet={ShortWallet(walletKey)} mark {previous} -> {isInRun} reason={reason}");
+        }
+
+        private static string ShortWallet(string walletKey)
+        {
+            if (string.IsNullOrWhiteSpace(walletKey))
+            {
+                return "<null>";
+            }
+
+            return walletKey.Length <= 8
+                ? walletKey
+                : $"{walletKey[..4]}..{walletKey[^4..]}";
         }
     }
 
