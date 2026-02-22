@@ -397,7 +397,7 @@ namespace Chaindepth
 
             public ushort DataVersion { get; set; }
 
-            public ulong SeasonSeed { get; set; }
+            public ulong LastActiveSlot { get; set; }
 
             public byte Bump { get; set; }
 
@@ -449,7 +449,7 @@ namespace Chaindepth
                 offset += 2;
                 result.DataVersion = _data.GetU16(offset);
                 offset += 2;
-                result.SeasonSeed = _data.GetU64(offset);
+                result.LastActiveSlot = _data.GetU64(offset);
                 offset += 8;
                 result.Bump = _data.GetU8(offset);
                 offset += 1;
@@ -2053,7 +2053,7 @@ namespace Chaindepth
             {
                 programId ??= new(ID);
                 List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
-                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Opponent, true), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Challenger, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Global, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.DuelChallenge, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.DuelEscrow, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.ChallengerPlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.OpponentPlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.ChallengerTokenAccount, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.OpponentTokenAccount, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.OracleQueue, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.TokenProgram, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.ProgramIdentity, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.VrfProgram, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SlotHashes, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
+                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Opponent, true), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Challenger, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Global, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.DuelChallenge, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.DuelEscrow, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.ChallengerPlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.OpponentPlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.ChallengerTokenAccount, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.OpponentTokenAccount, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.OracleQueue, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.TokenProgram, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.ProgramIdentity, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.VrfProgram, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SlotHashes, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
                 byte[] _data = new byte[1200];
                 int offset = 0;
                 _data.WriteU64(5657644814158671898UL, offset);
@@ -2177,7 +2177,7 @@ namespace Chaindepth
             {
                 programId ??= new(ID);
                 List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
-                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Challenger, true), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Opponent, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Global, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.ChallengerPlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.OpponentPlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.ChallengerProfile, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.OpponentProfile, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.DuelChallenge, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.DuelEscrow, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.ChallengerTokenAccount, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SkrMint, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.TokenProgram, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
+                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Challenger, true), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Opponent, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Global, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.ChallengerPlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.OpponentPlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.ChallengerProfile, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.OpponentProfile, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.DuelChallenge, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.DuelEscrow, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.ChallengerTokenAccount, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SkrMint, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.TokenProgram, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
                 byte[] _data = new byte[1200];
                 int offset = 0;
                 _data.WriteU64(1820261883948273793UL, offset);
@@ -2378,7 +2378,7 @@ namespace Chaindepth
             {
                 programId ??= new(ID);
                 List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
-                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Authority, true), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Player, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Global, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.PlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Profile, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Room, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.RoomPresence, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.BossFight, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Inventory, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.SessionAuthority == null ? programId : accounts.SessionAuthority, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
+                {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Authority, true), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Player, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Global, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.PlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Profile, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Room, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.RoomPresence, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.BossFight, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Inventory, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.SessionAuthority == null ? programId : accounts.SessionAuthority, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
                 byte[] _data = new byte[1200];
                 int offset = 0;
                 _data.WriteU64(13497229756135777931UL, offset);
@@ -2544,7 +2544,7 @@ namespace Chaindepth
             {
                 programId ??= new(ID);
                 List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
-                {Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Authority, true), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Player, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Global, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.PlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Profile, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.RoomPresence, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.SessionAuthority == null ? programId : accounts.SessionAuthority, false)};
+                {Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Authority, true), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Player, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.Global, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.PlayerAccount, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Profile, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.RoomPresence, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.SessionAuthority == null ? programId : accounts.SessionAuthority, false)};
                 byte[] _data = new byte[1200];
                 int offset = 0;
                 _data.WriteU64(15470882606742745413UL, offset);

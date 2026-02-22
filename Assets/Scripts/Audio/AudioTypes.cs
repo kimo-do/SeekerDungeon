@@ -14,7 +14,9 @@ namespace SeekerDungeon.Audio
     {
         ExtractionSuccess = 0,
         EnterDungeon = 1,
-        DungeonEntered = 2
+        DungeonEntered = 2,
+        DuelVictory = 3,
+        DuelDefeat = 4
     }
 
     public enum WorldSfxId
@@ -36,6 +38,7 @@ namespace SeekerDungeon.Audio
         GameAmbience = 0,
         Mining = 1,
         BossAttack = 2,
-        BossMonsterLoop = 3
+        BossMonsterLoop = 3,
+        DuelBattle = 4
     }
 }

@@ -771,6 +771,7 @@ Transform:
   m_Children:
   - {fileID: 3377073360047410942}
   - {fileID: 768595878104444243}
+  - {fileID: 5910325150087269555}
   - {fileID: 4869854491579094004}
   - {fileID: 1166578344419861397}
   - {fileID: 2459231877248049781}
@@ -822,6 +823,7 @@ MonoBehaviour:
   - {fileID: 8845620850069440085}
   - {fileID: 7348994320240284201}
   - {fileID: 7418965944013009988}
+  - {fileID: 1074598324637939886}
   skinSpriteRenderer: {fileID: 8886868579015071979}
   skinSprites:
   - skin: 0
@@ -860,9 +862,12 @@ MonoBehaviour:
     sprite: {fileID: 7227000743248742133, guid: 531d2876fc0f880489cd0b3208ca602a, type: 3}
   characterNameAnchor: {fileID: 5852513891496822425}
   playerNamePrefab: {fileID: 2216771843196064832, guid: 1614aba7c126b8b43ab8f929fa17910a, type: 3}
+  localPlayerNameColor: {r: 1, g: 0.9, b: 0.35, a: 1}
+  localPlayerNameFontStyle: 1
   playerHealthBarView: {fileID: 0}
   playerHealthBarPrefab: {fileID: 3104601031813022557, guid: 92ed27351d304d54b8867e1ebfe02005, type: 3}
   playerHealthBarAnchor: {fileID: 0}
+  playerHealthBarYOffset: 0.18
   animateSkinSwitch: 1
   skinPopScaleMultiplier: 1.12
   skinPopOutDuration: 0.08
@@ -889,6 +894,7 @@ MonoBehaviour:
   logWieldDebugMessages: 0
   miningAnimatorParameter: ismining
   bossJobAnimatorParameter: ismining
+  bossAttackAnimatorTrigger: doattack
 --- !u!114 &6473170922569016381
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2488,6 +2494,10 @@ PrefabInstance:
       propertyPath: m_IsActive
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 6495287539983743063, guid: b31dda5949ca5624e83c18feeee5025a, type: 3}
+      propertyPath: skinId
+      value: 5
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -2728,6 +2738,83 @@ PrefabInstance:
 Transform:
   m_CorrespondingSourceObject: {fileID: 8568737753446065222, guid: 6eef767486061b344a78cdfe5fc9722f, type: 3}
   m_PrefabInstance: {fileID: 6108894435239717997}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1001 &6350371178872100937
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 6673592912793491093}
+    m_Modifications:
+    - target: {fileID: 86626516863224900, guid: 9b7ada20a0ffd8a4b81f66ab37465876, type: 3}
+      propertyPath: m_Name
+      value: Hog
+      objectReference: {fileID: 0}
+    - target: {fileID: 86626516863224900, guid: 9b7ada20a0ffd8a4b81f66ab37465876, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 730917508169503994, guid: 9b7ada20a0ffd8a4b81f66ab37465876, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 730917508169503994, guid: 9b7ada20a0ffd8a4b81f66ab37465876, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0.371
+      objectReference: {fileID: 0}
+    - target: {fileID: 730917508169503994, guid: 9b7ada20a0ffd8a4b81f66ab37465876, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 730917508169503994, guid: 9b7ada20a0ffd8a4b81f66ab37465876, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 730917508169503994, guid: 9b7ada20a0ffd8a4b81f66ab37465876, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 730917508169503994, guid: 9b7ada20a0ffd8a4b81f66ab37465876, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 730917508169503994, guid: 9b7ada20a0ffd8a4b81f66ab37465876, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 730917508169503994, guid: 9b7ada20a0ffd8a4b81f66ab37465876, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 730917508169503994, guid: 9b7ada20a0ffd8a4b81f66ab37465876, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 730917508169503994, guid: 9b7ada20a0ffd8a4b81f66ab37465876, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 9b7ada20a0ffd8a4b81f66ab37465876, type: 3}
+--- !u!114 &1074598324637939886 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 6253443291498078439, guid: 9b7ada20a0ffd8a4b81f66ab37465876, type: 3}
+  m_PrefabInstance: {fileID: 6350371178872100937}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b1c949ebedc21e24bb649776cc5a4a72, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Solana.CharacterRigBindings
+--- !u!4 &5910325150087269555 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 730917508169503994, guid: 9b7ada20a0ffd8a4b81f66ab37465876, type: 3}
+  m_PrefabInstance: {fileID: 6350371178872100937}
   m_PrefabAsset: {fileID: 0}
 --- !u!1001 &6621485837569265171
 PrefabInstance:

@@ -33,9 +33,9 @@ MonoBehaviour:
     spatialBlend: 0.525
     minDistance: 0
     maxDistance: 5
-  - id: 2
-    clip: {fileID: 8300000, guid: b7da57747b4827f48a2190c9a4d39e73, type: 3}
-    volume: 0.114
+  - id: 4
+    clip: {fileID: 8300000, guid: 7875ef77bc5883742ad7cf7d18762498, type: 3}
+    volume: 0.374
     spatialized: 0
     spatialBlend: 0.525
     minDistance: 0
@@ -61,8 +61,18 @@ MonoBehaviour:
   stingers:
   - id: 0
     clips:
+    - {fileID: 8300000, guid: 7a60642d238189445a0479a40dbda768, type: 3}
+    volume: 0.353
+    pitchRange: {x: 0, y: 0.1}
+  - id: 3
+    clips:
     - {fileID: 8300000, guid: 42b7b4d0e6f43e04fa7d795b12d5208c, type: 3}
-    volume: 0.497
+    volume: 0.358
+    pitchRange: {x: 0, y: 0.1}
+  - id: 4
+    clips:
+    - {fileID: 8300000, guid: e9617753ae9e3d34aabdc239ce8b8c15, type: 3}
+    volume: 0.366
     pitchRange: {x: 0, y: 0.1}
   worldSfx:
   - id: 0

@@ -114,6 +114,7 @@ pub fn handler(ctx: Context<ClaimJobReward>, direction: u8) -> Result<()> {
 
     let room = &mut ctx.accounts.room;
     let player_account = &mut ctx.accounts.player_account;
+    let clock = Clock::get()?;
     let dir_idx = direction as usize;
 
     require!(
@@ -143,6 +144,7 @@ pub fn handler(ctx: Context<ClaimJobReward>, direction: u8) -> Result<()> {
     }
 
     player_account.remove_job(room.x, room.y, direction);
+    player_account.mark_active(clock.slot);
     ctx.accounts.room_presence.set_idle();
 
     let room_key = room.key();

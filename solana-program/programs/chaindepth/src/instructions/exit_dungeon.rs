@@ -192,6 +192,7 @@ pub fn handler(ctx: Context<ExitDungeon>) -> Result<()> {
         .ok_or(ChainDepthError::Overflow)?;
     player.last_extraction_slot = now_slot;
     player.current_run_start_slot = now_slot;
+    player.mark_active(now_slot);
     player.in_dungeon = false;
     if player.max_hp == 0 {
         player.max_hp = crate::state::DEFAULT_PLAYER_MAX_HP;

@@ -130,6 +130,7 @@ namespace SeekerDungeon.Solana
         private Button _duelResultDismissButton;
         private readonly List<DuelChallengeView> _duelInboxItems = new();
         private readonly Dictionary<Button, DuelChallengeView> _duelInboxRows = new();
+        private readonly Dictionary<string, DuelExpiryEstimate> _duelExpiryEstimatesByPda = new();
         private ulong? _duelInboxCurrentSlot;
         private UniTaskCompletionSource<bool> _exitConfirmTcs;
         private VisualElement _root;
@@ -180,10 +181,20 @@ namespace SeekerDungeon.Solana
             public float Progress;
             public Color FillColor;
             public Color TrackColor;
-            public Color CenterColor;
+        }
+
+        private sealed class DuelExpiryEstimate
+        {
+            public float StartRealtime;
+            public float EndRealtime;
+            public float DurationSeconds;
+            public ulong LastSyncedSlot;
+            public float LastSyncedSlotSampleRealtime;
         }
 
         private bool _isLoadingScene;
+        private bool _hasObservedPlayerHp;
+        private int _lastObservedPlayerHp;
 
         private void Awake()
         {
@@ -510,6 +521,23 @@ namespace SeekerDungeon.Solana
 
         private void HandlePlayerStateUpdated(Chaindepth.Accounts.PlayerAccount playerState)
         {
+            if (playerState != null)
+            {
+                var clampedHp = Mathf.Max(0, (int)playerState.CurrentHp);
+                if (_hasObservedPlayerHp && clampedHp < _lastObservedPlayerHp)
+                {
+                    HapticsFeedback.DamageTaken();
+                }
+
+                _lastObservedPlayerHp = clampedHp;
+                _hasObservedPlayerHp = true;
+            }
+            else
+            {
+                _hasObservedPlayerHp = false;
+                _lastObservedPlayerHp = 0;
+            }
+
             RefreshPlayerHealth(playerState);
             RefreshJobInfo();
             UpdateEquippedSlotHighlight();
@@ -978,15 +1006,34 @@ namespace SeekerDungeon.Solana
             }
 
             _duelInboxRows.Clear();
+            var activePdaKeys = new HashSet<string>(StringComparer.Ordinal);
             for (var i = 0; i < _duelInboxItems.Count; i += 1)
             {
                 var challenge = _duelInboxItems[i];
+                var pdaKey = challenge?.Pda?.Key;
+                if (!string.IsNullOrWhiteSpace(pdaKey))
+                {
+                    activePdaKeys.Add(pdaKey);
+                    UpsertDuelExpiryEstimate(challenge);
+                }
+
                 var rowButton = new Button { name = $"duel-inbox-row-{i}" };
                 rowButton.AddToClassList(DuelInboxRowClass);
                 BuildDuelInboxRowVisual(rowButton, challenge);
                 rowButton.clicked += () => SelectDuelInboxItem(challenge);
                 _duelInboxRows[rowButton] = challenge;
                 _duelInboxList?.Add(rowButton);
+            }
+
+            if (_duelExpiryEstimatesByPda.Count > 0)
+            {
+                var staleKeys = _duelExpiryEstimatesByPda.Keys
+                    .Where(key => !activePdaKeys.Contains(key))
+                    .ToArray();
+                for (var index = 0; index < staleKeys.Length; index += 1)
+                {
+                    _duelExpiryEstimatesByPda.Remove(staleKeys[index]);
+                }
             }
 
             if (_selectedDuelInboxItem == null || !_duelInboxItems.Any(item => item.Pda?.Key == _selectedDuelInboxItem.Pda?.Key))
@@ -1478,21 +1525,85 @@ namespace SeekerDungeon.Solana
         private bool TryGetExpiryProgress(DuelChallengeView challenge, out float progress)
         {
             progress = 0f;
-            var estimatedSlot = GetEstimatedCurrentSlot();
-            if (challenge == null || !estimatedSlot.HasValue)
+            if (challenge == null)
             {
                 return false;
             }
 
-            var currentSlot = estimatedSlot.Value;
+            var estimate = UpsertDuelExpiryEstimate(challenge);
+            if (estimate == null || estimate.DurationSeconds <= 0f)
+            {
+                return false;
+            }
+
+            var now = Time.realtimeSinceStartup;
+            var remainingSeconds = Math.Max(0d, estimate.EndRealtime - now);
+            progress = Mathf.Clamp01((float)(remainingSeconds / Math.Max(0.001d, estimate.DurationSeconds)));
+            return true;
+        }
+
+        private DuelExpiryEstimate UpsertDuelExpiryEstimate(DuelChallengeView challenge)
+        {
+            var pdaKey = challenge?.Pda?.Key;
+            if (string.IsNullOrWhiteSpace(pdaKey))
+            {
+                return null;
+            }
+
+            var now = Time.realtimeSinceStartup;
             var durationSlots = challenge.ExpiresAtSlot > challenge.RequestedSlot
                 ? challenge.ExpiresAtSlot - challenge.RequestedSlot
                 : 1UL;
-            var remainingSlots = challenge.ExpiresAtSlot > currentSlot
-                ? challenge.ExpiresAtSlot - currentSlot
-                : 0UL;
-            progress = Mathf.Clamp01((float)remainingSlots / Mathf.Max(1f, durationSlots));
-            return true;
+            var durationSeconds = Mathf.Max(1f, (float)durationSlots * 0.4f);
+
+            if (!_duelExpiryEstimatesByPda.TryGetValue(pdaKey, out var estimate) || estimate == null)
+            {
+                estimate = new DuelExpiryEstimate
+                {
+                    DurationSeconds = durationSeconds,
+                    StartRealtime = now,
+                    EndRealtime = now + durationSeconds
+                };
+                _duelExpiryEstimatesByPda[pdaKey] = estimate;
+            }
+            else
+            {
+                estimate.DurationSeconds = durationSeconds;
+            }
+
+            if (_duelInboxCurrentSlot.HasValue &&
+                (!Mathf.Approximately(estimate.LastSyncedSlotSampleRealtime, _duelSlotSampleRealtime) ||
+                 estimate.LastSyncedSlot != _duelInboxCurrentSlot.Value))
+            {
+                var currentSlot = _duelInboxCurrentSlot.Value;
+                var remainingSlots = challenge.ExpiresAtSlot > currentSlot
+                    ? challenge.ExpiresAtSlot - currentSlot
+                    : 0UL;
+                var syncedEndRealtime = now + (float)remainingSlots * 0.4f;
+                estimate.EndRealtime = syncedEndRealtime;
+                estimate.StartRealtime = syncedEndRealtime - estimate.DurationSeconds;
+                estimate.LastSyncedSlot = currentSlot;
+                estimate.LastSyncedSlotSampleRealtime = _duelSlotSampleRealtime;
+            }
+
+            if (estimate.EndRealtime < estimate.StartRealtime)
+            {
+                estimate.EndRealtime = estimate.StartRealtime;
+            }
+
+            return estimate;
+        }
+
+        private double? GetEstimatedCurrentSlotContinuous()
+        {
+            if (!_duelInboxCurrentSlot.HasValue)
+            {
+                return null;
+            }
+
+            var elapsedSeconds = Mathf.Max(0f, Time.realtimeSinceStartup - _duelSlotSampleRealtime);
+            var slotDelta = elapsedSeconds / 0.4f;
+            return _duelInboxCurrentSlot.Value + slotDelta;
         }
 
         private static Color GetExpiryFillColor(float progress)
@@ -1518,9 +1629,8 @@ namespace SeekerDungeon.Solana
             }
 
             state.Progress = Mathf.Clamp01(progress);
-            state.TrackColor = new Color(0.15f, 0.20f, 0.23f, 0.95f);
+            state.TrackColor = new Color(0.10f, 0.15f, 0.19f, 0.9f);
             state.FillColor = GetExpiryFillColor(state.Progress);
-            state.CenterColor = new Color(0.05f, 0.09f, 0.10f, 0.92f);
             element.MarkDirtyRepaint();
         }
 
@@ -1550,8 +1660,6 @@ namespace SeekerDungeon.Solana
             {
                 DrawFilledSector(painter, center, radius, state.Progress, state.FillColor);
             }
-
-            DrawFilledCircle(painter, center, radius * 0.58f, state.CenterColor);
         }
 
         private static void DrawFilledCircle(Painter2D painter, Vector2 center, float radius, Color color)
@@ -1617,7 +1725,7 @@ namespace SeekerDungeon.Solana
             return challenge.Status switch
             {
                 DuelChallengeStatus.Open => "OPEN",
-                DuelChallengeStatus.PendingRandomness => "ROLLING",
+                DuelChallengeStatus.PendingRandomness => "PREPARING FIGHT",
                 DuelChallengeStatus.Settled => GetSettledOutcomeLabel(challenge),
                 DuelChallengeStatus.Declined => "DECLINED",
                 DuelChallengeStatus.Expired => "EXPIRED",

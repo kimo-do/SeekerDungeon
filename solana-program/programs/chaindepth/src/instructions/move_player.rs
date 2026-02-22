@@ -166,7 +166,7 @@ pub fn handler(ctx: Context<MovePlayer>, new_x: i8, new_y: i8) -> Result<()> {
         player_account.current_hp = crate::state::DEFAULT_PLAYER_MAX_HP;
         player_account.max_hp = crate::state::DEFAULT_PLAYER_MAX_HP;
         player_account.data_version = PlayerAccount::CURRENT_DATA_VERSION;
-        player_account.season_seed = season_seed;
+        player_account.last_active_slot = clock.slot;
         player_account.bump = ctx.bumps.player_account;
     }
 
@@ -369,7 +369,7 @@ pub fn init_player_handler(ctx: Context<InitPlayer>) -> Result<()> {
     player_account.current_hp = crate::state::DEFAULT_PLAYER_MAX_HP;
     player_account.max_hp = crate::state::DEFAULT_PLAYER_MAX_HP;
     player_account.data_version = PlayerAccount::CURRENT_DATA_VERSION;
-    player_account.season_seed = global.season_seed;
+    player_account.last_active_slot = clock.slot;
     player_account.bump = ctx.bumps.player_account;
 
     profile.owner = player_key;

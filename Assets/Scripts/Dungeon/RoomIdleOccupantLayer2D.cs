@@ -10,6 +10,9 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private List<BoxCollider2D> spawnZones = new();
         [SerializeField] private GameObject occupantVisualPrefab;
         [SerializeField] private Transform visualSpawnRoot;
+        [Header("Presence")]
+        [SerializeField] private float activeThresholdSeconds = 60f;
+        [SerializeField] private float idleThresholdSeconds = 180f;
         [SerializeField] private float minDistanceBetweenOccupants = 0.1f;
         [SerializeField] private int maxSpawnAttemptsPerOccupant = 18;
         [SerializeField] private float spawnPopDuration = 0.1f;
@@ -70,6 +73,7 @@ namespace SeekerDungeon.Dungeon
                 return;
             }
 
+            var nowRealtime = Time.realtimeSinceStartup;
             _usedKeys.Clear();
             _reservedPositions.Clear();
             var newVisualIndex = 0;
@@ -92,6 +96,14 @@ namespace SeekerDungeon.Dungeon
                     key = $"{key}#{index}";
                     _usedKeys.Add(key);
                 }
+
+                var presenceState = OccupantPresenceTracker.UpdateAndGetState(
+                    occupant.WalletKey,
+                    BuildPresenceSignature(occupant, "idle"),
+                    nowRealtime,
+                    activeThresholdSeconds,
+                    idleThresholdSeconds,
+                    occupant.LastActionAgeSecondsEstimate);
 
                 var isNewVisual = !_activeByOccupantKey.TryGetValue(key, out var visual) || visual == null;
                 if (isNewVisual)
@@ -131,7 +143,7 @@ namespace SeekerDungeon.Dungeon
                 }
 
                 visual.transform.rotation = Quaternion.identity;
-                visual.Bind(occupant, 0, OccupantFacingDirection.Right);
+                visual.Bind(occupant, 0, OccupantFacingDirection.Right, presenceState);
                 OccupantSpawnPopTracker.MarkSeen(key);
             }
 
@@ -293,6 +305,23 @@ namespace SeekerDungeon.Dungeon
             }
 
             return $"{occupant.DisplayName}_{index}";
+        }
+
+        private static string BuildPresenceSignature(DungeonOccupantVisual occupant, string layerTag)
+        {
+            if (occupant == null)
+            {
+                return layerTag ?? "unknown";
+            }
+
+            return string.Concat(
+                layerTag ?? string.Empty,
+                "|skin:", ((int)occupant.SkinId).ToString(),
+                "|item:", ((int)occupant.EquippedItemId).ToString(),
+                "|act:", ((int)occupant.Activity).ToString(),
+                "|dir:", occupant.ActivityDirection.HasValue ? ((int)occupant.ActivityDirection.Value).ToString() : "-",
+                "|boss:", occupant.IsFightingBoss ? "1" : "0",
+                "|last:", occupant.LastActiveSlot.ToString());
         }
     }
 }

@@ -69,6 +69,7 @@ pub fn handler(ctx: Context<EquipItem>, item_id: u16) -> Result<()> {
         session_instruction_bits::EQUIP_ITEM,
         0,
     )?;
+    let clock = Clock::get()?;
 
     if item_id != 0 {
         let has_item = ctx
@@ -81,6 +82,7 @@ pub fn handler(ctx: Context<EquipItem>, item_id: u16) -> Result<()> {
     }
 
     ctx.accounts.player_account.equipped_item_id = item_id;
+    ctx.accounts.player_account.mark_active(clock.slot);
     ctx.accounts.room_presence.equipped_item_id = item_id;
 
     emit!(ItemEquipped {

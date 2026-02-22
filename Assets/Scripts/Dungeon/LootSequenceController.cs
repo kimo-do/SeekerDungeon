@@ -119,9 +119,11 @@ namespace SeekerDungeon.Dungeon
         {
             var ct = this.GetCancellationTokenOnDestroy();
             var entry = itemRegistry != null ? itemRegistry.Get(item.ItemId) : null;
+            var rarity = entry?.rarity ?? ItemRarity.Common;
             GameAudioManager.Instance?.PlayLootRevealByRarity(
-                entry?.rarity ?? ItemRarity.Common,
+                rarity,
                 chestWorldPos);
+            HapticsFeedback.LootReveal(rarity);
 
             // -- Spawn item sprite --
             var spawnPos = chestWorldPos + Vector3.up * 0.5f;

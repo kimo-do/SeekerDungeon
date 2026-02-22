@@ -308,6 +308,22 @@ PrefabInstance:
       propertyPath: m_Name
       value: '[WalletController]'
       objectReference: {fileID: 0}
+    - target: {fileID: 193123239798900104, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
+      propertyPath: solanaWalletAdapterOptions.phantomWalletOptions.appMetaDataUrl
+      value: https://github.com/kimo-do/SeekerDungeon
+      objectReference: {fileID: 0}
+    - target: {fileID: 193123239798900104, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
+      propertyPath: solanaWalletAdapterOptions.solanaMobileWalletAdapterOptions.name
+      value: Kimo.LootGoblins
+      objectReference: {fileID: 0}
+    - target: {fileID: 193123239798900104, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
+      propertyPath: solanaWalletAdapterOptions.solanaMobileWalletAdapterOptions.iconUri
+      value: /tree/master/Assets/favicon.ico
+      objectReference: {fileID: 0}
+    - target: {fileID: 193123239798900104, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
+      propertyPath: solanaWalletAdapterOptions.solanaMobileWalletAdapterOptions.identityUri
+      value: https://github.com/kimo-do/SeekerDungeon/
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []

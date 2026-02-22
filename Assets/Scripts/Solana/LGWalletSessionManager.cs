@@ -65,6 +65,13 @@ namespace SeekerDungeon.Solana
         private const string WalletConnectIntentPrefKey = "LG_WALLET_CONNECT_INTENT_V1";
         private const string EditorWalletSlotPrefKey = "LG_EDITOR_DEV_WALLET_SLOT_V1";
         private const string EditorWalletSlotMnemonicPrefPrefix = "LG_EDITOR_DEV_WALLET_SLOT_MNEMONIC_V1_";
+        private const string LegacyEditorWalletSlotPrefKey = "LG_EDITOR_DEV_WALLET_SLOT";
+        private static readonly string[] LegacyEditorWalletSlotMnemonicPrefPrefixes =
+        {
+            "LG_EDITOR_DEV_WALLET_SLOT_MNEMONIC_V0_",
+            "LG_EDITOR_DEV_WALLET_SLOT_MNEMONIC_"
+        };
+        private const string EditorWalletSlotMnemonicStoreFileName = "editor-wallet-slot-mnemonics.json";
 
         public static LGWalletSessionManager Instance { get; private set; }
 
@@ -223,6 +230,19 @@ namespace SeekerDungeon.Solana
         private const string LegacyAccountResetMessage =
             "Your player account is from an older build and cannot be used by this version. " +
             "Reset your devnet player account, then create your character again.";
+
+        [Serializable]
+        private sealed class EditorWalletSlotMnemonicStore
+        {
+            public List<EditorWalletSlotMnemonicEntry> entries = new();
+        }
+
+        [Serializable]
+        private sealed class EditorWalletSlotMnemonicEntry
+        {
+            public int slot;
+            public string mnemonic;
+        }
 
         private void Awake()
         {
@@ -970,8 +990,12 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
-            var storedSlot = PlayerPrefs.GetInt(EditorWalletSlotPrefKey, editorWalletSlot);
+            var storedSlot = PlayerPrefs.HasKey(EditorWalletSlotPrefKey)
+                ? PlayerPrefs.GetInt(EditorWalletSlotPrefKey, editorWalletSlot)
+                : PlayerPrefs.GetInt(LegacyEditorWalletSlotPrefKey, editorWalletSlot);
             editorWalletSlot = Math.Max(0, storedSlot);
+            PlayerPrefs.SetInt(EditorWalletSlotPrefKey, editorWalletSlot);
+            PlayerPrefs.Save();
         }
 
         private void SetEditorWalletSlot(int slot)
@@ -1009,10 +1033,30 @@ namespace SeekerDungeon.Solana
             var value = PlayerPrefs.GetString(key, string.Empty)?.Trim();
             if (string.IsNullOrWhiteSpace(value))
             {
+                if (TryGetEditorWalletSlotMnemonicFromDisk(editorWalletSlot, out var diskMnemonic))
+                {
+                    PlayerPrefs.SetString(key, diskMnemonic);
+                    PlayerPrefs.Save();
+                    mnemonic = diskMnemonic;
+                    EmitStatus($"Recovered editor wallet slot #{editorWalletSlot} mnemonic from disk store.");
+                    return true;
+                }
+
+                if (TryGetLegacyEditorWalletSlotMnemonic(editorWalletSlot, out var legacyMnemonic))
+                {
+                    PlayerPrefs.SetString(key, legacyMnemonic);
+                    PlayerPrefs.Save();
+                    SaveEditorWalletSlotMnemonicToDisk(editorWalletSlot, legacyMnemonic);
+                    mnemonic = legacyMnemonic;
+                    EmitStatus($"Migrated legacy editor wallet slot #{editorWalletSlot} mnemonic.");
+                    return true;
+                }
+
                 return false;
             }
 
             mnemonic = value;
+            SaveEditorWalletSlotMnemonicToDisk(editorWalletSlot, value);
             return true;
         }
 
@@ -1027,6 +1071,7 @@ namespace SeekerDungeon.Solana
             var key = GetEditorWalletSlotMnemonicPrefKey(editorWalletSlot);
             PlayerPrefs.SetString(key, generatedMnemonic);
             PlayerPrefs.Save();
+            SaveEditorWalletSlotMnemonicToDisk(editorWalletSlot, generatedMnemonic);
             EmitStatus($"Created deterministic editor wallet slot #{editorWalletSlot}");
             return generatedMnemonic;
         }
@@ -1035,6 +1080,160 @@ namespace SeekerDungeon.Solana
         {
             var safeSlot = Math.Max(0, slot);
             return $"{EditorWalletSlotMnemonicPrefPrefix}{safeSlot}";
+        }
+
+        private static string GetEditorWalletSlotMnemonicStorePath()
+        {
+            var root = Application.persistentDataPath;
+            if (string.IsNullOrWhiteSpace(root))
+            {
+                return null;
+            }
+
+            return Path.Combine(root, EditorWalletSlotMnemonicStoreFileName);
+        }
+
+        private static bool TryGetLegacyEditorWalletSlotMnemonic(int slot, out string mnemonic)
+        {
+            mnemonic = null;
+            var safeSlot = Math.Max(0, slot);
+            for (var index = 0; index < LegacyEditorWalletSlotMnemonicPrefPrefixes.Length; index += 1)
+            {
+                var legacyKey = $"{LegacyEditorWalletSlotMnemonicPrefPrefixes[index]}{safeSlot}";
+                if (!PlayerPrefs.HasKey(legacyKey))
+                {
+                    continue;
+                }
+
+                var value = PlayerPrefs.GetString(legacyKey, string.Empty)?.Trim();
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    continue;
+                }
+
+                mnemonic = value;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryGetEditorWalletSlotMnemonicFromDisk(int slot, out string mnemonic)
+        {
+            mnemonic = null;
+            var path = GetEditorWalletSlotMnemonicStorePath();
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
+                return false;
+            }
+
+            try
+            {
+                var raw = File.ReadAllText(path);
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    return false;
+                }
+
+                var store = JsonUtility.FromJson<EditorWalletSlotMnemonicStore>(raw);
+                if (store?.entries == null || store.entries.Count == 0)
+                {
+                    return false;
+                }
+
+                var safeSlot = Math.Max(0, slot);
+                for (var index = 0; index < store.entries.Count; index += 1)
+                {
+                    var entry = store.entries[index];
+                    if (entry == null || entry.slot != safeSlot)
+                    {
+                        continue;
+                    }
+
+                    var candidate = entry.mnemonic?.Trim();
+                    if (string.IsNullOrWhiteSpace(candidate))
+                    {
+                        continue;
+                    }
+
+                    mnemonic = candidate;
+                    return true;
+                }
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+
+            return false;
+        }
+
+        private static void SaveEditorWalletSlotMnemonicToDisk(int slot, string mnemonic)
+        {
+            var normalized = mnemonic?.Trim();
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return;
+            }
+
+            var path = GetEditorWalletSlotMnemonicStorePath();
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return;
+            }
+
+            try
+            {
+                EditorWalletSlotMnemonicStore store = null;
+                if (File.Exists(path))
+                {
+                    var raw = File.ReadAllText(path);
+                    if (!string.IsNullOrWhiteSpace(raw))
+                    {
+                        store = JsonUtility.FromJson<EditorWalletSlotMnemonicStore>(raw);
+                    }
+                }
+
+                store ??= new EditorWalletSlotMnemonicStore();
+                store.entries ??= new List<EditorWalletSlotMnemonicEntry>();
+
+                var safeSlot = Math.Max(0, slot);
+                EditorWalletSlotMnemonicEntry target = null;
+                for (var index = 0; index < store.entries.Count; index += 1)
+                {
+                    var entry = store.entries[index];
+                    if (entry == null || entry.slot != safeSlot)
+                    {
+                        continue;
+                    }
+
+                    target = entry;
+                    break;
+                }
+
+                if (target == null)
+                {
+                    target = new EditorWalletSlotMnemonicEntry { slot = safeSlot, mnemonic = normalized };
+                    store.entries.Add(target);
+                }
+                else
+                {
+                    target.mnemonic = normalized;
+                }
+
+                var directory = Path.GetDirectoryName(path);
+                if (!string.IsNullOrWhiteSpace(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                var json = JsonUtility.ToJson(store, true);
+                File.WriteAllText(path, json);
+            }
+            catch (Exception)
+            {
+                // Best effort only; slot mapping still remains in PlayerPrefs.
+            }
         }
 
         private string ResolveEditorWalletPassword()

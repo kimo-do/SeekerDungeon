@@ -27,6 +27,9 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private DoorOccupantSlot[] visualSlots;
         [SerializeField] private GameObject occupantVisualPrefab;
         [SerializeField] private Transform visualSpawnRoot;
+        [Header("Presence")]
+        [SerializeField] private float activeThresholdSeconds = 60f;
+        [SerializeField] private float idleThresholdSeconds = 180f;
         [Header("Arrival")]
         [Tooltip("Where the local player appears when traveling through this door into the room.")]
         [SerializeField] private Transform arrivalAnchor;
@@ -112,6 +115,7 @@ namespace SeekerDungeon.Dungeon
                 return;
             }
 
+            var nowRealtime = Time.realtimeSinceStartup;
             var usedKeys = new HashSet<string>(StringComparer.Ordinal);
             var newVisualIndex = 0;
             var visibleCount = Mathf.Min(MaxVisibleOccupants, visualSlots.Length, occupants.Count);
@@ -136,6 +140,13 @@ namespace SeekerDungeon.Dungeon
                     key = $"{key}#{index}";
                     usedKeys.Add(key);
                 }
+                var presenceState = OccupantPresenceTracker.UpdateAndGetState(
+                    occupant.WalletKey,
+                    BuildPresenceSignature(occupant, "door"),
+                    nowRealtime,
+                    activeThresholdSeconds,
+                    idleThresholdSeconds,
+                    occupant.LastActionAgeSecondsEstimate);
 
                 var isNewVisual = !_activeByOccupantKey.TryGetValue(key, out var visual) || visual == null;
                 if (isNewVisual)
@@ -157,7 +168,7 @@ namespace SeekerDungeon.Dungeon
                 }
 
                 visualTransform.SetPositionAndRotation(slot.Anchor.position, Quaternion.identity);
-                visual.Bind(occupant, index, slot.FacingDirection);
+                visual.Bind(occupant, index, slot.FacingDirection, presenceState);
 
                 var shouldPlaySpawnPop = isNewVisual &&
                                          !_suppressSpawnPop &&
@@ -268,6 +279,23 @@ namespace SeekerDungeon.Dungeon
             return $"{occupant.DisplayName}_{index}";
         }
 
+        private static string BuildPresenceSignature(DungeonOccupantVisual occupant, string layerTag)
+        {
+            if (occupant == null)
+            {
+                return layerTag ?? "unknown";
+            }
+
+            return string.Concat(
+                layerTag ?? string.Empty,
+                "|skin:", ((int)occupant.SkinId).ToString(),
+                "|item:", ((int)occupant.EquippedItemId).ToString(),
+                "|act:", ((int)occupant.Activity).ToString(),
+                "|dir:", occupant.ActivityDirection.HasValue ? ((int)occupant.ActivityDirection.Value).ToString() : "-",
+                "|boss:", occupant.IsFightingBoss ? "1" : "0",
+                "|last:", occupant.LastActiveSlot.ToString());
+        }
+
         private bool TryGetSlotPlacement(
             int index,
             out Vector3 worldPosition,
@@ -296,6 +324,9 @@ namespace SeekerDungeon.Dungeon
     {
         private const int BaseSortingOrder = 10;
         private const float MinScaleMultiplier = 0.05f;
+        private static readonly Color ActiveNameColor = Color.white;
+        private static readonly Color IdleNameColor = new(0.84f, 0.84f, 0.84f, 1f);
+        private static readonly Color AfkNameColor = new(0.68f, 0.68f, 0.68f, 1f);
 
         private LGPlayerController _playerController;
         private SpriteRenderer[] _spriteRenderers;
@@ -305,6 +336,7 @@ namespace SeekerDungeon.Dungeon
 
         public string BoundWalletKey { get; private set; }
         public string BoundDisplayName { get; private set; }
+        public OccupantPresenceState BoundPresenceState { get; private set; } = OccupantPresenceState.Active;
 
         private void Awake()
         {
@@ -330,15 +362,24 @@ namespace SeekerDungeon.Dungeon
         public void Bind(
             DungeonOccupantVisual occupant,
             int stackIndex,
-            OccupantFacingDirection facingDirection)
+            OccupantFacingDirection facingDirection,
+            OccupantPresenceState presenceState = OccupantPresenceState.Active)
         {
             transform.rotation = Quaternion.identity;
+            BoundPresenceState = presenceState;
+            BoundWalletKey = occupant?.WalletKey ?? string.Empty;
+            BoundDisplayName = occupant?.DisplayName ?? string.Empty;
+            var displayName = ResolveDisplayNameForState(occupant, presenceState);
+            var nameColor = ResolveNameColor(presenceState);
 
             if (_playerController != null)
             {
                 _playerController.ApplySkin(occupant.SkinId);
-                _playerController.SetDisplayName(occupant.DisplayName);
+                _playerController.SetDisplayName(displayName);
                 _playerController.SetDisplayNameVisible(true);
+                _playerController.SetLocalPlayerNameStyle(false);
+                _playerController.SetDisplayNameStyleOverride(nameColor, TMPro.FontStyles.Bold);
+                _playerController.SetOccupantPresenceState(presenceState);
                 _playerController.SetMiningAnimationState(occupant.Activity == OccupantActivity.DoorJob);
                 _playerController.SetBossJobAnimationState(occupant.Activity == OccupantActivity.BossFight);
                 if (ItemRegistry.IsWearable(occupant.EquippedItemId))
@@ -350,9 +391,6 @@ namespace SeekerDungeon.Dungeon
                     _playerController.HideAllWieldedItems();
                 }
             }
-
-            BoundWalletKey = occupant?.WalletKey ?? string.Empty;
-            BoundDisplayName = occupant?.DisplayName ?? string.Empty;
 
             ApplyFacing(facingDirection);
 
@@ -401,6 +439,53 @@ namespace SeekerDungeon.Dungeon
             transform.localScale = _baseScale;
             BoundWalletKey = string.Empty;
             BoundDisplayName = string.Empty;
+            BoundPresenceState = OccupantPresenceState.Active;
+            if (_playerController != null)
+            {
+                _playerController.ClearDisplayNameStyleOverride();
+                _playerController.SetOccupantPresenceState(OccupantPresenceState.Active);
+            }
+        }
+
+        private static Color ResolveNameColor(OccupantPresenceState state)
+        {
+            return state switch
+            {
+                OccupantPresenceState.Active => ActiveNameColor,
+                OccupantPresenceState.Idle => IdleNameColor,
+                OccupantPresenceState.Afk => AfkNameColor,
+                _ => ActiveNameColor
+            };
+        }
+
+        private static string ResolveDisplayNameForState(DungeonOccupantVisual occupant, OccupantPresenceState state)
+        {
+            var displayName = occupant?.DisplayName?.Trim() ?? string.Empty;
+            if (state != OccupantPresenceState.Afk)
+            {
+                return displayName;
+            }
+
+            var shortWallet = ShortWallet(occupant?.WalletKey);
+            return string.IsNullOrWhiteSpace(shortWallet)
+                ? $"(AFK) {displayName}"
+                : $"(AFK) {shortWallet}";
+        }
+
+        private static string ShortWallet(string walletKey)
+        {
+            if (string.IsNullOrWhiteSpace(walletKey))
+            {
+                return string.Empty;
+            }
+
+            var trimmed = walletKey.Trim();
+            if (trimmed.Length <= 10)
+            {
+                return trimmed;
+            }
+
+            return $"{trimmed.Substring(0, 4)}...{trimmed.Substring(trimmed.Length - 4)}";
         }
 
         private void ApplyFacing(OccupantFacingDirection facingDirection)

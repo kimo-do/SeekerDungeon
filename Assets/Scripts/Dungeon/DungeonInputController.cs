@@ -227,6 +227,8 @@ namespace SeekerDungeon.Dungeon
                 var door = hit.GetComponentInParent<DoorInteractable>();
                 if (door != null)
                 {
+                    HapticsFeedback.DoorTap();
+
                     var wasDoorOpenBeforeInteraction = IsDoorOpenInCurrentState(door.Direction);
                     var wasRubbleBeforeInteraction = IsDoorRubbleInCurrentState(door.Direction);
                     var wasLockedBeforeInteraction = IsDoorLockedInCurrentState(door.Direction);

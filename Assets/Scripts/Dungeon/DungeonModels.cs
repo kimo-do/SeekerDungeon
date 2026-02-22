@@ -13,6 +13,8 @@ namespace SeekerDungeon.Dungeon
         public OccupantActivity Activity { get; init; }
         public RoomDirection? ActivityDirection { get; init; }
         public bool IsFightingBoss { get; init; }
+        public ulong LastActiveSlot { get; init; }
+        public float LastActionAgeSecondsEstimate { get; init; }
     }
 
     public sealed class DungeonRoomSnapshot

@@ -116,7 +116,7 @@ pub fn handler(ctx: Context<EnterDungeon>) -> Result<()> {
         player.current_hp = DEFAULT_PLAYER_MAX_HP;
         player.max_hp = DEFAULT_PLAYER_MAX_HP;
         player.data_version = PlayerAccount::CURRENT_DATA_VERSION;
-        player.season_seed = global.season_seed;
+        player.last_active_slot = clock.slot;
         player.bump = player_bump;
     } else {
         // Any explicit enter starts/restarts the run at room (10,10).
@@ -129,7 +129,7 @@ pub fn handler(ctx: Context<EnterDungeon>) -> Result<()> {
             player.max_hp = DEFAULT_PLAYER_MAX_HP;
         }
         player.active_jobs = Vec::new();
-        player.season_seed = global.season_seed;
+        player.last_active_slot = clock.slot;
         player.data_version = PlayerAccount::CURRENT_DATA_VERSION;
     }
 

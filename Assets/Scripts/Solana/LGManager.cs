@@ -97,6 +97,8 @@ namespace SeekerDungeon.Solana
         private readonly List<SessionExpenseEntry> _sessionExpenseEntries = new();
         private readonly Dictionary<string, OccupantDisplayNameCacheEntry> _occupantDisplayNameCache =
             new(StringComparer.Ordinal);
+        private readonly Dictionary<string, OccupantLastActiveSlotCacheEntry> _occupantLastActiveSlotCache =
+            new(StringComparer.Ordinal);
 
         private struct GameplaySigningContext
         {
@@ -112,6 +114,8 @@ namespace SeekerDungeon.Solana
         private const int RawHttpProbeTimeoutSeconds = 20;
         private const int RawHttpBodyLogLimit = 2000;
         private const int OccupantDisplayNameCacheTtlSeconds = 60;
+        private const int OccupantLastActiveSlotCacheTtlSeconds = 3;
+        private const float EstimatedSlotSeconds = 0.45f;
         private const string DuelChallengeSeed = "duel_challenge";
         private const string DuelEscrowSeed = "duel_escrow";
         private const string ProgramIdentitySeed = "identity";
@@ -149,6 +153,12 @@ namespace SeekerDungeon.Solana
         private sealed class OccupantDisplayNameCacheEntry
         {
             public string DisplayName;
+            public DateTime CachedAtUtc;
+        }
+
+        private sealed class OccupantLastActiveSlotCacheEntry
+        {
+            public ulong LastActiveSlot;
             public DateTime CachedAtUtc;
         }
 
@@ -997,11 +1007,14 @@ namespace SeekerDungeon.Solana
                         presence.IsCurrent)
                     .ToList();
 
+                var currentSlot = await GetCurrentSlotAsync();
                 var occupants = new RoomOccupantView[roomPresences.Count];
                 for (var index = 0; index < roomPresences.Count; index += 1)
                 {
                     var presence = roomPresences[index];
                     var displayName = await ResolveOccupantDisplayNameAsync(presence.Player);
+                    var lastActiveSlot = await ResolveOccupantLastActiveSlotAsync(presence.Player);
+                    var ageSecondsEstimate = EstimateLastActionAgeSeconds(lastActiveSlot, currentSlot);
                     occupants[index] = new RoomOccupantView
                     {
                         Wallet = presence.Player,
@@ -1013,7 +1026,9 @@ namespace SeekerDungeon.Solana
                                             LGDomainMapper.TryToDirection(presence.ActivityDirection, out var mappedDirection)
                             ? mappedDirection
                             : null,
-                        IsFightingBoss = presence.Activity == 2
+                        IsFightingBoss = presence.Activity == 2,
+                        LastActiveSlot = lastActiveSlot,
+                        LastActionAgeSecondsEstimate = ageSecondsEstimate
                     };
                 }
 
@@ -1141,6 +1156,58 @@ namespace SeekerDungeon.Solana
             };
 
             return displayName;
+        }
+
+        private async UniTask<ulong> ResolveOccupantLastActiveSlotAsync(PublicKey wallet)
+        {
+            var walletKey = wallet?.Key;
+            if (string.IsNullOrWhiteSpace(walletKey))
+            {
+                return 0UL;
+            }
+
+            if (_occupantLastActiveSlotCache.TryGetValue(walletKey, out var cachedEntry))
+            {
+                var cacheAgeSeconds = (DateTime.UtcNow - cachedEntry.CachedAtUtc).TotalSeconds;
+                if (cacheAgeSeconds >= 0 && cacheAgeSeconds <= OccupantLastActiveSlotCacheTtlSeconds)
+                {
+                    return cachedEntry.LastActiveSlot;
+                }
+            }
+
+            ulong lastActiveSlot = 0UL;
+            try
+            {
+                var playerPda = DerivePlayerPda(wallet);
+                var player = await FetchPlayerAccountByPdaAsync(playerPda);
+                if (player != null)
+                {
+                    lastActiveSlot = player.LastActiveSlot;
+                }
+            }
+            catch
+            {
+                lastActiveSlot = 0UL;
+            }
+
+            _occupantLastActiveSlotCache[walletKey] = new OccupantLastActiveSlotCacheEntry
+            {
+                LastActiveSlot = lastActiveSlot,
+                CachedAtUtc = DateTime.UtcNow
+            };
+
+            return lastActiveSlot;
+        }
+
+        private static float EstimateLastActionAgeSeconds(ulong lastActiveSlot, ulong? currentSlot)
+        {
+            if (lastActiveSlot == 0UL || !currentSlot.HasValue || currentSlot.Value <= lastActiveSlot)
+            {
+                return 0f;
+            }
+
+            var elapsedSlots = currentSlot.Value - lastActiveSlot;
+            return elapsedSlots * EstimatedSlotSeconds;
         }
 
         /// <summary>
@@ -1851,7 +1918,8 @@ namespace SeekerDungeon.Solana
                                 SessionAuthority = context.SessionAuthority,
                                 SystemProgram = SystemProgram.ProgramIdKey
                             },
-                            _programId));
+                            _programId),
+                    useSessionSignerIfPossible: false);
 
                 if (result.Success)
                 {
@@ -2320,12 +2388,6 @@ namespace SeekerDungeon.Solana
                 return "Global state not loaded.";
             }
 
-            if (challengerPlayer.SeasonSeed != CurrentGlobalState.SeasonSeed ||
-                opponentPlayer.SeasonSeed != CurrentGlobalState.SeasonSeed)
-            {
-                return "Both players must be in the current season.";
-            }
-
             if (!challengerPlayer.InDungeon || !opponentPlayer.InDungeon)
             {
                 return "Both players must be in the dungeon.";
@@ -2729,7 +2791,7 @@ namespace SeekerDungeon.Solana
                     Log(
                         "Duel accept onchain challenger player: " +
                         $"owner={ShortKey(player.Owner)} inDungeon={player.InDungeon} " +
-                        $"room=({player.CurrentRoomX},{player.CurrentRoomY}) hp={player.CurrentHp} season={player.SeasonSeed}");
+                        $"room=({player.CurrentRoomX},{player.CurrentRoomY}) hp={player.CurrentHp} lastActive={player.LastActiveSlot}");
                 }
 
                 var opponentPlayerResult =
@@ -2740,7 +2802,7 @@ namespace SeekerDungeon.Solana
                     Log(
                         "Duel accept onchain opponent player: " +
                         $"owner={ShortKey(player.Owner)} inDungeon={player.InDungeon} " +
-                        $"room=({player.CurrentRoomX},{player.CurrentRoomY}) hp={player.CurrentHp} season={player.SeasonSeed}");
+                        $"room=({player.CurrentRoomX},{player.CurrentRoomY}) hp={player.CurrentHp} lastActive={player.LastActiveSlot}");
                 }
             }
             catch (Exception diagException)
@@ -4689,6 +4751,28 @@ namespace SeekerDungeon.Solana
                 }
 
                 return TxResult.Fail($"{actionName} TX failed (RPC unstable, please retry)");
+            }
+
+            if (signingContext.UsesSessionSigner &&
+                IsFrameworkAccountNotInitializedError())
+            {
+                Log(
+                    $"{actionName}: session-signed tx hit framework AccountNotInitialized (3012). " +
+                    "Retrying once with wallet signer.");
+                var walletContext = BuildWalletOnlySigningContext();
+                if (walletContext.SignerAccount != null)
+                {
+                    var walletSignature = await SendTransaction(
+                        buildInstruction(walletContext),
+                        walletContext.SignerAccount,
+                        new List<Account> { walletContext.SignerAccount },
+                        $"{actionName}:wallet-account-init-fallback",
+                        false);
+                    if (!string.IsNullOrWhiteSpace(walletSignature))
+                    {
+                        return TxResult.Ok(walletSignature);
+                    }
+                }
             }
 
             if (!signingContext.UsesSessionSigner || walletSessionManager == null)

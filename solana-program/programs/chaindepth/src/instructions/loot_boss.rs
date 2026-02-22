@@ -144,6 +144,7 @@ pub fn handler(ctx: Context<LootBoss>) -> Result<()> {
     // Update room looted count and player stats
     room.looted_count += 1;
     player_account.chests_looted += 1;
+    player_account.mark_active(clock.slot);
     if room.boss_fighter_count > 0 {
         room.boss_fighter_count = room.boss_fighter_count.saturating_sub(1);
     }

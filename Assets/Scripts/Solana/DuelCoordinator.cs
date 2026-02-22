@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Cysharp.Threading.Tasks;
+using SeekerDungeon.Audio;
 using SeekerDungeon.Dungeon;
 using Solana.Unity.SDK;
 using Solana.Unity.Wallet;
@@ -25,18 +26,31 @@ namespace SeekerDungeon.Solana
         [SerializeField] private DungeonManager dungeonManager;
         [SerializeField] private float normalPollSeconds = 8f;
         [SerializeField] private float pendingPollSeconds = 3f;
-        [SerializeField] private float duelReplayHitIntervalSeconds = 1f;
+        [SerializeField] private float duelReplayHitIntervalSeconds = 1.35f;
         [SerializeField] private float duelReplayPostKillSeconds = 2f;
+        [SerializeField] private bool useDuelSwingEventSync = true;
+        [SerializeField] private float duelSwingSyncTimeoutSeconds = 1.35f;
+        [SerializeField] private float duelSwingSyncMinimumImpactDelaySeconds = 0.35f;
         [SerializeField] private float duelReplaySpacingUnits = 0.8f;
+        [SerializeField] private Vector2 duelReplayBoundsX = new(-2.2f, 2.2f);
+        [SerializeField] private Vector2 duelReplayBoundsY = new(-2.2f, 2.2f);
         [SerializeField] private float duelReplayResolveTimeoutSeconds = 3f;
         [SerializeField] private float duelReplayResolvePollSeconds = 0.2f;
+        [SerializeField] private float duelBattleMusicFadeOutSeconds = 0.65f;
         [Header("Duel Camera")]
+        [SerializeField] private CinemachineCamera gameplayCamera;
         [SerializeField] private CinemachineCamera duelReplayCamera;
+        [SerializeField] private int duelReplayCameraPriority = 100;
         [SerializeField] private float duelReplayOrthoSize = 3.44f;
         [Header("Duel Hit Splat")]
         [SerializeField] private GameObject duelHitSplatPrefab;
         [SerializeField] private List<Sprite> duelHitSplatSprites = new();
         [SerializeField] private float duelHitSplatYOffset = 0.4f;
+        [SerializeField] private float duelHitSplatRemoveLeadSeconds = 0.4f;
+        [Header("Duel Crit Visuals")]
+        [SerializeField] private bool inferCriticalHitsFromDamage = true;
+        [SerializeField] private byte inferredCriticalDamageThreshold = 16;
+        [SerializeField] private float criticalHitSplatScaleMultiplier = 1.3f;
 
         private readonly List<DuelChallengeView> _cachedChallenges = new();
         private readonly Dictionary<string, DuelChallengeStatus> _knownStatuses = new();
@@ -48,6 +62,10 @@ namespace SeekerDungeon.Solana
         private bool _isRefreshInFlight;
         private float _lastSlotRefreshRealtime;
         private ulong? _latestKnownSlot;
+        private int _localSwingEventsObserved;
+        private int _remoteSwingEventsObserved;
+        private LGPlayerController _activeReplayLocalPlayer;
+        private LGPlayerController _activeReplayRemotePlayer;
 
         private void Awake()
         {
@@ -80,10 +98,7 @@ namespace SeekerDungeon.Solana
                 dungeonManager = FindFirstObjectByType<DungeonManager>();
             }
 
-            if (duelReplayCamera == null)
-            {
-                duelReplayCamera = FindFirstObjectByType<CinemachineCamera>();
-            }
+            gameplayCamera ??= ResolveGameplayCamera();
         }
 
         private void OnDestroy()
@@ -357,21 +372,47 @@ namespace SeekerDungeon.Solana
         private async UniTaskVoid PlaySettledDuelReplayAsync(PublicKey localWallet, DuelChallengeView challenge)
         {
             hud?.PrepareForDuelReplay();
+            var audioManager = GameAudioManager.Instance;
+            audioManager?.PlayLoopOnce(AudioLoopId.DuelBattle, Vector3.zero);
 
-            try
+            var replayPlayed = false;
+            const int replayAttempts = 2;
+
+            for (var attempt = 0; attempt < replayAttempts && !replayPlayed; attempt += 1)
             {
-                await RunDuelReplayAsync(localWallet, challenge);
+                if (attempt > 0)
+                {
+                    await ForceReplayContextRefreshAsync();
+                    await UniTask.Delay(TimeSpan.FromSeconds(0.35f));
+                }
+
+                try
+                {
+                    replayPlayed = await RunDuelReplayAsync(localWallet, challenge);
+                }
+                catch (Exception replayError)
+                {
+                    Debug.LogWarning($"[DuelCoordinator] Duel replay failed: {replayError.Message}");
+                }
             }
-            catch (Exception replayError)
+
+            if (!replayPlayed)
             {
-                Debug.LogWarning($"[DuelCoordinator] Duel replay failed: {replayError.Message}");
+                Debug.LogWarning("[DuelCoordinator] Duel replay fallback: could not resolve both actors in time.");
+            }
+
+            if (audioManager != null && audioManager.IsLoopPlaying(AudioLoopId.DuelBattle))
+            {
+                await audioManager.FadeOutLoopAndStopAsync(
+                    AudioLoopId.DuelBattle,
+                    Mathf.Max(0.01f, duelBattleMusicFadeOutSeconds));
             }
 
             ShowDuelResultModal(localWallet, challenge);
             Debug.Log(manager.FormatDuelTranscriptForLog(challenge));
         }
 
-        private async UniTask RunDuelReplayAsync(PublicKey localWallet, DuelChallengeView challenge)
+        private async UniTask<bool> RunDuelReplayAsync(PublicKey localWallet, DuelChallengeView challenge)
         {
             var spawnedHitSplats = new List<GameObject>();
             var remoteWallet = ResolveOpponentWalletForLocal(localWallet, challenge);
@@ -382,43 +423,69 @@ namespace SeekerDungeon.Solana
             {
                 Debug.LogWarning(
                     $"[DuelCoordinator] Replay skipped: local={localPlayer != null} remote={remotePlayer != null}");
-                return;
+                return false;
             }
 
-            var hasPreviousCameraSize = TryGetCurrentOrthoSize(out var previousCameraSize);
-            TrySetOrthoSize(duelReplayOrthoSize);
+            Transform duelCenterAnchor = null;
+            ActivateDuelReplayCamera(localPlayer.transform);
             try
             {
                 var challengerIsLocal = string.Equals(challenge.Challenger?.Key, localWallet.Key, StringComparison.Ordinal);
                 var localStartPosition = localPlayer.transform.position;
                 var remoteStartPosition = remotePlayer.transform.position;
-                var midpoint = (localStartPosition + remoteStartPosition) * 0.5f;
-                var leftX = midpoint.x - duelReplaySpacingUnits * 0.5f;
-                var rightX = midpoint.x + duelReplaySpacingUnits * 0.5f;
+                var localToRemoteOffsetX = challengerIsLocal ? duelReplaySpacingUnits : -duelReplaySpacingUnits;
+                var localXMin = localToRemoteOffsetX >= 0f
+                    ? duelReplayBoundsX.x
+                    : duelReplayBoundsX.x - localToRemoteOffsetX;
+                var localXMax = localToRemoteOffsetX >= 0f
+                    ? duelReplayBoundsX.y - localToRemoteOffsetX
+                    : duelReplayBoundsX.y;
 
-                localPlayer.transform.position = challengerIsLocal
-                    ? new Vector3(leftX, midpoint.y, localStartPosition.z)
-                    : new Vector3(rightX, midpoint.y, localStartPosition.z);
-                remotePlayer.transform.position = challengerIsLocal
-                    ? new Vector3(rightX, midpoint.y, remoteStartPosition.z)
-                    : new Vector3(leftX, midpoint.y, remoteStartPosition.z);
+                var duelLocalX = Mathf.Clamp(localStartPosition.x, localXMin, localXMax);
+                var duelLocalY = Mathf.Clamp(localStartPosition.y, duelReplayBoundsY.x, duelReplayBoundsY.y);
+                var duelRemoteX = Mathf.Clamp(duelLocalX + localToRemoteOffsetX, duelReplayBoundsX.x, duelReplayBoundsX.y);
+                var duelRemoteY = duelLocalY;
+                var localUsedFallbackWeapon = localPlayer.EnsureFallbackWieldedItem(ItemId.BronzePickaxe);
+                var remoteUsedFallbackWeapon = remotePlayer.EnsureFallbackWieldedItem(ItemId.BronzePickaxe);
+
+                localPlayer.transform.position = new Vector3(duelLocalX, duelLocalY, localStartPosition.z);
+                remotePlayer.transform.position = new Vector3(duelRemoteX, duelRemoteY, remoteStartPosition.z);
                 localPlayer.SetFacingDirection(challengerIsLocal ? OccupantFacingDirection.Right : OccupantFacingDirection.Left);
                 remotePlayer.SetFacingDirection(challengerIsLocal ? OccupantFacingDirection.Left : OccupantFacingDirection.Right);
+                duelCenterAnchor = new GameObject("DuelCameraCenterAnchor").transform;
+                duelCenterAnchor.position = ComputeDuelCenterPosition(localPlayer.transform.position, remotePlayer.transform.position);
+                if (duelReplayCamera != null)
+                {
+                    duelReplayCamera.Follow = duelCenterAnchor;
+                    duelReplayCamera.LookAt = duelCenterAnchor;
+                }
 
                 const ushort maxHp = 100;
                 var challengerHp = (int)maxHp;
                 var opponentHp = (int)maxHp;
+                var combatAnimationStopped = false;
                 localPlayer.SetCombatHealth(maxHp, maxHp, true);
                 remotePlayer.SetCombatHealth(maxHp, maxHp, true);
-                localPlayer.SetBossJobAnimationState(true);
-                remotePlayer.SetBossJobAnimationState(true);
+                _localSwingEventsObserved = 0;
+                _remoteSwingEventsObserved = 0;
+                _activeReplayLocalPlayer = localPlayer;
+                _activeReplayRemotePlayer = remotePlayer;
+                DuelSwingEventRelay.OnSwing += HandleDuelSwingEvent;
+                localPlayer.SetBossJobAnimationState(false);
+                remotePlayer.SetBossJobAnimationState(false);
+                await UniTask.Yield();
 
                 var totalTurns = Math.Max(
                     challenge.TurnsPlayed,
                     (byte)Math.Max(challenge.ChallengerHits?.Count ?? 0, challenge.OpponentHits?.Count ?? 0));
+                var activeAttackHitSplats = new List<HitSplatView>(2);
+                var challengerPlayer = challengerIsLocal ? localPlayer : remotePlayer;
+                var opponentPlayer = challengerIsLocal ? remotePlayer : localPlayer;
+                var challengerStartsRound = challenge.Starter != DuelStarter.Opponent;
                 for (var turnIndex = 0; turnIndex < totalTurns; turnIndex += 1)
                 {
-                    await UniTask.Delay(TimeSpan.FromSeconds(Mathf.Max(0.2f, duelReplayHitIntervalSeconds)));
+                    var turnIntervalSeconds = Mathf.Max(0.2f, duelReplayHitIntervalSeconds);
+                    var attackStepSeconds = Mathf.Max(0.12f, turnIntervalSeconds * 0.5f);
 
                     var challengerDamage = turnIndex < (challenge.ChallengerHits?.Count ?? 0)
                         ? challenge.ChallengerHits[turnIndex]
@@ -427,11 +494,80 @@ namespace SeekerDungeon.Solana
                         ? challenge.OpponentHits[turnIndex]
                         : (byte)0;
 
-                    SpawnHitSplat(remotePlayer, challengerDamage, spawnedHitSplats);
-                    SpawnHitSplat(localPlayer, opponentDamage, spawnedHitSplats);
+                    var firstAttacker = challengerStartsRound ? challengerPlayer : opponentPlayer;
+                    var secondAttacker = challengerStartsRound ? opponentPlayer : challengerPlayer;
+                    var firstIsChallenger = challengerStartsRound;
+                    var firstDamage = firstIsChallenger ? challengerDamage : opponentDamage;
+                    var secondDamage = firstIsChallenger ? opponentDamage : challengerDamage;
+                    var firstTarget = firstIsChallenger ? opponentPlayer : challengerPlayer;
+                    var secondTarget = firstIsChallenger ? challengerPlayer : opponentPlayer;
 
-                    opponentHp = Math.Max(0, opponentHp - challengerDamage);
-                    challengerHp = Math.Max(0, challengerHp - opponentDamage);
+                    var firstSwingBaseline = GetObservedSwingCountForActor(firstAttacker);
+                    firstAttacker.TriggerBossAttackOnce();
+                    await WaitForAttackImpactWindowAsync(
+                        activeAttackHitSplats,
+                        attackStepSeconds,
+                        firstAttacker,
+                        firstSwingBaseline);
+
+                    activeAttackHitSplats.Clear();
+                    var firstHitSplat = SpawnHitSplat(
+                        firstTarget,
+                        firstDamage,
+                        spawnedHitSplats,
+                        IsCriticalHit(firstDamage));
+                    if (firstHitSplat != null)
+                    {
+                        activeAttackHitSplats.Add(firstHitSplat);
+                    }
+
+                    if (firstIsChallenger)
+                    {
+                        opponentHp = Math.Max(0, opponentHp - firstDamage);
+                    }
+                    else
+                    {
+                        challengerHp = Math.Max(0, challengerHp - firstDamage);
+                    }
+
+                    if (challengerIsLocal)
+                    {
+                        localPlayer.SetCombatHealth((ushort)challengerHp, maxHp, true);
+                        remotePlayer.SetCombatHealth((ushort)opponentHp, maxHp, true);
+                    }
+                    else
+                    {
+                        localPlayer.SetCombatHealth((ushort)opponentHp, maxHp, true);
+                        remotePlayer.SetCombatHealth((ushort)challengerHp, maxHp, true);
+                    }
+
+                    var secondSwingBaseline = GetObservedSwingCountForActor(secondAttacker);
+                    secondAttacker.TriggerBossAttackOnce();
+                    await WaitForAttackImpactWindowAsync(
+                        activeAttackHitSplats,
+                        attackStepSeconds,
+                        secondAttacker,
+                        secondSwingBaseline);
+
+                    activeAttackHitSplats.Clear();
+                    var secondHitSplat = SpawnHitSplat(
+                        secondTarget,
+                        secondDamage,
+                        spawnedHitSplats,
+                        IsCriticalHit(secondDamage));
+                    if (secondHitSplat != null)
+                    {
+                        activeAttackHitSplats.Add(secondHitSplat);
+                    }
+
+                    if (firstIsChallenger)
+                    {
+                        challengerHp = Math.Max(0, challengerHp - secondDamage);
+                    }
+                    else
+                    {
+                        opponentHp = Math.Max(0, opponentHp - secondDamage);
+                    }
 
                     if (challengerIsLocal)
                     {
@@ -446,6 +582,9 @@ namespace SeekerDungeon.Solana
 
                     if (challengerHp == 0 || opponentHp == 0)
                     {
+                        localPlayer.SetBossJobAnimationState(false);
+                        remotePlayer.SetBossJobAnimationState(false);
+                        combatAnimationStopped = true;
                         break;
                     }
                 }
@@ -461,23 +600,47 @@ namespace SeekerDungeon.Solana
                     remotePlayer.SetCombatHealth(challenge.ChallengerFinalHp, maxHp, true);
                 }
 
+                if (challenge.ChallengerFinalHp == 0 || challenge.OpponentFinalHp == 0)
+                {
+                    localPlayer.SetBossJobAnimationState(false);
+                    remotePlayer.SetBossJobAnimationState(false);
+                    combatAnimationStopped = true;
+                }
+
                 await UniTask.Delay(TimeSpan.FromSeconds(Mathf.Max(0f, duelReplayPostKillSeconds)));
 
-                localPlayer.SetBossJobAnimationState(false);
-                remotePlayer.SetBossJobAnimationState(false);
+                if (!combatAnimationStopped)
+                {
+                    localPlayer.SetBossJobAnimationState(false);
+                    remotePlayer.SetBossJobAnimationState(false);
+                }
                 localPlayer.SetCombatHealth(0, 0, false);
                 remotePlayer.SetCombatHealth(0, 0, false);
                 localPlayer.transform.position = localStartPosition;
                 remotePlayer.transform.position = remoteStartPosition;
+                if (localUsedFallbackWeapon)
+                {
+                    localPlayer.HideAllWieldedItems();
+                }
+                if (remoteUsedFallbackWeapon)
+                {
+                    remotePlayer.HideAllWieldedItems();
+                }
             }
             finally
             {
-                CleanupHitSplats(spawnedHitSplats);
-                if (hasPreviousCameraSize)
+                DuelSwingEventRelay.OnSwing -= HandleDuelSwingEvent;
+                _activeReplayLocalPlayer = null;
+                _activeReplayRemotePlayer = null;
+                if (duelCenterAnchor != null)
                 {
-                    TrySetOrthoSize(previousCameraSize);
+                    Destroy(duelCenterAnchor.gameObject);
                 }
+                CleanupHitSplats(spawnedHitSplats);
+                RestoreDuelReplayCameraState();
             }
+
+            return true;
         }
 
         private async UniTask<(LGPlayerController LocalPlayer, LGPlayerController RemotePlayer)> ResolveReplayActorsAsync(
@@ -486,6 +649,7 @@ namespace SeekerDungeon.Solana
             var elapsed = 0f;
             var timeout = Mathf.Max(0.5f, duelReplayResolveTimeoutSeconds);
             var poll = Mathf.Max(0.05f, duelReplayResolvePollSeconds);
+            var nextRefreshAt = 0f;
 
             while (elapsed <= timeout)
             {
@@ -496,6 +660,12 @@ namespace SeekerDungeon.Solana
                     return (localPlayer, remotePlayer);
                 }
 
+                if (elapsed >= nextRefreshAt)
+                {
+                    await ForceReplayContextRefreshAsync();
+                    nextRefreshAt += 0.8f;
+                }
+
                 await UniTask.Delay(TimeSpan.FromSeconds(poll));
                 elapsed += poll;
             }
@@ -503,25 +673,57 @@ namespace SeekerDungeon.Solana
             return (ResolveLocalPlayerController(), ResolveRemotePlayerController(remoteWallet));
         }
 
-        private void SpawnHitSplat(LGPlayerController targetPlayer, byte damage, List<GameObject> spawnedHitSplats)
+        private async UniTask ForceReplayContextRefreshAsync()
+        {
+            try
+            {
+                if (dungeonManager == null)
+                {
+                    dungeonManager = FindFirstObjectByType<DungeonManager>();
+                }
+
+                if (dungeonManager != null)
+                {
+                    await dungeonManager.RefreshCurrentRoomSnapshotAsync();
+                }
+                else if (manager != null)
+                {
+                    await manager.RefreshAllState();
+                }
+            }
+            catch (Exception refreshError)
+            {
+                Debug.LogWarning($"[DuelCoordinator] Replay context refresh failed: {refreshError.Message}");
+            }
+        }
+
+        private HitSplatView SpawnHitSplat(
+            LGPlayerController targetPlayer,
+            byte damage,
+            List<GameObject> spawnedHitSplats,
+            bool isCritical)
         {
             if (duelHitSplatPrefab == null || targetPlayer == null)
             {
-                return;
+                return null;
+            }
+            if (damage > 0)
+            {
+                HapticsFeedback.DuelDamageTick();
             }
 
             var spawnPosition = targetPlayer.transform.position + new Vector3(0f, duelHitSplatYOffset, 0f);
             var instance = Instantiate(duelHitSplatPrefab, spawnPosition, Quaternion.identity);
             if (instance == null)
             {
-                return;
+                return null;
             }
             spawnedHitSplats?.Add(instance);
 
             var hitSplat = instance.GetComponent<HitSplatView>();
             if (hitSplat == null)
             {
-                return;
+                return null;
             }
 
             Sprite chosenSprite = null;
@@ -531,6 +733,141 @@ namespace SeekerDungeon.Solana
             }
 
             hitSplat.SetDamage(damage, chosenSprite);
+            hitSplat.SetScaleMultiplier(isCritical ? criticalHitSplatScaleMultiplier : 1f);
+            return hitSplat;
+        }
+
+        private static void TriggerRemoveOnHitSplats(List<HitSplatView> hitSplats)
+        {
+            if (hitSplats == null || hitSplats.Count == 0)
+            {
+                return;
+            }
+
+            for (var i = 0; i < hitSplats.Count; i += 1)
+            {
+                var hitSplat = hitSplats[i];
+                if (hitSplat != null)
+                {
+                    hitSplat.TriggerRemove();
+                }
+            }
+        }
+
+        private async UniTask WaitForAttackImpactWindowAsync(
+            List<HitSplatView> activeAttackHitSplats,
+            float attackStepSeconds,
+            LGPlayerController attacker,
+            int attackerSwingBaseline)
+        {
+            var removeLeadSeconds = Mathf.Clamp(duelHitSplatRemoveLeadSeconds, 0f, attackStepSeconds);
+            var removeAtSeconds = Mathf.Max(0f, attackStepSeconds - removeLeadSeconds);
+            var minImpactDelay = Mathf.Clamp(duelSwingSyncMinimumImpactDelaySeconds, 0f, attackStepSeconds);
+            var elapsed = 0f;
+            var removeTriggered = false;
+            var syncedBySwing = false;
+            var attackerSwingSeen = false;
+            var useSwingSync = useDuelSwingEventSync && attacker != null;
+            var swingTimeout = Mathf.Clamp(duelSwingSyncTimeoutSeconds, 0.2f, attackStepSeconds);
+            const float pollStep = 0.02f;
+
+            while (elapsed < attackStepSeconds)
+            {
+                if (!removeTriggered && elapsed >= removeAtSeconds)
+                {
+                    TriggerRemoveOnHitSplats(activeAttackHitSplats);
+                    removeTriggered = true;
+                }
+
+                if (useSwingSync && elapsed <= swingTimeout)
+                {
+                    if (GetObservedSwingCountForActor(attacker) > attackerSwingBaseline)
+                    {
+                        attackerSwingSeen = true;
+                    }
+
+                    if (attackerSwingSeen && elapsed >= minImpactDelay)
+                    {
+                        syncedBySwing = true;
+                        break;
+                    }
+                }
+
+                var remaining = attackStepSeconds - elapsed;
+                if (remaining <= 0f)
+                {
+                    break;
+                }
+
+                var step = Mathf.Min(pollStep, remaining);
+                await UniTask.Delay(TimeSpan.FromSeconds(step));
+                elapsed += step;
+            }
+
+            if (!removeTriggered && removeLeadSeconds > 0f)
+            {
+                TriggerRemoveOnHitSplats(activeAttackHitSplats);
+                await UniTask.Delay(TimeSpan.FromSeconds(removeLeadSeconds));
+                return;
+            }
+
+            if (!syncedBySwing)
+            {
+                var remainingToInterval = attackStepSeconds - elapsed;
+                if (remainingToInterval > 0f)
+                {
+                    await UniTask.Delay(TimeSpan.FromSeconds(remainingToInterval));
+                }
+            }
+        }
+
+        private int GetObservedSwingCountForActor(LGPlayerController actor)
+        {
+            if (actor == null)
+            {
+                return 0;
+            }
+
+            if (actor == _activeReplayLocalPlayer)
+            {
+                return _localSwingEventsObserved;
+            }
+
+            if (actor == _activeReplayRemotePlayer)
+            {
+                return _remoteSwingEventsObserved;
+            }
+
+            return 0;
+        }
+
+        private bool IsCriticalHit(byte damage)
+        {
+            return inferCriticalHitsFromDamage && damage >= inferredCriticalDamageThreshold;
+        }
+
+        private void HandleDuelSwingEvent(LGPlayerController owner)
+        {
+            if (owner == null)
+            {
+                return;
+            }
+
+            if (owner == _activeReplayLocalPlayer)
+            {
+                _localSwingEventsObserved += 1;
+                return;
+            }
+
+            if (owner == _activeReplayRemotePlayer)
+            {
+                _remoteSwingEventsObserved += 1;
+            }
+        }
+
+        private static Vector3 ComputeDuelCenterPosition(Vector3 localPosition, Vector3 remotePosition)
+        {
+            return (localPosition + remotePosition) * 0.5f;
         }
 
         private static void CleanupHitSplats(List<GameObject> spawnedHitSplats)
@@ -552,41 +889,125 @@ namespace SeekerDungeon.Solana
             spawnedHitSplats.Clear();
         }
 
-        private bool TryGetCurrentOrthoSize(out float size)
+        private int _duelReplayCameraPreviousPriority;
+        private int _gameplayCameraPreviousPriority;
+        private bool _duelReplayCameraPriorityCaptured;
+        private bool _gameplayCameraPriorityCaptured;
+        private Transform _duelReplayCameraPreviousFollow;
+        private Transform _duelReplayCameraPreviousLookAt;
+        private bool _duelReplayCameraFollowCaptured;
+        private bool _duelReplayCameraLookAtCaptured;
+        private float _duelReplayCameraPreviousOrthoSize;
+        private bool _duelReplayCameraOrthoCaptured;
+
+        private void ActivateDuelReplayCamera(Transform followTarget)
         {
-            size = 0f;
-            if (duelReplayCamera != null)
+            if (duelReplayCamera == null)
             {
-                var lens = duelReplayCamera.Lens;
-                size = lens.OrthographicSize;
-                return true;
-            }
-
-            var mainCamera = Camera.main;
-            if (mainCamera != null && mainCamera.orthographic)
-            {
-                size = mainCamera.orthographicSize;
-                return true;
-            }
-
-            return false;
-        }
-
-        private void TrySetOrthoSize(float size)
-        {
-            if (duelReplayCamera != null)
-            {
-                var lens = duelReplayCamera.Lens;
-                lens.OrthographicSize = size;
-                duelReplayCamera.Lens = lens;
                 return;
             }
 
-            var mainCamera = Camera.main;
-            if (mainCamera != null && mainCamera.orthographic)
+            if (!_duelReplayCameraPriorityCaptured)
             {
-                mainCamera.orthographicSize = size;
+                _duelReplayCameraPreviousPriority = duelReplayCamera.Priority.Value;
+                _duelReplayCameraPriorityCaptured = true;
             }
+            if (!_duelReplayCameraFollowCaptured)
+            {
+                _duelReplayCameraPreviousFollow = duelReplayCamera.Follow;
+                _duelReplayCameraFollowCaptured = true;
+            }
+            if (!_duelReplayCameraLookAtCaptured)
+            {
+                _duelReplayCameraPreviousLookAt = duelReplayCamera.LookAt;
+                _duelReplayCameraLookAtCaptured = true;
+            }
+            if (!_duelReplayCameraOrthoCaptured)
+            {
+                _duelReplayCameraPreviousOrthoSize = duelReplayCamera.Lens.OrthographicSize;
+                _duelReplayCameraOrthoCaptured = true;
+            }
+
+            gameplayCamera ??= ResolveGameplayCamera();
+            if (gameplayCamera != null &&
+                gameplayCamera != duelReplayCamera &&
+                !_gameplayCameraPriorityCaptured)
+            {
+                _gameplayCameraPreviousPriority = gameplayCamera.Priority.Value;
+                _gameplayCameraPriorityCaptured = true;
+            }
+
+            duelReplayCamera.Priority = duelReplayCameraPriority;
+            duelReplayCamera.Follow = followTarget;
+            duelReplayCamera.LookAt = followTarget;
+
+            if (gameplayCamera != null && gameplayCamera != duelReplayCamera)
+            {
+                var loweredPriority = Math.Min(gameplayCamera.Priority.Value, duelReplayCameraPriority - 1);
+                gameplayCamera.Priority = loweredPriority;
+            }
+
+            if (duelReplayOrthoSize > 0f)
+            {
+                var lens = duelReplayCamera.Lens;
+                lens.OrthographicSize = duelReplayOrthoSize;
+                duelReplayCamera.Lens = lens;
+            }
+        }
+
+        private void RestoreDuelReplayCameraState()
+        {
+            if (duelReplayCamera != null && _duelReplayCameraPriorityCaptured)
+            {
+                duelReplayCamera.Priority = _duelReplayCameraPreviousPriority;
+            }
+            if (duelReplayCamera != null && _duelReplayCameraFollowCaptured)
+            {
+                duelReplayCamera.Follow = _duelReplayCameraPreviousFollow;
+            }
+            if (duelReplayCamera != null && _duelReplayCameraLookAtCaptured)
+            {
+                duelReplayCamera.LookAt = _duelReplayCameraPreviousLookAt;
+            }
+            if (duelReplayCamera != null && _duelReplayCameraOrthoCaptured)
+            {
+                var lens = duelReplayCamera.Lens;
+                lens.OrthographicSize = _duelReplayCameraPreviousOrthoSize;
+                duelReplayCamera.Lens = lens;
+            }
+
+            if (gameplayCamera != null && _gameplayCameraPriorityCaptured)
+            {
+                gameplayCamera.Priority = _gameplayCameraPreviousPriority;
+            }
+
+            _duelReplayCameraPriorityCaptured = false;
+            _gameplayCameraPriorityCaptured = false;
+            _duelReplayCameraFollowCaptured = false;
+            _duelReplayCameraLookAtCaptured = false;
+            _duelReplayCameraOrthoCaptured = false;
+        }
+
+        private CinemachineCamera ResolveGameplayCamera()
+        {
+            if (gameplayCamera != null)
+            {
+                return gameplayCamera;
+            }
+
+            var cameras = FindObjectsByType<CinemachineCamera>(FindObjectsSortMode.None);
+            for (var index = 0; index < cameras.Length; index += 1)
+            {
+                var candidate = cameras[index];
+                if (candidate == null || candidate == duelReplayCamera)
+                {
+                    continue;
+                }
+
+                return candidate;
+            }
+
+            return null;
         }
 
         private void ShowDuelResultModal(PublicKey localWallet, DuelChallengeView challenge)
@@ -606,10 +1027,12 @@ namespace SeekerDungeon.Solana
             if (localWon)
             {
                 hud.ShowDuelResultModal("YOU WON", "Victory. The duel payout has been awarded.");
+                GameAudioManager.Instance?.PlayStinger(StingerSfxId.DuelVictory);
                 return;
             }
 
             hud.ShowDuelResultModal("YOU LOST", "Defeat. Better luck next duel.");
+            GameAudioManager.Instance?.PlayStinger(StingerSfxId.DuelDefeat);
         }
 
         private LGPlayerController ResolveLocalPlayerController()
@@ -755,7 +1178,7 @@ namespace SeekerDungeon.Solana
             try
             {
                 var result = await manager.AcceptDuelChallengeAsync(challenge);
-                HandleTxResult(result, "Duel accepted. Rolling...", "Failed to accept duel");
+                HandleTxResult(result, "Duel accepted. Preparing fight...", "Failed to accept duel");
             }
             finally
             {

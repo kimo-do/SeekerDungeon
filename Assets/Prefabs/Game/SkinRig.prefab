@@ -148,6 +148,10 @@ MonoBehaviour:
   rightHand: {fileID: 5990550038085318125}
   nameAnchor: {fileID: 4635561873138544322}
   animators: []
+  presenceSpriteRenderers: []
+  activePresenceMaterial: {fileID: 2100000, guid: 221331ab8b9782f49a08413ca405a192, type: 2}
+  idlePresenceMaterial: {fileID: 2100000, guid: 221331ab8b9782f49a08413ca405a192, type: 2}
+  afkPresenceMaterial: {fileID: 2100000, guid: c40573b9ef3c7234f9df9d94722ac1d6, type: 2}
 --- !u!1 &3746456356156228004
 GameObject:
   m_ObjectHideFlags: 0
@@ -382,7 +386,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1155217529407345245}
   m_Layer: 0
-  m_Name: Holdpos L
+  m_Name: Holdpos
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -414,6 +418,7 @@ GameObject:
   - component: {fileID: 723081533136837074}
   - component: {fileID: 840473565226000690}
   - component: {fileID: 4969128743390644877}
+  - component: {fileID: 8773253568386443504}
   m_Layer: 0
   m_Name: Left Arm
   m_TagString: Untagged
@@ -518,3 +523,16 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
+--- !u!114 &8773253568386443504
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8575746624259470712}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 037c8aff18390d04482bd5904be42ea4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Solana.DuelSwingEventRelay
+  owner: {fileID: 0}

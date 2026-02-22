@@ -111,6 +111,7 @@ pub fn handler(ctx: Context<TickBossFight>) -> Result<()> {
         ctx.accounts.player.key(),
         clock.slot,
     )?;
+    ctx.accounts.player_account.mark_active(clock.slot);
 
     emit!(BossTicked {
         room_x: room.x,

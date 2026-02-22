@@ -324,17 +324,21 @@
 }
 
 .vault-close-button {
-    width: 76px;
-    min-width: 76px;
-    height: 76px;
-    min-height: 76px;
-    font-size: 38px;
+    width: 120px;
+    min-width: 120px;
+    height: 120px;
+    min-height: 120px;
+    font-size: 54px;
     color: rgb(235, 242, 255);
-    background-color: rgba(0, 0, 0, 0);
+    background-color: rgba(16, 22, 36, 0.22);
     border-top-width: 0;
     border-right-width: 0;
     border-bottom-width: 0;
     border-left-width: 0;
+    border-top-left-radius: 18px;
+    border-top-right-radius: 18px;
+    border-bottom-left-radius: 18px;
+    border-bottom-right-radius: 18px;
 }
 
 .vault-subtitle {
@@ -944,18 +948,24 @@
 
 .settings-close-button {
     position: absolute;
-    top: 14px;
-    right: 12px;
-    width: 70px;
-    height: 70px;
-    font-size: 40px;
+    top: 8px;
+    right: 8px;
+    width: 120px;
+    min-width: 120px;
+    height: 120px;
+    min-height: 120px;
+    font-size: 54px;
     -unity-font-style: bold;
     color: rgb(232, 239, 252);
-    background-color: rgba(0, 0, 0, 0);
+    background-color: rgba(16, 22, 36, 0.22);
     border-top-width: 0;
     border-right-width: 0;
     border-bottom-width: 0;
     border-left-width: 0;
+    border-top-left-radius: 18px;
+    border-top-right-radius: 18px;
+    border-bottom-left-radius: 18px;
+    border-bottom-right-radius: 18px;
     -unity-text-outline-width: 1px;
     -unity-text-outline-color: rgba(0, 0, 0, 0.8);
 }

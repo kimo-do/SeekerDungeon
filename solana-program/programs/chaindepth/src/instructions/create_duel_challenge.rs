@@ -21,6 +21,7 @@ pub struct CreateDuelChallenge<'info> {
     pub global: Account<'info, GlobalAccount>,
 
     #[account(
+        mut,
         seeds = [PlayerAccount::SEED_PREFIX, challenger.key().as_ref()],
         bump = challenger_player_account.bump,
         constraint = challenger_player_account.owner == challenger.key()
@@ -103,14 +104,8 @@ pub fn handler(
         ChainDepthError::InvalidDuelExpiry
     );
 
-    let challenger_player_account = &ctx.accounts.challenger_player_account;
+    let challenger_player_account = &mut ctx.accounts.challenger_player_account;
     let opponent_player_account = &ctx.accounts.opponent_player_account;
-
-    require!(
-        challenger_player_account.season_seed == ctx.accounts.global.season_seed
-            && opponent_player_account.season_seed == ctx.accounts.global.season_seed,
-        ChainDepthError::InvalidSeason
-    );
     require!(
         challenger_player_account.current_room_x == opponent_player_account.current_room_x
             && challenger_player_account.current_room_y == opponent_player_account.current_room_y,
@@ -120,6 +115,7 @@ pub fn handler(
         challenger_player_account.current_hp > 0 && opponent_player_account.current_hp > 0,
         ChainDepthError::PlayerDead
     );
+    challenger_player_account.mark_active(clock.slot);
 
     let transfer_context = CpiContext::new(
         ctx.accounts.token_program.to_account_info(),

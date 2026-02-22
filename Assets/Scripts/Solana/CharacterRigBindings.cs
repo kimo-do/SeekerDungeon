@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using SeekerDungeon.Dungeon;
 using UnityEngine;
 
 namespace SeekerDungeon.Solana
@@ -23,6 +24,13 @@ namespace SeekerDungeon.Solana
         [SerializeField] private Transform nameAnchor;
         [Header("Animation")]
         [SerializeField] private List<Animator> animators = new();
+        [Header("Presence Visuals")]
+        [SerializeField] private List<SpriteRenderer> presenceSpriteRenderers = new();
+        [SerializeField] private Material activePresenceMaterial;
+        [SerializeField] private Material idlePresenceMaterial;
+        [SerializeField] private Material afkPresenceMaterial;
+
+        private List<Material> _defaultPresenceMaterials;
 
         public PlayerSkinId SkinId => skinId;
         public string SkinLabelOverride => skinLabelOverride;
@@ -49,6 +57,83 @@ namespace SeekerDungeon.Solana
 
             animators = new List<Animator>(discovered);
             return animators;
+        }
+
+        public void ApplyPresenceState(OccupantPresenceState presenceState)
+        {
+            var renderers = ResolvePresenceSpriteRenderers();
+            if (renderers == null || renderers.Count == 0)
+            {
+                return;
+            }
+
+            EnsureDefaultPresenceMaterials(renderers);
+            var selectedMaterial = ResolvePresenceMaterial(presenceState);
+            for (var index = 0; index < renderers.Count; index += 1)
+            {
+                var renderer = renderers[index];
+                if (renderer == null)
+                {
+                    continue;
+                }
+
+                if (selectedMaterial != null)
+                {
+                    renderer.sharedMaterial = selectedMaterial;
+                    continue;
+                }
+
+                if (_defaultPresenceMaterials != null && index < _defaultPresenceMaterials.Count)
+                {
+                    renderer.sharedMaterial = _defaultPresenceMaterials[index];
+                }
+            }
+        }
+
+        private List<SpriteRenderer> ResolvePresenceSpriteRenderers()
+        {
+            if (presenceSpriteRenderers != null && presenceSpriteRenderers.Count > 0)
+            {
+                return presenceSpriteRenderers;
+            }
+
+            var root = bodyRoot != null ? bodyRoot : transform;
+            var discovered = root.GetComponentsInChildren<SpriteRenderer>(true);
+            if (discovered == null || discovered.Length == 0)
+            {
+                return null;
+            }
+
+            presenceSpriteRenderers = new List<SpriteRenderer>(discovered);
+            return presenceSpriteRenderers;
+        }
+
+        private void EnsureDefaultPresenceMaterials(IReadOnlyList<SpriteRenderer> renderers)
+        {
+            if (_defaultPresenceMaterials != null && _defaultPresenceMaterials.Count == renderers.Count)
+            {
+                return;
+            }
+
+            _defaultPresenceMaterials = new List<Material>(renderers.Count);
+            for (var index = 0; index < renderers.Count; index += 1)
+            {
+                var renderer = renderers[index];
+                _defaultPresenceMaterials.Add(renderer != null ? renderer.sharedMaterial : null);
+            }
+        }
+
+        private Material ResolvePresenceMaterial(OccupantPresenceState presenceState)
+        {
+            return presenceState switch
+            {
+                OccupantPresenceState.Active => activePresenceMaterial,
+                OccupantPresenceState.Idle => idlePresenceMaterial != null ? idlePresenceMaterial : activePresenceMaterial,
+                OccupantPresenceState.Afk => afkPresenceMaterial != null
+                    ? afkPresenceMaterial
+                    : (idlePresenceMaterial != null ? idlePresenceMaterial : activePresenceMaterial),
+                _ => activePresenceMaterial
+            };
         }
     }
 }

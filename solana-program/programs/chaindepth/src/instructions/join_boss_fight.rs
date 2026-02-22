@@ -28,6 +28,7 @@ pub struct JoinBossFight<'info> {
     pub global: Account<'info, GlobalAccount>,
 
     #[account(
+        mut,
         seeds = [PlayerAccount::SEED_PREFIX, player.key().as_ref()],
         bump = player_account.bump
     )]
@@ -129,6 +130,7 @@ pub fn handler(ctx: Context<JoinBossFight>) -> Result<()> {
     );
 
     let fighter_dps = weapon_dps(player_account.equipped_item_id);
+    player_account.mark_active(clock.slot);
 
     let boss_fight = &mut ctx.accounts.boss_fight;
     if boss_fight.is_active {

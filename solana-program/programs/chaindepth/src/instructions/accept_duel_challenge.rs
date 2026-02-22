@@ -50,6 +50,7 @@ pub struct AcceptDuelChallenge<'info> {
     pub challenger_player_account: Account<'info, PlayerAccount>,
 
     #[account(
+        mut,
         seeds = [PlayerAccount::SEED_PREFIX, opponent.key().as_ref()],
         bump = opponent_player_account.bump,
         constraint = opponent_player_account.owner == opponent.key()
@@ -98,6 +99,7 @@ pub fn handler(ctx: Context<AcceptDuelChallenge>, _challenge_seed: u64) -> Resul
     );
 
     let clock = Clock::get()?;
+    ctx.accounts.opponent_player_account.mark_active(clock.slot);
     require!(
         clock.slot <= duel_challenge.expires_at_slot,
         ChainDepthError::DuelChallengeExpired

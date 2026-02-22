@@ -123,6 +123,7 @@ pub fn handler(ctx: Context<LootChest>) -> Result<()> {
     // Update room looted count and player stats
     room.looted_count += 1;
     player_account.chests_looted += 1;
+    player_account.mark_active(clock.slot);
 
     // Generate deterministic loot bundle based on slot + player pubkey
     let loot_hash = generate_loot_hash(clock.slot, &player_key);

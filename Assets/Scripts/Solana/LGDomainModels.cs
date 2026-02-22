@@ -100,7 +100,8 @@ namespace SeekerDungeon.Solana
         ScrappySkeleton = 15,
         SinisterHoodedFigure = 16,
         NoseGoblin = 17,
-        SkeletonCape = 18
+        SkeletonCape = 18,
+        Hog = 19
     }
 
     public enum OccupantActivity
@@ -233,6 +234,8 @@ namespace SeekerDungeon.Solana
         public OccupantActivity Activity { get; init; }
         public RoomDirection? ActivityDirection { get; init; }
         public bool IsFightingBoss { get; init; }
+        public ulong LastActiveSlot { get; init; }
+        public float LastActionAgeSecondsEstimate { get; init; }
     }
 
     public enum DuelChallengeStatus : byte

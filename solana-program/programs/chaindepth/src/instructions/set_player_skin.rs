@@ -21,6 +21,7 @@ pub struct SetPlayerSkin<'info> {
     pub global: Account<'info, GlobalAccount>,
 
     #[account(
+        mut,
         seeds = [PlayerAccount::SEED_PREFIX, player.key().as_ref()],
         bump = player_account.bump,
         constraint = player_account.owner == player.key() @ ChainDepthError::Unauthorized
@@ -69,11 +70,13 @@ pub fn handler(ctx: Context<SetPlayerSkin>, skin_id: u16) -> Result<()> {
         0,
     )?;
 
+    let clock = Clock::get()?;
     let profile = &mut ctx.accounts.profile;
     let room_presence = &mut ctx.accounts.room_presence;
 
     profile.skin_id = skin_id;
     room_presence.skin_id = skin_id;
+    ctx.accounts.player_account.mark_active(clock.slot);
 
     Ok(())
 }

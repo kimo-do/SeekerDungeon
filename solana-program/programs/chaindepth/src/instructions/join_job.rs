@@ -142,6 +142,7 @@ pub fn handler(ctx: Context<JoinJob>, direction: u8) -> Result<()> {
         .ok_or(ChainDepthError::Overflow)?;
 
     player_account.add_job(room.x, room.y, direction)?;
+    player_account.mark_active(clock.slot);
     if ctx.accounts.room_presence.player == Pubkey::default() {
         ctx.accounts.room_presence.player = player_key;
         ctx.accounts.room_presence.season_seed = ctx.accounts.global.season_seed;

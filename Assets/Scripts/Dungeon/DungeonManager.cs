@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using Cysharp.Threading.Tasks;
 using SeekerDungeon;
 using SeekerDungeon.Solana;
@@ -20,6 +21,8 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private Transform localPlayerSpawnPoint;
         [SerializeField] private CameraZoomController cameraZoomController;
         [SerializeField] private DungeonJobAutoCompleter jobAutoCompleter;
+        [Header("Occupants")]
+        [SerializeField] private float roomOccupantPollIntervalSeconds = 2f;
 
         public event Action<DungeonRoomSnapshot> OnRoomSnapshotUpdated;
         public event Action<DoorOccupancyDelta> OnDoorOccupancyDelta;
@@ -41,6 +44,7 @@ namespace SeekerDungeon.Dungeon
         private PlayerSkinId _lastAppliedLocalSkin = PlayerSkinId.CheekyGoblin;
         private string _lastAppliedLocalDisplayName = string.Empty;
         private bool _isLocalPlayerFightingBoss;
+        private CancellationTokenSource _roomOccupantPollCts;
 
         // Optimistic job state: bridges the gap between a confirmed JoinJob TX
         // and the RPC returning updated data. Prevents stale reads from reverting
@@ -110,6 +114,8 @@ namespace SeekerDungeon.Dungeon
                 _lgManager.OnRoomStateUpdated += HandleRoomStateUpdated;
                 _lgManager.OnRoomOccupantsUpdated += HandleRoomOccupantsUpdated;
             }
+
+            StartRoomOccupantPolling();
         }
 
         private void OnDisable()
@@ -119,6 +125,8 @@ namespace SeekerDungeon.Dungeon
                 _lgManager.OnRoomStateUpdated -= HandleRoomStateUpdated;
                 _lgManager.OnRoomOccupantsUpdated -= HandleRoomOccupantsUpdated;
             }
+
+            StopRoomOccupantPolling();
         }
 
         private void Start()
@@ -163,6 +171,7 @@ namespace SeekerDungeon.Dungeon
                 }
 
                 await _lgManager.StartRoomOccupantSubscriptions(_currentRoomX, _currentRoomY);
+                StartRoomOccupantPolling();
             }
             finally
             {
@@ -173,6 +182,55 @@ namespace SeekerDungeon.Dungeon
             if (jobAutoCompleter != null)
             {
                 jobAutoCompleter.StartLoop();
+            }
+        }
+
+        private void StartRoomOccupantPolling()
+        {
+            StopRoomOccupantPolling();
+            _roomOccupantPollCts = new CancellationTokenSource();
+            PollRoomOccupantsLoopAsync(_roomOccupantPollCts.Token).Forget();
+        }
+
+        private void StopRoomOccupantPolling()
+        {
+            if (_roomOccupantPollCts == null)
+            {
+                return;
+            }
+
+            _roomOccupantPollCts.Cancel();
+            _roomOccupantPollCts.Dispose();
+            _roomOccupantPollCts = null;
+        }
+
+        private async UniTaskVoid PollRoomOccupantsLoopAsync(CancellationToken cancellationToken)
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var delaySeconds = Mathf.Max(0.2f, roomOccupantPollIntervalSeconds);
+                try
+                {
+                    await UniTask.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken: cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+
+                if (cancellationToken.IsCancellationRequested || _lgManager == null || _isExplicitRefreshing)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    await _lgManager.FetchRoomOccupants(_currentRoomX, _currentRoomY);
+                }
+                catch (Exception exception)
+                {
+                    Log($"Room occupant poll failed: {exception.Message}");
+                }
             }
         }
 
@@ -1081,7 +1139,9 @@ namespace SeekerDungeon.Dungeon
                 EquippedItemId = occupant.EquippedItemId,
                 Activity = occupant.Activity,
                 ActivityDirection = occupant.ActivityDirection,
-                IsFightingBoss = occupant.IsFightingBoss
+                IsFightingBoss = occupant.IsFightingBoss,
+                LastActiveSlot = occupant.LastActiveSlot,
+                LastActionAgeSecondsEstimate = occupant.LastActionAgeSecondsEstimate
             };
         }
 
@@ -1210,6 +1270,7 @@ namespace SeekerDungeon.Dungeon
             }
 
             localPlayerController.SetDisplayNameVisible(true);
+            localPlayerController.SetLocalPlayerNameStyle(true);
             localPlayerController.transform.rotation = Quaternion.identity;
             _hasAppliedLocalVisualState = true;
         }

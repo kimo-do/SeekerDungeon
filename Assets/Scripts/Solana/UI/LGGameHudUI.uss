@@ -455,20 +455,24 @@
 
 .hud-modal-close-button {
     position: absolute;
-    top: 10px;
-    right: 8px;
-    width: 92px;
-    height: 92px;
-    min-width: 92px;
-    min-height: 92px;
-    font-size: 44px;
+    top: 4px;
+    right: 4px;
+    width: 122px;
+    height: 122px;
+    min-width: 122px;
+    min-height: 122px;
+    font-size: 54px;
     -unity-font-style: bold;
     color: rgb(232, 239, 252);
-    background-color: rgba(0, 0, 0, 0);
+    background-color: rgba(16, 22, 36, 0.22);
     border-top-width: 0;
     border-right-width: 0;
     border-bottom-width: 0;
     border-left-width: 0;
+    border-top-left-radius: 18px;
+    border-top-right-radius: 18px;
+    border-bottom-left-radius: 18px;
+    border-bottom-right-radius: 18px;
     -unity-text-outline-width: 1px;
     -unity-text-outline-color: rgba(0, 0, 0, 0.8);
 }

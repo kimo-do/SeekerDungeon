@@ -62,7 +62,7 @@ MonoBehaviour:
   webSocketsRpc: 
   autoConnectOnStartup: 1
   web3AuthWalletOptions:
-    appName: Solana Unity SDK
+    appName: Loot Goblins
     logoLight: 
     logoDark: 
     defaultLanguage: 0
@@ -75,16 +75,16 @@ MonoBehaviour:
     loginConfig: []
   solanaWalletAdapterOptions:
     solanaMobileWalletAdapterOptions:
-      identityUri: https://solana.unity-sdk.gg/
-      iconUri: /favicon.ico
-      name: Solana.Unity-SDK
+      identityUri: https://github.com/kimo-do/SeekerDungeon/
+      iconUri: /tree/master/Assets/favicon.ico
+      name: Kimo.LootGoblins
       keepConnectionAlive: 1
     solanaWalletAdapterWebGLOptions:
       walletAdapterButtonPrefab: {fileID: 0}
       walletAdapterUIPrefab: {fileID: 0}
     phantomWalletOptions:
       apiVersion: v1
-      appMetaDataUrl: https://github.com/garbles-labs/Solana.Unity-SDK
+      appMetaDataUrl: https://github.com/kimo-do/SeekerDungeon
       deeplinkUrlScheme: unitydl
       sessionEncryptionPassword: use a strong password
       baseUrl: https://phantom.app

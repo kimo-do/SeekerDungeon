@@ -169,6 +169,7 @@ pub fn handler(ctx: Context<JoinJobWithSession>, direction: u8) -> Result<()> {
 
     msg!("JoinJob: adding job for player, current jobs={}", player_account.active_jobs.len());
     player_account.add_job(room.x, room.y, direction)?;
+    player_account.mark_active(clock.slot);
     msg!("JoinJob: after add_job, jobs={}", player_account.active_jobs.len());
 
     if ctx.accounts.room_presence.player == Pubkey::default() {

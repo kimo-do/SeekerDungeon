@@ -10,8 +10,11 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private GameObject root;
         [SerializeField] private Slider slider;
         [SerializeField] private Image fillImage;
+        [SerializeField] private Image delayedDamageFillImage;
         [SerializeField] private TMP_Text valueLabel;
         [SerializeField] private float smoothSpeed = 6f;
+        [SerializeField] private float delayedDamageCatchupSpeed = 2.2f;
+        [SerializeField] private float delayedDamageHoldSeconds = 0.16f;
         [SerializeField] private bool hideWhenNoBoss = true;
         [SerializeField] private float slotSecondsEstimate = 0.4f;
         [SerializeField] private bool useChunkedClientProjection = true;
@@ -20,6 +23,8 @@ namespace SeekerDungeon.Dungeon
 
         private float _displayNormalized = 1f;
         private float _targetNormalized = 1f;
+        private float _delayedDisplayNormalized = 1f;
+        private float _delayedHoldUntilUnscaled;
         private bool _wasVisible;
         private ulong _boundCurrentHp;
         private ulong _boundMaxHp;
@@ -45,6 +50,8 @@ namespace SeekerDungeon.Dungeon
                     Time.unscaledDeltaTime * smoothSpeed);
                 ApplyNormalized(_displayNormalized);
             }
+
+            TickDelayedDamageFill();
 
             if (_boundMaxHp == 0UL || _boundDead || _boundTotalDps == 0UL)
             {
@@ -75,7 +82,9 @@ namespace SeekerDungeon.Dungeon
             {
                 _targetNormalized = 0f;
                 _displayNormalized = 0f;
+                _delayedDisplayNormalized = 0f;
                 ApplyNormalized(0f);
+                ApplyDelayedNormalized(0f);
                 _wasVisible = false;
                 _boundCurrentHp = 0UL;
                 _boundMaxHp = 0UL;
@@ -100,10 +109,21 @@ namespace SeekerDungeon.Dungeon
                 // Reset to full whenever the bar is shown again (spawn/reuse),
                 // then animate down to the current HP target.
                 _displayNormalized = 1f;
+                _delayedDisplayNormalized = 1f;
                 ApplyNormalized(1f);
+                ApplyDelayedNormalized(1f);
             }
 
-            _targetNormalized = (float)clampedCurrent / maxHp;
+            var newTargetNormalized = (float)clampedCurrent / maxHp;
+            if (delayedDamageFillImage != null &&
+                newTargetNormalized < _displayNormalized - 0.0001f)
+            {
+                _delayedDisplayNormalized = Mathf.Max(_delayedDisplayNormalized, _displayNormalized);
+                _delayedHoldUntilUnscaled = Time.unscaledTime + Mathf.Max(0f, delayedDamageHoldSeconds);
+                ApplyDelayedNormalized(_delayedDisplayNormalized);
+            }
+
+            _targetNormalized = newTargetNormalized;
             if (_displayNormalized < _targetNormalized)
             {
                 _displayNormalized = _targetNormalized;
@@ -115,6 +135,34 @@ namespace SeekerDungeon.Dungeon
             if (valueLabel != null)
             {
                 valueLabel.text = $"{clampedCurrent}/{maxHp}";
+            }
+        }
+
+        private void TickDelayedDamageFill()
+        {
+            if (delayedDamageFillImage == null)
+            {
+                return;
+            }
+
+            if (_delayedDisplayNormalized < _displayNormalized)
+            {
+                _delayedDisplayNormalized = _displayNormalized;
+            }
+
+            if (Time.unscaledTime < _delayedHoldUntilUnscaled)
+            {
+                ApplyDelayedNormalized(_delayedDisplayNormalized);
+                return;
+            }
+
+            if (_delayedDisplayNormalized > _displayNormalized)
+            {
+                _delayedDisplayNormalized = Mathf.MoveTowards(
+                    _delayedDisplayNormalized,
+                    _displayNormalized,
+                    Time.unscaledDeltaTime * Mathf.Max(0.01f, delayedDamageCatchupSpeed));
+                ApplyDelayedNormalized(_delayedDisplayNormalized);
             }
         }
 
@@ -183,6 +231,16 @@ namespace SeekerDungeon.Dungeon
             {
                 fillImage.fillAmount = value;
             }
+        }
+
+        private void ApplyDelayedNormalized(float normalized)
+        {
+            if (delayedDamageFillImage == null)
+            {
+                return;
+            }
+
+            delayedDamageFillImage.fillAmount = Mathf.Clamp01(normalized);
         }
     }
 }

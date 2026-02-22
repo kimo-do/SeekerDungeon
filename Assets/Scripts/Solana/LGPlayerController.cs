@@ -36,9 +36,12 @@ namespace SeekerDungeon.Solana
         [Header("Identity Anchor")]
         [SerializeField] private Transform characterNameAnchor;
         [SerializeField] private GameObject playerNamePrefab;
+        [SerializeField] private Color localPlayerNameColor = new(1f, 0.9f, 0.35f, 1f);
+        [SerializeField] private FontStyles localPlayerNameFontStyle = FontStyles.Bold;
         [SerializeField] private BossHealthBarView playerHealthBarView;
         [SerializeField] private BossHealthBarView playerHealthBarPrefab;
         [SerializeField] private Transform playerHealthBarAnchor;
+        [SerializeField] private float playerHealthBarYOffset = -0.18f;
 
         [Header("Skin Switch Animation")]
         [SerializeField] private bool animateSkinSwitch = true;
@@ -53,6 +56,7 @@ namespace SeekerDungeon.Solana
         [Header("Job Animation")]
         [SerializeField] private string miningAnimatorParameter = "ismining";
         [SerializeField] private string bossJobAnimatorParameter = "ismining";
+        [SerializeField] private string bossAttackAnimatorTrigger = "doattack";
 
         public PlayerSkinId CurrentSkin { get; private set; } = PlayerSkinId.CheekyGoblin;
 
@@ -81,7 +85,15 @@ namespace SeekerDungeon.Solana
         private TMP_Text _playerNameText;
         private Vector3 _playerNameBaseLocalScale = Vector3.one;
         private bool _hasPlayerNameBaseScale;
+        private bool _isLocalPlayerNameStyleActive;
+        private bool _hasDefaultPlayerNameStyle;
+        private bool _hasDisplayNameStyleOverride;
+        private Color _displayNameStyleOverrideColor = Color.white;
+        private FontStyles _displayNameStyleOverrideFontStyle = FontStyles.Normal;
+        private Color _defaultPlayerNameColor = Color.white;
+        private FontStyles _defaultPlayerNameFontStyle = FontStyles.Normal;
         private BossHealthBarView _spawnedPlayerHealthBarView;
+        private OccupantPresenceState _occupantPresenceState = OccupantPresenceState.Active;
 
         private void Awake()
         {
@@ -308,6 +320,38 @@ namespace SeekerDungeon.Solana
             _playerNameInstance.SetActive(isVisible);
         }
 
+        public void SetOccupantPresenceState(OccupantPresenceState presenceState)
+        {
+            _occupantPresenceState = presenceState;
+            if (_activeRigBindings != null)
+            {
+                _activeRigBindings.ApplyPresenceState(presenceState);
+            }
+        }
+
+        public void SetLocalPlayerNameStyle(bool isLocalPlayer)
+        {
+            _isLocalPlayerNameStyleActive = isLocalPlayer;
+            EnsurePlayerNameTag();
+            ApplyPlayerNameStyle();
+        }
+
+        public void SetDisplayNameStyleOverride(Color color, FontStyles fontStyle)
+        {
+            _hasDisplayNameStyleOverride = true;
+            _displayNameStyleOverrideColor = color;
+            _displayNameStyleOverrideFontStyle = fontStyle;
+            EnsurePlayerNameTag();
+            ApplyPlayerNameStyle();
+        }
+
+        public void ClearDisplayNameStyleOverride()
+        {
+            _hasDisplayNameStyleOverride = false;
+            EnsurePlayerNameTag();
+            ApplyPlayerNameStyle();
+        }
+
         public void SetCombatHealth(ushort currentHp, ushort maxHp, bool isBossFightActive)
         {
             var activeHealthBar = EnsurePlayerHealthBarView();
@@ -393,6 +437,17 @@ namespace SeekerDungeon.Solana
             }
         }
 
+        public bool EnsureFallbackWieldedItem(ItemId fallbackItemId = ItemId.BronzePickaxe)
+        {
+            if (_activeWieldedVisual != null && _activeWieldedVisual.activeSelf)
+            {
+                return false;
+            }
+
+            ShowWieldedItem(fallbackItemId);
+            return true;
+        }
+
         public void SetMiningAnimationState(bool isMining)
         {
             if (_isMiningAnimationActive == isMining)
@@ -415,6 +470,56 @@ namespace SeekerDungeon.Solana
             _isBossAnimationActive = isBossJobActive;
             GameAudioManager.Instance?.SetLoop(AudioLoopId.BossAttack, isBossJobActive, transform.position);
             ApplyAnimatorJobState();
+        }
+
+        public void TriggerBossAttackOnce()
+        {
+            var animators = ResolveActiveAnimators();
+            if (animators == null || animators.Count == 0 || string.IsNullOrWhiteSpace(bossAttackAnimatorTrigger))
+            {
+                return;
+            }
+
+            for (var index = 0; index < animators.Count; index += 1)
+            {
+                var animator = animators[index];
+                if (animator == null || animator.runtimeAnimatorController == null)
+                {
+                    continue;
+                }
+
+                SetAnimatorTriggerIfExists(animator, bossAttackAnimatorTrigger);
+            }
+        }
+
+        public void SyncActiveAnimationPhase(float normalizedTime)
+        {
+            var animators = ResolveActiveAnimators();
+            if (animators == null || animators.Count == 0)
+            {
+                return;
+            }
+
+            var clampedTime = Mathf.Repeat(normalizedTime, 1f);
+            for (var index = 0; index < animators.Count; index += 1)
+            {
+                var animator = animators[index];
+                if (animator == null || animator.runtimeAnimatorController == null || !animator.isActiveAndEnabled)
+                {
+                    continue;
+                }
+
+                // Force animator graph evaluation before reading and replaying current state.
+                animator.Update(0f);
+                var state = animator.GetCurrentAnimatorStateInfo(0);
+                if (state.fullPathHash == 0)
+                {
+                    continue;
+                }
+
+                animator.Play(state.fullPathHash, 0, clampedTime);
+                animator.Update(0f);
+            }
         }
 
         public void SetFacingDirection(OccupantFacingDirection facingDirection)
@@ -495,9 +600,52 @@ namespace SeekerDungeon.Solana
             _playerNameInstance.transform.localPosition = Vector3.zero;
             _playerNameInstance.transform.localRotation = Quaternion.identity;
             _playerNameText = _playerNameInstance.GetComponentInChildren<TMP_Text>(true);
+            CacheDefaultPlayerNameStyle();
+            ApplyPlayerNameStyle();
             _playerNameBaseLocalScale = _playerNameInstance.transform.localScale;
             _hasPlayerNameBaseScale = true;
             ApplyNameMirrorCompensation();
+        }
+
+        private void CacheDefaultPlayerNameStyle()
+        {
+            if (_hasDefaultPlayerNameStyle || _playerNameText == null)
+            {
+                return;
+            }
+
+            _defaultPlayerNameColor = _playerNameText.color;
+            _defaultPlayerNameFontStyle = _playerNameText.fontStyle;
+            _hasDefaultPlayerNameStyle = true;
+        }
+
+        private void ApplyPlayerNameStyle()
+        {
+            if (_playerNameText == null)
+            {
+                return;
+            }
+
+            CacheDefaultPlayerNameStyle();
+            if (_isLocalPlayerNameStyleActive)
+            {
+                _playerNameText.color = localPlayerNameColor;
+                _playerNameText.fontStyle = localPlayerNameFontStyle;
+                return;
+            }
+
+            if (_hasDisplayNameStyleOverride)
+            {
+                _playerNameText.color = _displayNameStyleOverrideColor;
+                _playerNameText.fontStyle = _displayNameStyleOverrideFontStyle;
+                return;
+            }
+
+            if (_hasDefaultPlayerNameStyle)
+            {
+                _playerNameText.color = _defaultPlayerNameColor;
+                _playerNameText.fontStyle = _defaultPlayerNameFontStyle;
+            }
         }
 
         private void ApplyNameMirrorCompensation()
@@ -576,6 +724,7 @@ namespace SeekerDungeon.Solana
             _activeRigBindings = selectedRig;
             _activeVisualRootForAnimation = selectedRig.transform;
             _skinBaseScale = _activeVisualRootForAnimation.localScale;
+            _activeRigBindings.ApplyPresenceState(_occupantPresenceState);
             UpdatePlayerHealthBarPosition();
             return true;
         }
@@ -624,6 +773,10 @@ namespace SeekerDungeon.Solana
             }
 
             activeHealthBar.transform.position = anchor.position;
+            if (!Mathf.Approximately(playerHealthBarYOffset, 0f))
+            {
+                activeHealthBar.transform.position += new Vector3(0f, playerHealthBarYOffset, 0f);
+            }
         }
 
         private void DestroySpawnedPlayerHealthBar()
@@ -753,6 +906,37 @@ namespace SeekerDungeon.Solana
                 }
 
                 animator.SetBool(parameter.name, value);
+                return;
+            }
+        }
+
+        private static void SetAnimatorTriggerIfExists(Animator animator, string parameterName)
+        {
+            if (animator == null || string.IsNullOrWhiteSpace(parameterName))
+            {
+                return;
+            }
+
+            var parameters = animator.parameters;
+            if (parameters == null || parameters.Length == 0)
+            {
+                return;
+            }
+
+            for (var index = 0; index < parameters.Length; index += 1)
+            {
+                var parameter = parameters[index];
+                if (parameter.type != AnimatorControllerParameterType.Trigger)
+                {
+                    continue;
+                }
+
+                if (!string.Equals(parameter.name, parameterName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                animator.SetTrigger(parameter.name);
                 return;
             }
         }

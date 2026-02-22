@@ -55,8 +55,9 @@ pub struct PlayerAccount {
     /// Version of the player account data layout/semantics.
     pub data_version: u16,
 
-    /// Season this player data belongs to (for cleanup on reset)
-    pub season_seed: u64,
+    /// Most recent slot when this player performed a tracked gameplay action.
+    /// Reuses existing u64 field space to avoid account-size growth.
+    pub last_active_slot: u64,
 
     /// PDA bump seed
     pub bump: u8,
@@ -105,5 +106,9 @@ impl PlayerAccount {
         self.active_jobs.retain(|job| {
             !(job.room_x == room_x && job.room_y == room_y && job.direction == direction)
         });
+    }
+
+    pub fn mark_active(&mut self, slot: u64) {
+        self.last_active_slot = slot;
     }
 }

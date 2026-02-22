@@ -656,6 +656,7 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
+            HapticsFeedback.SliderAdjust();
             GameAudioManager.Instance?.SetMusicVolume(changeEvent.newValue);
         }
 
@@ -666,6 +667,7 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
+            HapticsFeedback.SliderAdjust();
             GameAudioManager.Instance?.SetSfxVolume(changeEvent.newValue);
         }
 

@@ -90,6 +90,8 @@ namespace SeekerDungeon.Audio
 
         public void PlayButton(ButtonSfxCategory category)
         {
+            HapticsFeedback.ButtonTap();
+
             if (_isMuted || !_sfxEnabled || _sfxVolume <= 0.001f)
             {
                 return;
@@ -213,6 +215,45 @@ namespace SeekerDungeon.Audio
             }
         }
 
+        public bool PlayLoopOnce(AudioLoopId id, Vector3 worldPos)
+        {
+            if (id == AudioLoopId.BossMonsterLoop)
+            {
+                return false;
+            }
+
+            var entry = FindLoopEntry(id);
+            if (entry == null || entry.clip == null)
+            {
+                StopLoop(id);
+                return false;
+            }
+
+            if (_isMuted || !_sfxEnabled || _sfxVolume <= 0.001f)
+            {
+                StopLoop(id);
+                return false;
+            }
+
+            if (!_loopSourcesById.TryGetValue(id, out var source) || source == null)
+            {
+                source = CreateLoopSource($"Loop_{id}");
+                _loopSourcesById[id] = source;
+            }
+
+            source.Stop();
+            source.transform.position = worldPos;
+            source.clip = entry.clip;
+            source.volume = Mathf.Clamp01(entry.volume) * _sfxVolume;
+            source.pitch = 1f;
+            source.loop = false;
+            source.spatialBlend = entry.spatialized ? Mathf.Clamp01(entry.spatialBlend) : 0f;
+            source.minDistance = Mathf.Max(0.01f, entry.minDistance);
+            source.maxDistance = Mathf.Max(source.minDistance, entry.maxDistance);
+            source.Play();
+            return true;
+        }
+
         public void PlayLootRevealByRarity(ItemRarity rarity, Vector3 worldPos)
         {
             if (_isMuted || !_sfxEnabled || _sfxVolume <= 0.001f)
@@ -263,6 +304,36 @@ namespace SeekerDungeon.Audio
             }
 
             _musicSource.volume = 0f;
+        }
+
+        public bool IsLoopPlaying(AudioLoopId id)
+        {
+            return _loopSourcesById.TryGetValue(id, out var source) &&
+                   source != null &&
+                   source.isPlaying;
+        }
+
+        public async UniTask FadeOutLoopAndStopAsync(AudioLoopId id, float durationSeconds)
+        {
+            if (!_loopSourcesById.TryGetValue(id, out var source) || source == null || !source.isPlaying)
+            {
+                return;
+            }
+
+            var startVolume = source.volume;
+            var targetDuration = Mathf.Max(MinFadeSeconds, durationSeconds);
+            var elapsed = 0f;
+            while (elapsed < targetDuration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                var t = Mathf.Clamp01(elapsed / targetDuration);
+                source.volume = Mathf.Lerp(startVolume, 0f, t);
+                await UniTask.Yield(PlayerLoopTiming.Update);
+            }
+
+            source.volume = 0f;
+            source.Stop();
+            source.clip = null;
         }
 
         public bool SetMuted(bool muted)
