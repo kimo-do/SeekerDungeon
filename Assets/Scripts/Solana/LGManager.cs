@@ -93,6 +93,8 @@ namespace SeekerDungeon.Solana
         private bool _useLenientDuelFetch = true;
         private bool _useLenientRoomPresenceFetch;
         private List<DuelChallengeView> _lastRelevantDuelChallenges = new();
+        private List<ParsedDuelChallengeRecord> _lastParsedDuelChallengeSnapshot = new();
+        private float _lastParsedDuelSnapshotRealtime;
         private DateTime _lastDuelRateLimitLogUtc = DateTime.MinValue;
         private DateTime _lastDuelCachedFallbackLogUtc = DateTime.MinValue;
         private DateTime _lastRoomOccupantCachedFallbackLogUtc = DateTime.MinValue;
@@ -131,6 +133,7 @@ namespace SeekerDungeon.Solana
         private const int DuelFetchLogThrottleSeconds = 20;
         private const int RoomOccupantFetchLogThrottleSeconds = 20;
         private const int RoomOccupantEmptyGraceSeconds = 6;
+        private const float DuelSnapshotReuseWindowSeconds = 1.2f;
 
         [Serializable]
         public sealed class SessionExpenseEntry
@@ -1006,7 +1009,7 @@ namespace SeekerDungeon.Solana
                         var roomPresenceResult = await _client.GetRoomPresencesAsync(_programId.Key, Commitment.Confirmed);
                         if (roomPresenceResult == null || !roomPresenceResult.WasSuccessful)
                         {
-                            allPresences = null;
+                            allPresences = await FetchRoomPresencesLenientAsync();
                         }
                         else
                         {
@@ -1196,8 +1199,8 @@ namespace SeekerDungeon.Solana
 
         private async UniTask<List<RoomPresence>> FetchRoomPresencesLenientAsync()
         {
-            var rpc = GetRpcClient();
-            if (rpc == null)
+            var rpcCandidates = GetRpcCandidates();
+            if (rpcCandidates == null || rpcCandidates.Count == 0)
             {
                 return null;
             }
@@ -1210,48 +1213,68 @@ namespace SeekerDungeon.Solana
                     Offset = 0
                 }
             };
-            var raw = await rpc.GetProgramAccountsAsync(_programId.Key, Commitment.Confirmed, memCmpList: filters);
-            if (!raw.WasSuccessful)
+            string lastFailureReason = null;
+            for (var candidateIndex = 0; candidateIndex < rpcCandidates.Count; candidateIndex += 1)
             {
-                return null;
-            }
-
-            if (!(raw.Result?.Count > 0))
-            {
-                return new List<RoomPresence>();
-            }
-
-            var parsed = new List<RoomPresence>(raw.Result.Count);
-            for (var index = 0; index < raw.Result.Count; index += 1)
-            {
-                var account = raw.Result[index];
-                var encodedData = account?.Account?.Data != null && account.Account.Data.Count > 0
-                    ? account.Account.Data[0]
-                    : null;
-                if (string.IsNullOrWhiteSpace(encodedData))
+                var rpc = rpcCandidates[candidateIndex];
+                if (rpc == null)
                 {
                     continue;
                 }
 
-                try
+                var raw = await rpc.GetProgramAccountsAsync(_programId.Key, Commitment.Confirmed, memCmpList: filters);
+                if (!raw.WasSuccessful)
                 {
-                    var bytes = Convert.FromBase64String(encodedData);
-                    var presence = RoomPresence.Deserialize(bytes);
-                    if (presence != null)
+                    lastFailureReason = raw?.Reason;
+                    continue;
+                }
+
+                if (!(raw.Result?.Count > 0))
+                {
+                    return new List<RoomPresence>();
+                }
+
+                var parsed = new List<RoomPresence>(raw.Result.Count);
+                for (var index = 0; index < raw.Result.Count; index += 1)
+                {
+                    var account = raw.Result[index];
+                    var encodedData = account?.Account?.Data != null && account.Account.Data.Count > 0
+                        ? account.Account.Data[0]
+                        : null;
+                    if (string.IsNullOrWhiteSpace(encodedData))
                     {
-                        parsed.Add(presence);
+                        continue;
+                    }
+
+                    try
+                    {
+                        var bytes = Convert.FromBase64String(encodedData);
+                        var presence = RoomPresence.Deserialize(bytes);
+                        if (presence != null)
+                        {
+                            parsed.Add(presence);
+                        }
+                    }
+                    catch (Exception decodeError) when (
+                        decodeError is ArgumentOutOfRangeException ||
+                        decodeError is ArgumentException ||
+                        decodeError is FormatException)
+                    {
+                        // Ignore stale or incompatible historical room presence accounts on devnet.
                     }
                 }
-                catch (Exception decodeError) when (
-                    decodeError is ArgumentOutOfRangeException ||
-                    decodeError is ArgumentException ||
-                    decodeError is FormatException)
-                {
-                    // Ignore stale or incompatible historical room presence accounts on devnet.
-                }
+
+                return parsed;
             }
 
-            return parsed;
+            if (!string.IsNullOrWhiteSpace(lastFailureReason) &&
+                (DateTime.UtcNow - _lastRoomOccupantCachedFallbackLogUtc).TotalSeconds >= RoomOccupantFetchLogThrottleSeconds)
+            {
+                Log($"FetchRoomPresencesLenientAsync RPC failure across all candidates: {lastFailureReason}");
+                _lastRoomOccupantCachedFallbackLogUtc = DateTime.UtcNow;
+            }
+
+            return null;
         }
 
         private static string BuildRoomOccupantCacheKey(int roomX, int roomY)
@@ -2224,62 +2247,7 @@ namespace SeekerDungeon.Solana
             }
 
             var localWallet = Web3.Wallet.Account.PublicKey;
-            List<ParsedDuelChallengeRecord> parsedChallenges = null;
-            if (_useLenientDuelFetch)
-            {
-                parsedChallenges = await FetchDuelChallengesLenientAsync();
-            }
-            else
-            {
-                try
-                {
-                    var response = await _client.GetDuelChallengesAsync(_programId.Key, Commitment.Confirmed);
-                    if (!response.WasSuccessful || response.ParsedResult == null)
-                    {
-                        LogError("FetchRelevantDuelChallengesAsync failed.");
-                        return Array.Empty<DuelChallengeView>();
-                    }
-
-                    parsedChallenges = new List<ParsedDuelChallengeRecord>(response.ParsedResult.Count);
-                    for (var index = 0; index < response.ParsedResult.Count; index += 1)
-                    {
-                        var rawChallenge = response.ParsedResult[index];
-                        if (rawChallenge == null)
-                        {
-                            continue;
-                        }
-
-                        var derivedPda = DeriveDuelChallengePda(
-                            rawChallenge.Challenger,
-                            rawChallenge.Opponent,
-                            rawChallenge.ChallengeSeed);
-                        if (derivedPda == null)
-                        {
-                            continue;
-                        }
-
-                        parsedChallenges.Add(new ParsedDuelChallengeRecord
-                        {
-                            Pda = derivedPda,
-                            Challenge = rawChallenge
-                        });
-                    }
-                }
-                catch (ArgumentOutOfRangeException decodeError)
-                {
-                    _useLenientDuelFetch = true;
-                    Log(
-                        $"Duel account decode hit incompatible layout once. Using lenient duel parsing for this session. {decodeError.Message}");
-                    parsedChallenges = await FetchDuelChallengesLenientAsync();
-                }
-                catch (ArgumentException decodeError) when (string.Equals(decodeError.ParamName, "offset", StringComparison.Ordinal))
-                {
-                    _useLenientDuelFetch = true;
-                    Log(
-                        $"Duel account decode hit incompatible layout once. Using lenient duel parsing for this session. {decodeError.Message}");
-                    parsedChallenges = await FetchDuelChallengesLenientAsync();
-                }
-            }
+            var parsedChallenges = await GetParsedDuelChallengeSnapshotAsync(forceRefresh: true);
 
             if (parsedChallenges == null)
             {
@@ -2354,10 +2322,145 @@ namespace SeekerDungeon.Solana
             return result;
         }
 
+        public async UniTask<IReadOnlyList<DuelChallengeView>> FetchRoomRelevantDuelChallengesAsync(sbyte roomX, sbyte roomY)
+        {
+            if (CurrentGlobalState == null)
+            {
+                await FetchGlobalState();
+            }
+
+            var parsedChallenges = await GetParsedDuelChallengeSnapshotAsync(forceRefresh: false);
+            if (parsedChallenges == null || CurrentGlobalState == null)
+            {
+                return Array.Empty<DuelChallengeView>();
+            }
+
+            var seenKeys = new HashSet<string>(StringComparer.Ordinal);
+            var results = new List<DuelChallengeView>();
+            for (var index = 0; index < parsedChallenges.Count; index += 1)
+            {
+                var parsedChallenge = parsedChallenges[index];
+                var rawChallenge = parsedChallenge?.Challenge;
+                if (rawChallenge == null)
+                {
+                    continue;
+                }
+
+                if (rawChallenge.SeasonSeed != CurrentGlobalState.SeasonSeed)
+                {
+                    continue;
+                }
+
+                if (rawChallenge.RoomX != roomX || rawChallenge.RoomY != roomY)
+                {
+                    continue;
+                }
+
+                var status = ToDuelChallengeStatus(rawChallenge.Status);
+                if (status != DuelChallengeStatus.Open &&
+                    status != DuelChallengeStatus.PendingRandomness &&
+                    status != DuelChallengeStatus.Settled)
+                {
+                    continue;
+                }
+
+                var challengePda = parsedChallenge.Pda;
+                var uniqueKey = BuildDuelChallengeUniqueKey(rawChallenge, challengePda);
+                if (!seenKeys.Add(uniqueKey))
+                {
+                    continue;
+                }
+
+                results.Add(ToDuelChallengeView(rawChallenge, challengePda));
+            }
+
+            results.Sort((left, right) =>
+                CompareDuelSortKey(right.RequestedSlot, right.ExpiresAtSlot, right.SettledSlot)
+                    .CompareTo(CompareDuelSortKey(left.RequestedSlot, left.ExpiresAtSlot, left.SettledSlot)));
+            return results;
+        }
+
+        private async UniTask<List<ParsedDuelChallengeRecord>> GetParsedDuelChallengeSnapshotAsync(bool forceRefresh)
+        {
+            var canReuse =
+                !forceRefresh &&
+                _lastParsedDuelChallengeSnapshot != null &&
+                Time.realtimeSinceStartup - _lastParsedDuelSnapshotRealtime <= DuelSnapshotReuseWindowSeconds;
+            if (canReuse)
+            {
+                return _lastParsedDuelChallengeSnapshot;
+            }
+
+            List<ParsedDuelChallengeRecord> parsedChallenges = null;
+            if (_useLenientDuelFetch)
+            {
+                parsedChallenges = await FetchDuelChallengesLenientAsync();
+            }
+            else
+            {
+                try
+                {
+                    var response = await _client.GetDuelChallengesAsync(_programId.Key, Commitment.Confirmed);
+                    if (!response.WasSuccessful || response.ParsedResult == null)
+                    {
+                        LogError("FetchRelevantDuelChallengesAsync failed.");
+                        return null;
+                    }
+
+                    parsedChallenges = new List<ParsedDuelChallengeRecord>(response.ParsedResult.Count);
+                    for (var index = 0; index < response.ParsedResult.Count; index += 1)
+                    {
+                        var rawChallenge = response.ParsedResult[index];
+                        if (rawChallenge == null)
+                        {
+                            continue;
+                        }
+
+                        var derivedPda = DeriveDuelChallengePda(
+                            rawChallenge.Challenger,
+                            rawChallenge.Opponent,
+                            rawChallenge.ChallengeSeed);
+                        if (derivedPda == null)
+                        {
+                            continue;
+                        }
+
+                        parsedChallenges.Add(new ParsedDuelChallengeRecord
+                        {
+                            Pda = derivedPda,
+                            Challenge = rawChallenge
+                        });
+                    }
+                }
+                catch (ArgumentOutOfRangeException decodeError)
+                {
+                    _useLenientDuelFetch = true;
+                    Log(
+                        $"Duel account decode hit incompatible layout once. Using lenient duel parsing for this session. {decodeError.Message}");
+                    parsedChallenges = await FetchDuelChallengesLenientAsync();
+                }
+                catch (ArgumentException decodeError) when (string.Equals(decodeError.ParamName, "offset", StringComparison.Ordinal))
+                {
+                    _useLenientDuelFetch = true;
+                    Log(
+                        $"Duel account decode hit incompatible layout once. Using lenient duel parsing for this session. {decodeError.Message}");
+                    parsedChallenges = await FetchDuelChallengesLenientAsync();
+                }
+            }
+
+            if (parsedChallenges != null)
+            {
+                _lastParsedDuelChallengeSnapshot = parsedChallenges;
+                _lastParsedDuelSnapshotRealtime = Time.realtimeSinceStartup;
+            }
+
+            return parsedChallenges;
+        }
+
         private async UniTask<List<ParsedDuelChallengeRecord>> FetchDuelChallengesLenientAsync()
         {
-            var rpc = GetRpcClient();
-            if (rpc == null)
+            var rpcCandidates = GetRpcCandidates();
+            if (rpcCandidates == null || rpcCandidates.Count == 0)
             {
                 return null;
             }
@@ -2370,83 +2473,94 @@ namespace SeekerDungeon.Solana
                     Offset = 0
                 }
             };
-            var raw = await rpc.GetProgramAccountsAsync(_programId.Key, Commitment.Confirmed, memCmpList: filters);
-            if (!raw.WasSuccessful)
+            for (var candidateIndex = 0; candidateIndex < rpcCandidates.Count; candidateIndex += 1)
             {
-                var reason = raw?.Reason ?? "<unknown>";
-                var isRateLimited = reason.IndexOf("too many requests", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                    reason.IndexOf("429", StringComparison.OrdinalIgnoreCase) >= 0;
-                if (!isRateLimited ||
-                    (DateTime.UtcNow - _lastDuelRateLimitLogUtc).TotalSeconds >= DuelFetchLogThrottleSeconds)
-                {
-                    Log($"FetchDuelChallengesLenientAsync RPC failure: {reason}");
-                    if (isRateLimited)
-                    {
-                        _lastDuelRateLimitLogUtc = DateTime.UtcNow;
-                    }
-                }
-
-                return null;
-            }
-
-            if (!(raw.Result?.Count > 0))
-            {
-                return new List<ParsedDuelChallengeRecord>();
-            }
-
-            var parsed = new List<ParsedDuelChallengeRecord>(raw.Result.Count);
-            for (var index = 0; index < raw.Result.Count; index += 1)
-            {
-                var account = raw.Result[index];
-                var encodedData = account?.Account?.Data != null && account.Account.Data.Count > 0
-                    ? account.Account.Data[0]
-                    : null;
-                if (string.IsNullOrWhiteSpace(encodedData))
+                var rpc = rpcCandidates[candidateIndex];
+                if (rpc == null)
                 {
                     continue;
                 }
 
-                try
+                var raw = await rpc.GetProgramAccountsAsync(_programId.Key, Commitment.Confirmed, memCmpList: filters);
+                if (!raw.WasSuccessful)
                 {
-                    var bytes = Convert.FromBase64String(encodedData);
-                    var duel = Chaindepth.Accounts.DuelChallenge.Deserialize(bytes);
-                    if (duel != null)
+                    var reason = raw?.Reason ?? "<unknown>";
+                    var isRateLimited = reason.IndexOf("too many requests", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                        reason.IndexOf("429", StringComparison.OrdinalIgnoreCase) >= 0;
+                    if (!isRateLimited ||
+                        (DateTime.UtcNow - _lastDuelRateLimitLogUtc).TotalSeconds >= DuelFetchLogThrottleSeconds)
                     {
-                        PublicKey accountPda = null;
-                        if (!string.IsNullOrWhiteSpace(account?.PublicKey))
+                        Log($"FetchDuelChallengesLenientAsync RPC failure: {reason}");
+                        if (isRateLimited)
                         {
-                            accountPda = new PublicKey(account.PublicKey);
+                            _lastDuelRateLimitLogUtc = DateTime.UtcNow;
                         }
+                    }
 
-                        var derivedPda = DeriveDuelChallengePda(
-                            duel.Challenger,
-                            duel.Opponent,
-                            duel.ChallengeSeed);
-                        if (accountPda != null && derivedPda != null &&
-                            !string.Equals(accountPda.Key, derivedPda.Key, StringComparison.Ordinal))
+                    continue;
+                }
+
+                if (!(raw.Result?.Count > 0))
+                {
+                    return new List<ParsedDuelChallengeRecord>();
+                }
+
+                var parsed = new List<ParsedDuelChallengeRecord>(raw.Result.Count);
+                for (var index = 0; index < raw.Result.Count; index += 1)
+                {
+                    var account = raw.Result[index];
+                    var encodedData = account?.Account?.Data != null && account.Account.Data.Count > 0
+                        ? account.Account.Data[0]
+                        : null;
+                    if (string.IsNullOrWhiteSpace(encodedData))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        var bytes = Convert.FromBase64String(encodedData);
+                        var duel = Chaindepth.Accounts.DuelChallenge.Deserialize(bytes);
+                        if (duel != null)
                         {
-                            // If the account's actual pubkey does not match the decoded seed fields,
-                            // this is stale/malformed data. Skip to avoid seed constraint failures on accept.
-                            continue;
+                            PublicKey accountPda = null;
+                            if (!string.IsNullOrWhiteSpace(account?.PublicKey))
+                            {
+                                accountPda = new PublicKey(account.PublicKey);
+                            }
+
+                            var derivedPda = DeriveDuelChallengePda(
+                                duel.Challenger,
+                                duel.Opponent,
+                                duel.ChallengeSeed);
+                            if (accountPda != null && derivedPda != null &&
+                                !string.Equals(accountPda.Key, derivedPda.Key, StringComparison.Ordinal))
+                            {
+                                // If the account's actual pubkey does not match the decoded seed fields,
+                                // this is stale/malformed data. Skip to avoid seed constraint failures on accept.
+                                continue;
+                            }
+
+                            parsed.Add(new ParsedDuelChallengeRecord
+                            {
+                                Pda = accountPda ?? derivedPda,
+                                Challenge = duel
+                            });
                         }
-
-                        parsed.Add(new ParsedDuelChallengeRecord
-                        {
-                            Pda = accountPda ?? derivedPda,
-                            Challenge = duel
-                        });
+                    }
+                    catch (Exception decodeError) when (
+                        decodeError is ArgumentOutOfRangeException ||
+                        decodeError is ArgumentException ||
+                        decodeError is FormatException)
+                    {
+                        // Ignore stale or incompatible historical duel accounts on devnet.
                     }
                 }
-                catch (Exception decodeError) when (
-                    decodeError is ArgumentOutOfRangeException ||
-                    decodeError is ArgumentException ||
-                    decodeError is FormatException)
-                {
-                    // Ignore stale or incompatible historical duel accounts on devnet.
-                }
+
+                return parsed;
             }
 
-            return parsed;
+            return null;
         }
 
         private static string BuildDuelChallengeUniqueKey(Chaindepth.Accounts.DuelChallenge challenge, PublicKey pda)

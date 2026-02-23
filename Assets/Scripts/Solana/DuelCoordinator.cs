@@ -37,6 +37,12 @@ namespace SeekerDungeon.Solana
         [SerializeField] private float duelReplayResolveTimeoutSeconds = 3f;
         [SerializeField] private float duelReplayResolvePollSeconds = 0.2f;
         [SerializeField] private float duelBattleMusicFadeOutSeconds = 0.65f;
+        [Header("Spectator Duel Replay")]
+        [SerializeField] private bool spectatorReplayEnabled = true;
+        [SerializeField] private float spectatorReplaySpeedMultiplier = 1.2f;
+        [SerializeField] private bool spectatorReplayShowToast = true;
+        [SerializeField] private float spectatorReplayCooldownSeconds = 7f;
+        [SerializeField] private bool duelReplayDebugLogs;
         [Header("Duel Camera")]
         [SerializeField] private CinemachineCamera gameplayCamera;
         [SerializeField] private CinemachineCamera duelReplayCamera;
@@ -55,17 +61,37 @@ namespace SeekerDungeon.Solana
         private readonly List<DuelChallengeView> _cachedChallenges = new();
         private readonly Dictionary<string, DuelChallengeStatus> _knownStatuses = new();
         private readonly HashSet<string> _settledReplayStartedByPda = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _spectatorReplayTransitionsSeen = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, float> _spectatorReplayCooldownUntilByPda = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, float> _spectatorReplaySessionExpiryByPda = new(StringComparer.Ordinal);
+        private readonly Queue<SpectatorReplayRequest> _spectatorReplayQueue = new();
         private static float _lastCreateRequestRealtime;
         private static string _lastCreateRequestFingerprint = string.Empty;
         private bool _hasBaselineSnapshot;
         private bool _isActionInFlight;
         private bool _isRefreshInFlight;
+        private bool _isReplayInProgress;
+        private bool _isSpectatorReplayLoopRunning;
         private float _lastSlotRefreshRealtime;
         private ulong? _latestKnownSlot;
         private int _localSwingEventsObserved;
         private int _remoteSwingEventsObserved;
         private LGPlayerController _activeReplayLocalPlayer;
         private LGPlayerController _activeReplayRemotePlayer;
+
+        private readonly struct SpectatorReplayRequest
+        {
+            public SpectatorReplayRequest(DuelChallengeView challenge, sbyte roomX, sbyte roomY)
+            {
+                Challenge = challenge;
+                RoomX = roomX;
+                RoomY = roomY;
+            }
+
+            public DuelChallengeView Challenge { get; }
+            public sbyte RoomX { get; }
+            public sbyte RoomY { get; }
+        }
 
         private void Awake()
         {
@@ -235,6 +261,7 @@ namespace SeekerDungeon.Solana
                 }
 
                 await manager.FetchRelevantDuelChallengesAsync();
+                await RefreshSpectatorReplayCandidatesAsync();
             }
             catch (Exception exception)
             {
@@ -319,6 +346,274 @@ namespace SeekerDungeon.Solana
             }
         }
 
+        private async UniTask RefreshSpectatorReplayCandidatesAsync()
+        {
+            if (!spectatorReplayEnabled || manager == null)
+            {
+                return;
+            }
+
+            var localWallet = Web3.Wallet?.Account?.PublicKey;
+            var localPlayer = manager.CurrentPlayerState;
+            if (localPlayer == null)
+            {
+                return;
+            }
+
+            PruneSpectatorCaches();
+            var roomChallenges = await manager.FetchRoomRelevantDuelChallengesAsync(localPlayer.CurrentRoomX, localPlayer.CurrentRoomY);
+            if (roomChallenges == null || roomChallenges.Count == 0)
+            {
+                return;
+            }
+
+            for (var index = 0; index < roomChallenges.Count; index += 1)
+            {
+                var challenge = roomChallenges[index];
+                if (!ShouldQueueSpectatorReplay(localWallet, challenge, localPlayer.CurrentRoomX, localPlayer.CurrentRoomY))
+                {
+                    continue;
+                }
+
+                _spectatorReplayQueue.Enqueue(new SpectatorReplayRequest(challenge, localPlayer.CurrentRoomX, localPlayer.CurrentRoomY));
+                LogReplayDebug(
+                    $"spectator replay queued pda={challenge.Pda?.Key} status={challenge.Status} room=({challenge.RoomX},{challenge.RoomY})");
+            }
+
+            if (_spectatorReplayQueue.Count > 0)
+            {
+                StartSpectatorReplayLoop();
+            }
+        }
+
+        private bool ShouldQueueSpectatorReplay(PublicKey localWallet, DuelChallengeView challenge, sbyte roomX, sbyte roomY)
+        {
+            if (challenge == null || challenge.Pda == null)
+            {
+                return false;
+            }
+
+            if (challenge.RoomX != roomX || challenge.RoomY != roomY)
+            {
+                return false;
+            }
+
+            if (challenge.Status != DuelChallengeStatus.PendingRandomness &&
+                challenge.Status != DuelChallengeStatus.Settled)
+            {
+                return false;
+            }
+
+            if (localWallet != null &&
+                (string.Equals(challenge.Challenger?.Key, localWallet.Key, StringComparison.Ordinal) ||
+                 string.Equals(challenge.Opponent?.Key, localWallet.Key, StringComparison.Ordinal)))
+            {
+                return false;
+            }
+
+            var challengePdaKey = challenge.Pda.Key;
+            var transitionKey = BuildReplayTransitionKey(challenge);
+            if (_spectatorReplayTransitionsSeen.Contains(transitionKey))
+            {
+                return false;
+            }
+
+            if (_spectatorReplaySessionExpiryByPda.TryGetValue(challengePdaKey, out var activeUntil) &&
+                Time.realtimeSinceStartup < activeUntil)
+            {
+                return false;
+            }
+
+            if (_spectatorReplayCooldownUntilByPda.TryGetValue(challengePdaKey, out var cooldownUntil) &&
+                Time.realtimeSinceStartup < cooldownUntil)
+            {
+                return false;
+            }
+
+            if (!CanReplayTranscript(challenge))
+            {
+                return false;
+            }
+
+            if (!AreReplayActorsCurrentlyAvailable(challenge.Challenger, challenge.Opponent))
+            {
+                return false;
+            }
+
+            _spectatorReplayTransitionsSeen.Add(transitionKey);
+            _spectatorReplaySessionExpiryByPda[challengePdaKey] = Time.realtimeSinceStartup + 20f;
+            return true;
+        }
+
+        private static bool CanReplayTranscript(DuelChallengeView challenge)
+        {
+            if (challenge == null)
+            {
+                return false;
+            }
+
+            if ((challenge.ChallengerHits?.Count ?? 0) > 0 || (challenge.OpponentHits?.Count ?? 0) > 0)
+            {
+                return true;
+            }
+
+            return challenge.TurnsPlayed > 0;
+        }
+
+        private bool AreReplayActorsCurrentlyAvailable(PublicKey firstWallet, PublicKey secondWallet)
+        {
+            return ResolveRemotePlayerController(firstWallet) != null &&
+                   ResolveRemotePlayerController(secondWallet) != null;
+        }
+
+        private void StartSpectatorReplayLoop()
+        {
+            if (_isSpectatorReplayLoopRunning)
+            {
+                return;
+            }
+
+            ProcessSpectatorReplayQueueAsync().Forget();
+        }
+
+        private async UniTaskVoid ProcessSpectatorReplayQueueAsync()
+        {
+            _isSpectatorReplayLoopRunning = true;
+            try
+            {
+                while (_spectatorReplayQueue.Count > 0)
+                {
+                    if (_isReplayInProgress)
+                    {
+                        await UniTask.Delay(TimeSpan.FromSeconds(0.15f));
+                        continue;
+                    }
+
+                    var request = _spectatorReplayQueue.Dequeue();
+                    var challenge = request.Challenge;
+                    if (challenge?.Pda == null)
+                    {
+                        continue;
+                    }
+
+                    var localPlayer = manager?.CurrentPlayerState;
+                    if (localPlayer == null ||
+                        localPlayer.CurrentRoomX != request.RoomX ||
+                        localPlayer.CurrentRoomY != request.RoomY)
+                    {
+                        LogReplayDebug($"spectator replay skipped due to room change pda={challenge.Pda.Key}");
+                        continue;
+                    }
+
+                    if (!AreReplayActorsCurrentlyAvailable(challenge.Challenger, challenge.Opponent))
+                    {
+                        LogReplayDebug($"spectator replay skipped due to missing actors pda={challenge.Pda.Key}");
+                        continue;
+                    }
+
+                    var localWallet = Web3.Wallet?.Account?.PublicKey;
+                    if (spectatorReplayShowToast && hud != null)
+                    {
+                        var left = GetReplayDisplayName(challenge.ChallengerDisplayNameSnapshot, challenge.Challenger);
+                        var right = GetReplayDisplayName(challenge.OpponentDisplayNameSnapshot, challenge.Opponent);
+                        hud.ShowCenterToast($"Duel: {left} vs {right}", 1.4f);
+                    }
+
+                    var replayPlayed = false;
+                    try
+                    {
+                        replayPlayed = await PlaySettledDuelReplayAsync(localWallet, challenge, spectatorMode: true);
+                    }
+                    catch (Exception replayError)
+                    {
+                        Debug.LogWarning($"[DuelCoordinator] Spectator duel replay failed: {replayError.Message}");
+                    }
+
+                    var cooldownSeconds = Mathf.Max(1f, spectatorReplayCooldownSeconds);
+                    _spectatorReplayCooldownUntilByPda[challenge.Pda.Key] = Time.realtimeSinceStartup + cooldownSeconds;
+                    _spectatorReplaySessionExpiryByPda.Remove(challenge.Pda.Key);
+                    LogReplayDebug(
+                        $"spectator replay {(replayPlayed ? "completed" : "skipped")} pda={challenge.Pda.Key} cooldown={cooldownSeconds:0.0}s");
+                }
+            }
+            finally
+            {
+                _isSpectatorReplayLoopRunning = false;
+            }
+        }
+
+        private static string BuildReplayTransitionKey(DuelChallengeView challenge)
+        {
+            var pda = challenge?.Pda?.Key ?? string.Empty;
+            var status = challenge?.Status ?? DuelChallengeStatus.Unknown;
+            var settledSlot = challenge?.SettledSlot ?? 0UL;
+            return $"{pda}:{(byte)status}:{settledSlot}";
+        }
+
+        private static string GetReplayDisplayName(string snapshotDisplayName, PublicKey wallet)
+        {
+            if (!string.IsNullOrWhiteSpace(snapshotDisplayName))
+            {
+                return snapshotDisplayName.Trim();
+            }
+
+            if (string.IsNullOrWhiteSpace(wallet?.Key) || wallet.Key.Length < 10)
+            {
+                return "Unknown";
+            }
+
+            return $"{wallet.Key.Substring(0, 4)}...{wallet.Key.Substring(wallet.Key.Length - 4)}";
+        }
+
+        private void PruneSpectatorCaches()
+        {
+            if (_spectatorReplaySessionExpiryByPda.Count > 0)
+            {
+                var now = Time.realtimeSinceStartup;
+                var expiredKeys = new List<string>();
+                foreach (var kvp in _spectatorReplaySessionExpiryByPda)
+                {
+                    if (now >= kvp.Value)
+                    {
+                        expiredKeys.Add(kvp.Key);
+                    }
+                }
+
+                for (var i = 0; i < expiredKeys.Count; i += 1)
+                {
+                    _spectatorReplaySessionExpiryByPda.Remove(expiredKeys[i]);
+                }
+            }
+
+            if (_spectatorReplayCooldownUntilByPda.Count > 0)
+            {
+                var now = Time.realtimeSinceStartup;
+                var expiredKeys = new List<string>();
+                foreach (var kvp in _spectatorReplayCooldownUntilByPda)
+                {
+                    if (now >= kvp.Value)
+                    {
+                        expiredKeys.Add(kvp.Key);
+                    }
+                }
+
+                for (var i = 0; i < expiredKeys.Count; i += 1)
+                {
+                    _spectatorReplayCooldownUntilByPda.Remove(expiredKeys[i]);
+                }
+            }
+        }
+
+        private void LogReplayDebug(string message)
+        {
+            if (!duelReplayDebugLogs)
+            {
+                return;
+            }
+
+            Debug.Log($"[DuelCoordinator] {message}");
+        }
+
         private void EmitTerminalFeedback(PublicKey localWallet, DuelChallengeView challenge)
         {
             if (hud == null || manager == null)
@@ -339,7 +634,7 @@ namespace SeekerDungeon.Solana
                     _settledReplayStartedByPda.Add(duelPda);
                 }
 
-                PlaySettledDuelReplayAsync(localWallet, challenge).Forget();
+                PlaySettledDuelReplayAsync(localWallet, challenge, spectatorMode: false).Forget();
                 return;
             }
 
@@ -369,126 +664,162 @@ namespace SeekerDungeon.Solana
             Debug.Log(manager.FormatDuelTranscriptForLog(challenge));
         }
 
-        private async UniTaskVoid PlaySettledDuelReplayAsync(PublicKey localWallet, DuelChallengeView challenge)
+        private async UniTask<bool> PlaySettledDuelReplayAsync(PublicKey localWallet, DuelChallengeView challenge, bool spectatorMode)
         {
-            hud?.PrepareForDuelReplay();
-            var audioManager = GameAudioManager.Instance;
-            audioManager?.PlayLoopOnce(AudioLoopId.DuelBattle, Vector3.zero);
-
-            var replayPlayed = false;
-            const int replayAttempts = 2;
-
-            for (var attempt = 0; attempt < replayAttempts && !replayPlayed; attempt += 1)
+            _isReplayInProgress = true;
+            try
             {
-                if (attempt > 0)
+                LogReplayDebug(
+                    $"replay started spectator={spectatorMode} pda={challenge?.Pda?.Key} status={challenge?.Status}");
+                if (!spectatorMode)
                 {
-                    await ForceReplayContextRefreshAsync();
-                    await UniTask.Delay(TimeSpan.FromSeconds(0.35f));
+                    hud?.PrepareForDuelReplay();
                 }
 
-                try
+                var audioManager = spectatorMode ? null : GameAudioManager.Instance;
+                if (audioManager != null)
                 {
-                    replayPlayed = await RunDuelReplayAsync(localWallet, challenge);
+                    audioManager.PlayLoopOnce(AudioLoopId.DuelBattle, Vector3.zero);
                 }
-                catch (Exception replayError)
+
+                var replayPlayed = false;
+                const int replayAttempts = 2;
+
+                for (var attempt = 0; attempt < replayAttempts && !replayPlayed; attempt += 1)
                 {
-                    Debug.LogWarning($"[DuelCoordinator] Duel replay failed: {replayError.Message}");
+                    if (attempt > 0)
+                    {
+                        await ForceReplayContextRefreshAsync();
+                        await UniTask.Delay(TimeSpan.FromSeconds(0.35f));
+                    }
+
+                    try
+                    {
+                        replayPlayed = await RunDuelReplayAsync(localWallet, challenge, spectatorMode);
+                    }
+                    catch (Exception replayError)
+                    {
+                        Debug.LogWarning($"[DuelCoordinator] Duel replay failed: {replayError.Message}");
+                    }
                 }
-            }
 
-            if (!replayPlayed)
+                if (!replayPlayed)
+                {
+                    LogReplayDebug($"replay fallback spectator={spectatorMode} pda={challenge?.Pda?.Key}");
+                }
+
+                if (audioManager != null && audioManager.IsLoopPlaying(AudioLoopId.DuelBattle))
+                {
+                    await audioManager.FadeOutLoopAndStopAsync(
+                        AudioLoopId.DuelBattle,
+                        Mathf.Max(0.01f, duelBattleMusicFadeOutSeconds));
+                }
+
+                if (!spectatorMode)
+                {
+                    ShowDuelResultModal(localWallet, challenge);
+                }
+
+                if (manager != null)
+                {
+                    Debug.Log(manager.FormatDuelTranscriptForLog(challenge));
+                }
+
+                return replayPlayed;
+            }
+            finally
             {
-                Debug.LogWarning("[DuelCoordinator] Duel replay fallback: could not resolve both actors in time.");
+                _isReplayInProgress = false;
             }
-
-            if (audioManager != null && audioManager.IsLoopPlaying(AudioLoopId.DuelBattle))
-            {
-                await audioManager.FadeOutLoopAndStopAsync(
-                    AudioLoopId.DuelBattle,
-                    Mathf.Max(0.01f, duelBattleMusicFadeOutSeconds));
-            }
-
-            ShowDuelResultModal(localWallet, challenge);
-            Debug.Log(manager.FormatDuelTranscriptForLog(challenge));
         }
 
-        private async UniTask<bool> RunDuelReplayAsync(PublicKey localWallet, DuelChallengeView challenge)
+        private async UniTask<bool> RunDuelReplayAsync(PublicKey localWallet, DuelChallengeView challenge, bool spectatorMode)
         {
             var spawnedHitSplats = new List<GameObject>();
-            var remoteWallet = ResolveOpponentWalletForLocal(localWallet, challenge);
-            var replayActors = await ResolveReplayActorsAsync(remoteWallet);
-            var localPlayer = replayActors.LocalPlayer;
-            var remotePlayer = replayActors.RemotePlayer;
-            if (localPlayer == null || remotePlayer == null)
+            var replayActors = await ResolveReplayActorsAsync(localWallet, challenge, spectatorMode);
+            var challengerPlayer = replayActors.ChallengerPlayer;
+            var opponentPlayer = replayActors.OpponentPlayer;
+            if (challengerPlayer == null || opponentPlayer == null)
             {
                 Debug.LogWarning(
-                    $"[DuelCoordinator] Replay skipped: local={localPlayer != null} remote={remotePlayer != null}");
+                    $"[DuelCoordinator] Replay skipped: challenger={challengerPlayer != null} opponent={opponentPlayer != null}");
                 return false;
             }
 
+            var challengerWalletKey = challenge.Challenger?.Key;
+            var opponentWalletKey = challenge.Opponent?.Key;
+            var replayAborted = false;
+
             Transform duelCenterAnchor = null;
-            ActivateDuelReplayCamera(localPlayer.transform);
-            var localWalletKey = localWallet?.Key;
-            var remoteWalletKey = remoteWallet?.Key;
-            DuelVisualLockRegistry.Lock(localWalletKey);
-            DuelVisualLockRegistry.Lock(remoteWalletKey);
+            var cameraActivated = false;
+            if (!spectatorMode)
+            {
+                ActivateDuelReplayCamera(challengerPlayer.transform);
+                cameraActivated = true;
+            }
+
+            DuelVisualLockRegistry.Lock(challengerWalletKey);
+            DuelVisualLockRegistry.Lock(opponentWalletKey);
+            LogReplayDebug($"lock challengers pda={challenge.Pda?.Key} challenger={challengerWalletKey} opponent={opponentWalletKey}");
             try
             {
-                var challengerIsLocal = string.Equals(challenge.Challenger?.Key, localWallet.Key, StringComparison.Ordinal);
-                var localStartPosition = localPlayer.transform.position;
-                var remoteStartPosition = remotePlayer.transform.position;
-                var localToRemoteOffsetX = challengerIsLocal ? duelReplaySpacingUnits : -duelReplaySpacingUnits;
-                var localXMin = localToRemoteOffsetX >= 0f
-                    ? duelReplayBoundsX.x
-                    : duelReplayBoundsX.x - localToRemoteOffsetX;
-                var localXMax = localToRemoteOffsetX >= 0f
-                    ? duelReplayBoundsX.y - localToRemoteOffsetX
-                    : duelReplayBoundsX.y;
+                var challengerStartPosition = challengerPlayer.transform.position;
+                var opponentStartPosition = opponentPlayer.transform.position;
+                var duelChallengerX = Mathf.Clamp(challengerStartPosition.x, duelReplayBoundsX.x, duelReplayBoundsX.y - duelReplaySpacingUnits);
+                var duelChallengerY = Mathf.Clamp(challengerStartPosition.y, duelReplayBoundsY.x, duelReplayBoundsY.y);
+                var duelOpponentX = Mathf.Clamp(duelChallengerX + duelReplaySpacingUnits, duelReplayBoundsX.x, duelReplayBoundsX.y);
+                var duelOpponentY = duelChallengerY;
+                var challengerUsedFallbackWeapon = challengerPlayer.EnsureFallbackWieldedItem(ItemId.BronzePickaxe);
+                var opponentUsedFallbackWeapon = opponentPlayer.EnsureFallbackWieldedItem(ItemId.BronzePickaxe);
 
-                var duelLocalX = Mathf.Clamp(localStartPosition.x, localXMin, localXMax);
-                var duelLocalY = Mathf.Clamp(localStartPosition.y, duelReplayBoundsY.x, duelReplayBoundsY.y);
-                var duelRemoteX = Mathf.Clamp(duelLocalX + localToRemoteOffsetX, duelReplayBoundsX.x, duelReplayBoundsX.y);
-                var duelRemoteY = duelLocalY;
-                var localUsedFallbackWeapon = localPlayer.EnsureFallbackWieldedItem(ItemId.BronzePickaxe);
-                var remoteUsedFallbackWeapon = remotePlayer.EnsureFallbackWieldedItem(ItemId.BronzePickaxe);
-
-                localPlayer.transform.position = new Vector3(duelLocalX, duelLocalY, localStartPosition.z);
-                remotePlayer.transform.position = new Vector3(duelRemoteX, duelRemoteY, remoteStartPosition.z);
-                localPlayer.SetFacingDirection(challengerIsLocal ? OccupantFacingDirection.Right : OccupantFacingDirection.Left);
-                remotePlayer.SetFacingDirection(challengerIsLocal ? OccupantFacingDirection.Left : OccupantFacingDirection.Right);
-                duelCenterAnchor = new GameObject("DuelCameraCenterAnchor").transform;
-                duelCenterAnchor.position = ComputeDuelCenterPosition(localPlayer.transform.position, remotePlayer.transform.position);
-                if (duelReplayCamera != null)
+                challengerPlayer.transform.position = new Vector3(duelChallengerX, duelChallengerY, challengerStartPosition.z);
+                opponentPlayer.transform.position = new Vector3(duelOpponentX, duelOpponentY, opponentStartPosition.z);
+                challengerPlayer.SetFacingDirection(OccupantFacingDirection.Right);
+                opponentPlayer.SetFacingDirection(OccupantFacingDirection.Left);
+                if (!spectatorMode)
                 {
-                    duelReplayCamera.Follow = duelCenterAnchor;
-                    duelReplayCamera.LookAt = duelCenterAnchor;
+                    duelCenterAnchor = new GameObject("DuelCameraCenterAnchor").transform;
+                    duelCenterAnchor.position = ComputeDuelCenterPosition(challengerPlayer.transform.position, opponentPlayer.transform.position);
+                    if (duelReplayCamera != null)
+                    {
+                        duelReplayCamera.Follow = duelCenterAnchor;
+                        duelReplayCamera.LookAt = duelCenterAnchor;
+                    }
                 }
 
                 const ushort maxHp = 100;
                 var challengerHp = (int)maxHp;
                 var opponentHp = (int)maxHp;
                 var combatAnimationStopped = false;
-                localPlayer.SetCombatHealth(maxHp, maxHp, true);
-                remotePlayer.SetCombatHealth(maxHp, maxHp, true);
+                challengerPlayer.SetCombatHealth(maxHp, maxHp, true);
+                opponentPlayer.SetCombatHealth(maxHp, maxHp, true);
                 _localSwingEventsObserved = 0;
                 _remoteSwingEventsObserved = 0;
-                _activeReplayLocalPlayer = localPlayer;
-                _activeReplayRemotePlayer = remotePlayer;
+                _activeReplayLocalPlayer = challengerPlayer;
+                _activeReplayRemotePlayer = opponentPlayer;
                 DuelSwingEventRelay.OnSwing += HandleDuelSwingEvent;
-                localPlayer.SetBossJobAnimationState(false);
-                remotePlayer.SetBossJobAnimationState(false);
+                challengerPlayer.SetBossJobAnimationState(false);
+                opponentPlayer.SetBossJobAnimationState(false);
                 await UniTask.Yield();
 
                 var totalTurns = Math.Max(
                     challenge.TurnsPlayed,
                     (byte)Math.Max(challenge.ChallengerHits?.Count ?? 0, challenge.OpponentHits?.Count ?? 0));
                 var activeAttackHitSplats = new List<HitSplatView>(2);
-                var challengerPlayer = challengerIsLocal ? localPlayer : remotePlayer;
-                var opponentPlayer = challengerIsLocal ? remotePlayer : localPlayer;
                 var challengerStartsRound = challenge.Starter != DuelStarter.Opponent;
                 for (var turnIndex = 0; turnIndex < totalTurns; turnIndex += 1)
                 {
-                    var turnIntervalSeconds = Mathf.Max(0.2f, duelReplayHitIntervalSeconds);
+                    if (spectatorMode &&
+                        (!AreReplayActorsCurrentlyAvailable(challenge.Challenger, challenge.Opponent) ||
+                         manager?.CurrentPlayerState == null ||
+                         manager.CurrentPlayerState.CurrentRoomX != challenge.RoomX ||
+                         manager.CurrentPlayerState.CurrentRoomY != challenge.RoomY))
+                    {
+                        replayAborted = true;
+                        break;
+                    }
+
+                    var turnIntervalSeconds = ScaleReplayDuration(Mathf.Max(0.2f, duelReplayHitIntervalSeconds), spectatorMode);
                     var attackStepSeconds = Mathf.Max(0.12f, turnIntervalSeconds * 0.5f);
 
                     var challengerDamage = turnIndex < (challenge.ChallengerHits?.Count ?? 0)
@@ -534,16 +865,8 @@ namespace SeekerDungeon.Solana
                         challengerHp = Math.Max(0, challengerHp - firstDamage);
                     }
 
-                    if (challengerIsLocal)
-                    {
-                        localPlayer.SetCombatHealth((ushort)challengerHp, maxHp, true);
-                        remotePlayer.SetCombatHealth((ushort)opponentHp, maxHp, true);
-                    }
-                    else
-                    {
-                        localPlayer.SetCombatHealth((ushort)opponentHp, maxHp, true);
-                        remotePlayer.SetCombatHealth((ushort)challengerHp, maxHp, true);
-                    }
+                    challengerPlayer.SetCombatHealth((ushort)challengerHp, maxHp, true);
+                    opponentPlayer.SetCombatHealth((ushort)opponentHp, maxHp, true);
 
                     var secondSwingBaseline = GetObservedSwingCountForActor(secondAttacker);
                     secondAttacker.TriggerBossAttackOnce();
@@ -573,62 +896,49 @@ namespace SeekerDungeon.Solana
                         opponentHp = Math.Max(0, opponentHp - secondDamage);
                     }
 
-                    if (challengerIsLocal)
-                    {
-                        localPlayer.SetCombatHealth((ushort)challengerHp, maxHp, true);
-                        remotePlayer.SetCombatHealth((ushort)opponentHp, maxHp, true);
-                    }
-                    else
-                    {
-                        localPlayer.SetCombatHealth((ushort)opponentHp, maxHp, true);
-                        remotePlayer.SetCombatHealth((ushort)challengerHp, maxHp, true);
-                    }
+                    challengerPlayer.SetCombatHealth((ushort)challengerHp, maxHp, true);
+                    opponentPlayer.SetCombatHealth((ushort)opponentHp, maxHp, true);
 
                     if (challengerHp == 0 || opponentHp == 0)
                     {
-                        localPlayer.SetBossJobAnimationState(false);
-                        remotePlayer.SetBossJobAnimationState(false);
+                        challengerPlayer.SetBossJobAnimationState(false);
+                        opponentPlayer.SetBossJobAnimationState(false);
                         combatAnimationStopped = true;
                         break;
                     }
                 }
 
-                if (challengerIsLocal)
+                if (!replayAborted)
                 {
-                    localPlayer.SetCombatHealth(challenge.ChallengerFinalHp, maxHp, true);
-                    remotePlayer.SetCombatHealth(challenge.OpponentFinalHp, maxHp, true);
-                }
-                else
-                {
-                    localPlayer.SetCombatHealth(challenge.OpponentFinalHp, maxHp, true);
-                    remotePlayer.SetCombatHealth(challenge.ChallengerFinalHp, maxHp, true);
-                }
+                    challengerPlayer.SetCombatHealth(challenge.ChallengerFinalHp, maxHp, true);
+                    opponentPlayer.SetCombatHealth(challenge.OpponentFinalHp, maxHp, true);
 
-                if (challenge.ChallengerFinalHp == 0 || challenge.OpponentFinalHp == 0)
-                {
-                    localPlayer.SetBossJobAnimationState(false);
-                    remotePlayer.SetBossJobAnimationState(false);
-                    combatAnimationStopped = true;
-                }
+                    if (challenge.ChallengerFinalHp == 0 || challenge.OpponentFinalHp == 0)
+                    {
+                        challengerPlayer.SetBossJobAnimationState(false);
+                        opponentPlayer.SetBossJobAnimationState(false);
+                        combatAnimationStopped = true;
+                    }
 
-                await UniTask.Delay(TimeSpan.FromSeconds(Mathf.Max(0f, duelReplayPostKillSeconds)));
+                    await UniTask.Delay(TimeSpan.FromSeconds(ScaleReplayDuration(Mathf.Max(0f, duelReplayPostKillSeconds), spectatorMode)));
+                }
 
                 if (!combatAnimationStopped)
                 {
-                    localPlayer.SetBossJobAnimationState(false);
-                    remotePlayer.SetBossJobAnimationState(false);
+                    challengerPlayer.SetBossJobAnimationState(false);
+                    opponentPlayer.SetBossJobAnimationState(false);
                 }
-                localPlayer.SetCombatHealth(0, 0, false);
-                remotePlayer.SetCombatHealth(0, 0, false);
-                localPlayer.transform.position = localStartPosition;
-                remotePlayer.transform.position = remoteStartPosition;
-                if (localUsedFallbackWeapon)
+                challengerPlayer.SetCombatHealth(0, 0, false);
+                opponentPlayer.SetCombatHealth(0, 0, false);
+                challengerPlayer.transform.position = challengerStartPosition;
+                opponentPlayer.transform.position = opponentStartPosition;
+                if (challengerUsedFallbackWeapon)
                 {
-                    localPlayer.HideAllWieldedItems();
+                    challengerPlayer.HideAllWieldedItems();
                 }
-                if (remoteUsedFallbackWeapon)
+                if (opponentUsedFallbackWeapon)
                 {
-                    remotePlayer.HideAllWieldedItems();
+                    opponentPlayer.HideAllWieldedItems();
                 }
             }
             finally
@@ -636,21 +946,27 @@ namespace SeekerDungeon.Solana
                 DuelSwingEventRelay.OnSwing -= HandleDuelSwingEvent;
                 _activeReplayLocalPlayer = null;
                 _activeReplayRemotePlayer = null;
-                DuelVisualLockRegistry.Unlock(localWalletKey);
-                DuelVisualLockRegistry.Unlock(remoteWalletKey);
+                DuelVisualLockRegistry.Unlock(challengerWalletKey);
+                DuelVisualLockRegistry.Unlock(opponentWalletKey);
+                LogReplayDebug($"unlock challengers pda={challenge.Pda?.Key}");
                 if (duelCenterAnchor != null)
                 {
                     Destroy(duelCenterAnchor.gameObject);
                 }
                 CleanupHitSplats(spawnedHitSplats);
-                RestoreDuelReplayCameraState();
+                if (cameraActivated)
+                {
+                    RestoreDuelReplayCameraState();
+                }
             }
 
-            return true;
+            return !replayAborted;
         }
 
-        private async UniTask<(LGPlayerController LocalPlayer, LGPlayerController RemotePlayer)> ResolveReplayActorsAsync(
-            PublicKey remoteWallet)
+        private async UniTask<(LGPlayerController ChallengerPlayer, LGPlayerController OpponentPlayer)> ResolveReplayActorsAsync(
+            PublicKey localWallet,
+            DuelChallengeView challenge,
+            bool spectatorMode)
         {
             var elapsed = 0f;
             var timeout = Mathf.Max(0.5f, duelReplayResolveTimeoutSeconds);
@@ -659,11 +975,11 @@ namespace SeekerDungeon.Solana
 
             while (elapsed <= timeout)
             {
-                var localPlayer = ResolveLocalPlayerController();
-                var remotePlayer = ResolveRemotePlayerController(remoteWallet);
-                if (localPlayer != null && remotePlayer != null)
+                var challengerPlayer = ResolveReplayPlayerController(challenge?.Challenger, localWallet, spectatorMode);
+                var opponentPlayer = ResolveReplayPlayerController(challenge?.Opponent, localWallet, spectatorMode);
+                if (challengerPlayer != null && opponentPlayer != null)
                 {
-                    return (localPlayer, remotePlayer);
+                    return (challengerPlayer, opponentPlayer);
                 }
 
                 if (elapsed >= nextRefreshAt)
@@ -676,7 +992,9 @@ namespace SeekerDungeon.Solana
                 elapsed += poll;
             }
 
-            return (ResolveLocalPlayerController(), ResolveRemotePlayerController(remoteWallet));
+            return (
+                ResolveReplayPlayerController(challenge?.Challenger, localWallet, spectatorMode),
+                ResolveReplayPlayerController(challenge?.Opponent, localWallet, spectatorMode));
         }
 
         private async UniTask ForceReplayContextRefreshAsync()
@@ -845,6 +1163,17 @@ namespace SeekerDungeon.Solana
             }
 
             return 0;
+        }
+
+        private float ScaleReplayDuration(float seconds, bool spectatorMode)
+        {
+            if (!spectatorMode)
+            {
+                return seconds;
+            }
+
+            var speed = Mathf.Max(0.5f, spectatorReplaySpeedMultiplier);
+            return seconds / speed;
         }
 
         private bool IsCriticalHit(byte damage)
@@ -1073,16 +1402,19 @@ namespace SeekerDungeon.Solana
             return null;
         }
 
-        private static PublicKey ResolveOpponentWalletForLocal(PublicKey localWallet, DuelChallengeView challenge)
+        private LGPlayerController ResolveReplayPlayerController(PublicKey wallet, PublicKey localWallet, bool spectatorMode)
         {
-            if (localWallet == null || challenge == null)
+            if (wallet == null)
             {
                 return null;
             }
 
-            return string.Equals(challenge.Challenger?.Key, localWallet.Key, StringComparison.Ordinal)
-                ? challenge.Opponent
-                : challenge.Challenger;
+            var isLocalWallet = !spectatorMode &&
+                                localWallet != null &&
+                                string.Equals(wallet.Key, localWallet.Key, StringComparison.Ordinal);
+            return isLocalWallet
+                ? ResolveLocalPlayerController()
+                : ResolveRemotePlayerController(wallet);
         }
 
         private DoorOccupantVisual2D ResolveRemoteOccupantVisual(PublicKey wallet)
