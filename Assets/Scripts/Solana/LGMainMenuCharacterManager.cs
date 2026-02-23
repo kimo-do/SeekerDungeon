@@ -89,6 +89,7 @@ namespace SeekerDungeon.Solana
 
         [Header("Session UX")]
         [SerializeField] private bool prepareGameplaySessionInMenu = true;
+        private const bool AutoPrepareSessionOnMobile = false;
 
         [Header("Seeker ID")]
         [SerializeField] private bool autoResolveSeekerIdAsDefaultName = true;
@@ -170,6 +171,11 @@ namespace SeekerDungeon.Solana
                     return false;
                 }
 #endif
+                if (!Application.isEditor && Application.isMobilePlatform && !AutoPrepareSessionOnMobile)
+                {
+                    return false;
+                }
+
                 return true;
             }
         }
@@ -217,7 +223,6 @@ namespace SeekerDungeon.Solana
                 walletSessionManager = LGWalletSessionManager.EnsureInstance();
             }
 
-#if UNITY_EDITOR
             _localSeekerIdentityConfig =
                 Resources.Load<LocalSeekerIdentityConfig>(LocalSeekerIdentityConfigResourcePath);
             if (_localSeekerIdentityConfig != null && logDebugMessages)
@@ -225,9 +230,6 @@ namespace SeekerDungeon.Solana
                 Debug.Log(
                     $"[MainMenuCharacter] Loaded local Seeker identity config from Resources/{LocalSeekerIdentityConfigResourcePath}");
             }
-#else
-            _localSeekerIdentityConfig = null;
-#endif
 
             RebuildSelectableSkins();
 
@@ -339,6 +341,11 @@ namespace SeekerDungeon.Solana
                 ShowLowBalanceModal();
                 EmitState("Wallet balance is too low.");
                 return;
+            }
+
+            if (!HasExistingProfile)
+            {
+                await EnsureSeekerIdDefaultNameAttemptedAsync();
             }
 
             var displayName = string.IsNullOrWhiteSpace(PendingDisplayName)
@@ -482,24 +489,7 @@ namespace SeekerDungeon.Solana
                     playerState = lgManager.CurrentPlayerState;
                 }
 
-                var shouldForceFreshEnter = false;
-                if (playerState != null && playerState.InDungeon)
-                {
-                    var hasCurrentSeasonPresence = await lgManager.HasCurrentSeasonPresenceAtAsync(
-                        playerState.CurrentRoomX,
-                        playerState.CurrentRoomY);
-                    if (!hasCurrentSeasonPresence)
-                    {
-                        shouldForceFreshEnter = true;
-                        if (logDebugMessages)
-                        {
-                            Debug.Log(
-                                $"[MainMenuCharacter] Stale in-dungeon state detected (missing current-season presence at ({playerState.CurrentRoomX},{playerState.CurrentRoomY})). Forcing fresh enter at start room.");
-                        }
-                    }
-                }
-
-                if (playerState != null && (!playerState.InDungeon || shouldForceFreshEnter))
+                if (playerState != null && !playerState.InDungeon)
                 {
                     EmitState("Entering dungeon...");
                     var enterResult = await lgManager.EnterDungeonAtStart();
@@ -932,7 +922,7 @@ namespace SeekerDungeon.Solana
 
         private async UniTaskVoid RequestLegacyAccountResetFromMenuAsync()
         {
-            if (!_isLegacyResetRequired || _isResettingLegacyAccount || IsBusy)
+            if (_isResettingLegacyAccount || IsBusy)
             {
                 return;
             }
@@ -945,7 +935,13 @@ namespace SeekerDungeon.Solana
 
             if (LGConfig.IsMainnetRuntime)
             {
-                EmitState("Legacy reset is disabled on mainnet runtime.");
+                EmitState("Account reset is disabled on mainnet runtime.");
+                return;
+            }
+
+            if (!_isLegacyResetRequired && !HasExistingProfile && lgManager.CurrentPlayerState == null)
+            {
+                EmitState("No onchain account data found to reset.");
                 return;
             }
 
@@ -1500,6 +1496,21 @@ namespace SeekerDungeon.Solana
 
         private async UniTaskVoid ResolveSeekerIdDefaultNameAsync()
         {
+            await TryResolveSeekerIdDefaultNameAsync(emitAttemptStatus: false);
+        }
+
+        private async UniTask EnsureSeekerIdDefaultNameAttemptedAsync()
+        {
+            if (!ShouldResolveSeekerIdentityDefaultName || HasExistingProfile || _hasUserEditedDisplayName)
+            {
+                return;
+            }
+
+            await TryResolveSeekerIdDefaultNameAsync(emitAttemptStatus: true);
+        }
+
+        private async UniTask TryResolveSeekerIdDefaultNameAsync(bool emitAttemptStatus)
+        {
             if (!ShouldResolveSeekerIdentityDefaultName)
             {
                 return;
@@ -1519,6 +1530,11 @@ namespace SeekerDungeon.Solana
             _isResolvingSeekerId = true;
             try
             {
+                if (emitAttemptStatus)
+                {
+                    EmitState("Checking Seeker ID...");
+                }
+
                 var seekerId = await SeekerIdentityResolver.TryResolveSkrForWalletAsync(
                     walletPublicKey,
                     GetSeekerIdentityRpcUrl(),
@@ -1528,7 +1544,8 @@ namespace SeekerDungeon.Solana
                     GetSeekerIdentityEnhancedUrlTemplate(),
                     GetSeekerIdentityEnhancedFallbackTemplates(),
                     GetSeekerIdentityBackendUrlTemplate(),
-                    GetSeekerIdentityBackendFallbackTemplates());
+                    GetSeekerIdentityBackendFallbackTemplates(),
+                    allowLegacyFallbackLookups: false);
                 if (string.IsNullOrWhiteSpace(seekerId))
                 {
                     return;
@@ -1602,7 +1619,7 @@ namespace SeekerDungeon.Solana
 
         private MainMenuCharacterState BuildState(string statusMessage)
         {
-            var playerName = HasExistingProfile && !string.IsNullOrWhiteSpace(PendingDisplayName)
+            var playerName = !string.IsNullOrWhiteSpace(PendingDisplayName)
                 ? PendingDisplayName
                 : GetShortWalletAddress();
             var lowBalanceBlocking = IsLowBalanceForCharacterCreate();

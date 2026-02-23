@@ -172,4 +172,7 @@ pub enum ChainDepthError {
 
     #[msg("Duel challenge has not yet expired")]
     DuelChallengeNotExpired,
+
+    #[msg("Player is not currently in the dungeon")]
+    NotInDungeon,
 }

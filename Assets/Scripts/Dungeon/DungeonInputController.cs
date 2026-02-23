@@ -312,6 +312,12 @@ namespace SeekerDungeon.Dungeon
                     var doorResult = await _lgManager.InteractWithDoor((byte)door.Direction);
                     if (!doorResult.Success)
                     {
+                        if (await HandleNotInDungeonFallbackAsync(doorResult.Error, "door_interact_fail"))
+                        {
+                            _nextInteractTime = Time.unscaledTime + interactCooldownSeconds;
+                            return;
+                        }
+
                         ShowDoorFailureToastIfApplicable(doorResult.Error);
                     }
 
@@ -446,7 +452,8 @@ namespace SeekerDungeon.Dungeon
                     // Check if center is a chest/boss before the TX so we know if loot animation applies
                     var roomState = _lgManager.CurrentRoomState;
                     var wasChestCenterBeforeInteraction = roomState != null &&
-                                                         roomState.CenterType == LGConfig.CENTER_CHEST;
+                                                         (roomState.CenterType == LGConfig.CENTER_CHEST ||
+                                                          roomState.CenterType == LGConfig.CENTER_BONE_CHEST);
                     var wasAliveBossCenterBeforeInteraction = roomState != null &&
                                                               roomState.CenterType == LGConfig.CENTER_BOSS &&
                                                               !roomState.BossDefeated;
@@ -454,12 +461,14 @@ namespace SeekerDungeon.Dungeon
                                                                dungeonManager.IsLocalPlayerFightingBoss;
                     var isLootableCenter = roomState != null &&
                         (roomState.CenterType == LGConfig.CENTER_CHEST ||
+                         roomState.CenterType == LGConfig.CENTER_BONE_CHEST ||
                          (roomState.CenterType == LGConfig.CENTER_BOSS && roomState.BossDefeated));
 
                     {
                         TryGetCurrentRoomCoordinates(out var ctrRoomX, out var ctrRoomY);
                         var ctrType = roomState == null ? "unknown"
                             : roomState.CenterType == LGConfig.CENTER_CHEST ? "Chest"
+                            : roomState.CenterType == LGConfig.CENTER_BONE_CHEST ? "BoneChest"
                             : roomState.CenterType == LGConfig.CENTER_BOSS ? (roomState.BossDefeated ? "Boss(dead)" : "Boss(alive)")
                             : "Empty";
                         GameplayActionLog.CenterClicked(ctrRoomX, ctrRoomY, ctrType);
@@ -546,13 +555,20 @@ namespace SeekerDungeon.Dungeon
 
                         if (!centerResult.Success)
                         {
+                            if (await HandleNotInDungeonFallbackAsync(centerResult.Error, "center_interact_fail"))
+                            {
+                                _nextInteractTime = Time.unscaledTime + interactCooldownSeconds;
+                                return;
+                            }
+
                             ShowCenterFailureToastIfApplicable(centerResult.Error);
                         }
 
                         // Play chest open animation on the visual controller
                         var currentRoomAfterInteraction = _lgManager.CurrentRoomState;
                         var isChestCenterAfterInteraction = currentRoomAfterInteraction != null &&
-                                                            currentRoomAfterInteraction.CenterType == LGConfig.CENTER_CHEST;
+                                                            (currentRoomAfterInteraction.CenterType == LGConfig.CENTER_CHEST ||
+                                                             currentRoomAfterInteraction.CenterType == LGConfig.CENTER_BONE_CHEST);
                         var alreadyLootedError = !centerResult.Success &&
                                                  !string.IsNullOrWhiteSpace(centerResult.Error) &&
                                                  centerResult.Error.IndexOf("AlreadyLooted", System.StringComparison.OrdinalIgnoreCase) >= 0;
@@ -1018,7 +1034,11 @@ namespace SeekerDungeon.Dungeon
             }
 
             string toastMessage = null;
-            if (error.IndexOf("NotBossFighter", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+            if (error.IndexOf("Boss already defeated", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                toastMessage = "Boss already defeated. You were not in this fight.";
+            }
+            else if (error.IndexOf("NotBossFighter", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
                 error.IndexOf("Only players who joined this fight can loot", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
                 error.IndexOf("Only players who joined this boss fight can loot", System.StringComparison.OrdinalIgnoreCase) >= 0)
             {
@@ -1043,6 +1063,28 @@ namespace SeekerDungeon.Dungeon
             {
                 gameHudUI.ShowCenterToast(toastMessage, 1.5f);
             }
+        }
+
+        private async UniTask<bool> HandleNotInDungeonFallbackAsync(string error, string sourceTag)
+        {
+            if (string.IsNullOrWhiteSpace(error))
+            {
+                return false;
+            }
+
+            var isNotInDungeon =
+                error.IndexOf("NotInDungeon", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                error.IndexOf("not in the dungeon", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                error.IndexOf("not currently in the dungeon", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            if (!isNotInDungeon)
+            {
+                return false;
+            }
+
+            Debug.Log($"[DungeonInput] NotInDungeon fallback triggered from {sourceTag}. Returning to menu.");
+            await HandleDeathExitAlreadyAppliedAsync(sourceTag);
+            return true;
         }
 
         private static string ExtractRegexGroup(string source, string pattern)

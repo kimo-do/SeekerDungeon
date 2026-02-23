@@ -106,6 +106,8 @@ pub fn handler(
 
     let challenger_player_account = &mut ctx.accounts.challenger_player_account;
     let opponent_player_account = &ctx.accounts.opponent_player_account;
+    challenger_player_account.require_in_dungeon()?;
+    opponent_player_account.require_in_dungeon()?;
     require!(
         challenger_player_account.current_room_x == opponent_player_account.current_room_x
             && challenger_player_account.current_room_y == opponent_player_account.current_room_y,

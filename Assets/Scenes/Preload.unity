@@ -396,6 +396,34 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 3483282015633355915, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
+      propertyPath: loadingAnimationSprites.Array.size
+      value: 6
+      objectReference: {fileID: 0}
+    - target: {fileID: 3483282015633355915, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
+      propertyPath: 'loadingAnimationSprites.Array.data[0]'
+      value: 
+      objectReference: {fileID: -6325130245842520150, guid: b6f88482bdf906248900cfb689e41d86, type: 3}
+    - target: {fileID: 3483282015633355915, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
+      propertyPath: 'loadingAnimationSprites.Array.data[1]'
+      value: 
+      objectReference: {fileID: -6660254794133645247, guid: b6f88482bdf906248900cfb689e41d86, type: 3}
+    - target: {fileID: 3483282015633355915, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
+      propertyPath: 'loadingAnimationSprites.Array.data[2]'
+      value: 
+      objectReference: {fileID: -2730731567290742996, guid: b6f88482bdf906248900cfb689e41d86, type: 3}
+    - target: {fileID: 3483282015633355915, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
+      propertyPath: 'loadingAnimationSprites.Array.data[3]'
+      value: 
+      objectReference: {fileID: 5050521316427039117, guid: b6f88482bdf906248900cfb689e41d86, type: 3}
+    - target: {fileID: 3483282015633355915, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
+      propertyPath: 'loadingAnimationSprites.Array.data[4]'
+      value: 
+      objectReference: {fileID: -2280382436547509459, guid: b6f88482bdf906248900cfb689e41d86, type: 3}
+    - target: {fileID: 3483282015633355915, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
+      propertyPath: 'loadingAnimationSprites.Array.data[5]'
+      value: 
+      objectReference: {fileID: 4483216782250633281, guid: b6f88482bdf906248900cfb689e41d86, type: 3}
     - target: {fileID: 3493712294466225802, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
       propertyPath: m_LocalPosition.x
       value: -0.0162

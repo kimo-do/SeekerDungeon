@@ -135,6 +135,7 @@ pub fn handler(ctx: Context<CompleteJob>, direction: u8) -> Result<()> {
 
     let clock = Clock::get()?;
     let dir_idx = direction as usize;
+    ctx.accounts.player_account.require_in_dungeon()?;
 
     // Auto-tick: calculate current progress from elapsed slots so the
     // client does not need to send a separate TickJob first.

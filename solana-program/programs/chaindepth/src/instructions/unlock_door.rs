@@ -98,6 +98,7 @@ pub fn handler(ctx: Context<UnlockDoor>, direction: u8) -> Result<()> {
     let player_account = &ctx.accounts.player_account;
     let player_key = ctx.accounts.player.key();
     let direction_index = direction as usize;
+    player_account.require_in_dungeon()?;
 
     require!(
         player_account.is_at_room(room.x, room.y),

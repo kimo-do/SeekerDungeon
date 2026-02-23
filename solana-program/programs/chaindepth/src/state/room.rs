@@ -25,6 +25,7 @@ pub const LOCK_KIND_SKELETON: u8 = 1;
 pub const CENTER_EMPTY: u8 = 0;
 pub const CENTER_CHEST: u8 = 1;
 pub const CENTER_BOSS: u8 = 2;
+pub const CENTER_BONE_CHEST: u8 = 3;
 
 /// Room account - one per coordinate pair per season
 /// PDA seeds: ["room", season_seed (8 bytes), x (1 byte), y (1 byte)]
@@ -177,7 +178,10 @@ impl RoomAccount {
     }
 
     pub fn is_valid_center_type(center_type: u8) -> bool {
-        center_type == CENTER_EMPTY || center_type == CENTER_CHEST || center_type == CENTER_BOSS
+        center_type == CENTER_EMPTY
+            || center_type == CENTER_CHEST
+            || center_type == CENTER_BOSS
+            || center_type == CENTER_BONE_CHEST
     }
 
     pub fn boss_hp_for_depth(depth: u32, boss_id: u16) -> u64 {

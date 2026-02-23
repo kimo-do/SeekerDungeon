@@ -116,6 +116,7 @@ pub fn handler(ctx: Context<LootBoss>) -> Result<()> {
     let inventory = &mut ctx.accounts.inventory;
     let player_key = ctx.accounts.player.key();
     let clock = Clock::get()?;
+    player_account.require_in_dungeon()?;
 
     let loot_receipt = &mut ctx.accounts.loot_receipt;
 
@@ -154,7 +155,7 @@ pub fn handler(ctx: Context<LootBoss>) -> Result<()> {
     ctx.accounts.room_presence.set_idle();
 
     let loot_hash = generate_loot_hash(clock.slot, &player_key, room.center_id);
-    let loot_bundle = build_boss_loot_bundle(loot_hash);
+    let loot_bundle = build_boss_loot_bundle(loot_hash, room.center_id);
 
     if inventory.owner == Pubkey::default() {
         inventory.owner = player_key;
@@ -266,26 +267,33 @@ const BOSS_VALUABLES: [LootSpec; 15] = [
     LootSpec { item_id: item_ids::SKELETON_KEY, weight: 3, min_amount: 1, max_amount: 1 },
 ];
 
-const BOSS_BUFFS: [LootSpec; 2] = [
-    LootSpec { item_id: item_ids::MINOR_BUFF, weight: 8, min_amount: 1, max_amount: 3 },
-    LootSpec { item_id: item_ids::MAJOR_BUFF, weight: 14, min_amount: 1, max_amount: 3 },
-];
-
-fn build_boss_loot_bundle(seed: u64) -> Vec<LootStack> {
+fn build_boss_loot_bundle(seed: u64, boss_id: u16) -> Vec<LootStack> {
     let mut rng = LootRng::new(seed);
     let mut drops = Vec::<LootStack>::new();
+    let is_skeleton_boss = boss_id == 11;
 
     // Boss always drops a weapon.
     append_single_roll(&mut drops, &BOSS_WEAPONS, item_types::TOOL, &mut rng);
 
-    // Boss drops 2-4 different valuable stacks.
-    let valuable_roll = rng.range_u32(100);
-    let valuable_stacks = if valuable_roll < 50 {
-        2
-    } else if valuable_roll < 85 {
-        3
+    // Boss drops 2-4 valuable stacks; skeleton boss 11 drops 3-5.
+    let valuable_stacks = if is_skeleton_boss {
+        let valuable_roll = rng.range_u32(100);
+        if valuable_roll < 40 {
+            3
+        } else if valuable_roll < 80 {
+            4
+        } else {
+            5
+        }
     } else {
-        4
+        let valuable_roll = rng.range_u32(100);
+        if valuable_roll < 50 {
+            2
+        } else if valuable_roll < 85 {
+            3
+        } else {
+            4
+        }
     };
     append_unique_rolls(
         &mut drops,
@@ -295,9 +303,14 @@ fn build_boss_loot_bundle(seed: u64) -> Vec<LootStack> {
         &mut rng,
     );
 
-    // Optional bonus buff stack.
-    if rng.range_u32(100) < 60 {
-        append_single_roll(&mut drops, &BOSS_BUFFS, item_types::BUFF, &mut rng);
+    // Skeleton boss guaranteed key-themed bonus.
+    if is_skeleton_boss {
+        drops.push(LootStack {
+            item_id: item_ids::SKELETON_KEY,
+            amount: 1,
+            durability: 0,
+            item_type: item_types::ORE,
+        });
     }
 
     drops

@@ -65,6 +65,7 @@ namespace SeekerDungeon.Solana
         public const byte CENTER_EMPTY = 0;
         public const byte CENTER_CHEST = 1;
         public const byte CENTER_BOSS = 2;
+        public const byte CENTER_BONE_CHEST = 3;
         
         // Token constants (9 decimals)
         public const int SKR_DECIMALS = 9;

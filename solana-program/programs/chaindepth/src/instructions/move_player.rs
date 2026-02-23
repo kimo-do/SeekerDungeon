@@ -71,10 +71,10 @@ pub struct MovePlayer<'info> {
     )]
     pub target_room: Account<'info, RoomAccount>,
 
-    /// Closed on move so rent returns to the treasury (global PDA)
+    /// Closed on move so rent returns to the current fee payer (authority)
     #[account(
         mut,
-        close = global,
+        close = authority,
         seeds = [
             RoomPresence::SEED_PREFIX,
             &global.season_seed.to_le_bytes(),
@@ -170,6 +170,8 @@ pub fn handler(ctx: Context<MovePlayer>, new_x: i8, new_y: i8) -> Result<()> {
         player_account.bump = ctx.bumps.player_account;
     }
 
+    player_account.require_in_dungeon()?;
+
     let from_x = player_account.current_room_x;
     let from_y = player_account.current_room_y;
 
@@ -178,8 +180,8 @@ pub fn handler(ctx: Context<MovePlayer>, new_x: i8, new_y: i8) -> Result<()> {
         ChainDepthError::AlreadyFightingBoss
     );
 
-    // current_presence will be closed by Anchor (close = global),
-    // returning rent to the treasury. No need to update fields.
+    // current_presence will be closed by Anchor (close = authority),
+    // returning rent to the current fee payer. No need to update fields.
 
     // Check adjacency (only 1 step in cardinal direction)
     let dx = (new_x - from_x).abs();

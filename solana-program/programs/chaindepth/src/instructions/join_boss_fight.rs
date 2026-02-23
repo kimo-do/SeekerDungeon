@@ -10,7 +10,7 @@ use crate::state::{
     calculate_depth,
 };
 
-pub const PLAYER_BOSS_DAMAGE_SLOT_STEP: u64 = 150;
+pub const PLAYER_BOSS_DAMAGE_SLOT_STEP: u64 = 50;
 pub const PLAYER_BOSS_BASE_DAMAGE_PER_TICK: u16 = 5;
 
 #[derive(Accounts)]
@@ -53,7 +53,9 @@ pub struct JoinBossFight<'info> {
     pub room: Account<'info, RoomAccount>,
 
     #[account(
-        mut,
+        init_if_needed,
+        payer = authority,
+        space = RoomPresence::DISCRIMINATOR.len() + RoomPresence::INIT_SPACE,
         seeds = [
             RoomPresence::SEED_PREFIX,
             &global.season_seed.to_le_bytes(),
@@ -61,7 +63,7 @@ pub struct JoinBossFight<'info> {
             &[player_account.current_room_y as u8],
             player.key().as_ref()
         ],
-        bump = room_presence.bump
+        bump
     )]
     pub room_presence: Account<'info, RoomPresence>,
 
@@ -109,6 +111,7 @@ pub fn handler(ctx: Context<JoinBossFight>) -> Result<()> {
     let room = &mut ctx.accounts.room;
     let player_account = &mut ctx.accounts.player_account;
     let clock = Clock::get()?;
+    player_account.require_in_dungeon()?;
 
     require!(
         room.center_type == CENTER_BOSS,
@@ -155,6 +158,17 @@ pub fn handler(ctx: Context<JoinBossFight>) -> Result<()> {
     boss_fight.bump = ctx.bumps.boss_fight;
 
     let room_presence = &mut ctx.accounts.room_presence;
+    if room_presence.player == Pubkey::default() {
+        room_presence.player = ctx.accounts.player.key();
+        room_presence.season_seed = ctx.accounts.global.season_seed;
+        room_presence.room_x = room.x;
+        room_presence.room_y = room.y;
+        room_presence.skin_id = ctx.accounts.profile.skin_id;
+        room_presence.equipped_item_id = player_account.equipped_item_id;
+        room_presence.set_idle();
+        room_presence.is_current = true;
+        room_presence.bump = ctx.bumps.room_presence;
+    }
     room_presence.skin_id = ctx.accounts.profile.skin_id;
     room_presence.equipped_item_id = player_account.equipped_item_id;
     room_presence.set_boss_fight();

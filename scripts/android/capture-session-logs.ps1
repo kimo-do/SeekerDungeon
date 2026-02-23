@@ -1,5 +1,5 @@
 param(
-    [string]$Package = "com.Kimoworks.Lootgoblins",
+    [string]$Package = "com.Kimo.Lootgoblins",
     [switch]$Clear,
     [switch]$Live
 )

@@ -68,6 +68,26 @@ namespace SeekerDungeon.Dungeon
             SetOpen(true, animate: true);
         }
 
+        public void HideVisualsAndReset()
+        {
+            _isOpen = false;
+            _optimisticOpenedForRoom = false;
+            _hasRoomKey = false;
+            _roomX = 0;
+            _roomY = 0;
+
+            if (closedVisual != null)
+            {
+                closedVisual.SetActive(false);
+            }
+
+            if (openVisual != null)
+            {
+                openVisual.SetActive(false);
+                openVisual.transform.localScale = _openVisualBaseScale;
+            }
+        }
+
         private void SetOpen(bool open, bool animate)
         {
             _isOpen = open;
@@ -95,6 +115,11 @@ namespace SeekerDungeon.Dungeon
             {
                 openVisual.transform.localScale = _openVisualBaseScale;
             }
+        }
+
+        private void OnDisable()
+        {
+            HideVisualsAndReset();
         }
     }
 }

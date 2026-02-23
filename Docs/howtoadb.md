@@ -24,7 +24,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\android\capture-session-logs.
 ```
 
 Expected package for this game:
-- `com.Kimoworks.Lootgoblins`
+- `com.Kimo.Lootgoblins`
 
 ## 2) Clean start (recommended before reproducing)
 
@@ -37,7 +37,7 @@ Then reproduce the issue in-game (connect wallet, create character, etc.).
 ## 3) Get current app PID
 
 ```powershell
-$pkg = "com.Kimoworks.Lootgoblins"
+$pkg = "com.Kimo.Lootgoblins"
 $appPid = (& $adb shell pidof -s $pkg).Trim()
 $appPid
 ```
@@ -113,6 +113,6 @@ powershell -ExecutionPolicy Bypass -File .\scripts\android\capture-session-logs.
 ## 9) If PID filtering is empty, use package-wide grep
 
 ```powershell
-& $adb logcat -d | rg -n "com.Kimoworks.Lootgoblins|MainMenuCharacter|LGManager|WalletSession|SeekerIdentity|SendTransaction|Simulation|Error|Exception"
+& $adb logcat -d | rg -n "com.Kimo.Lootgoblins|MainMenuCharacter|LGManager|WalletSession|SeekerIdentity|SendTransaction|Simulation|Error|Exception"
 ```
 

@@ -1,7 +1,9 @@
+using System.Collections.Generic;
+using SeekerDungeon.Solana;
+using Solana.Unity.SDK;
+using Unity.Cinemachine;
 using UnityEngine;
 using UnityEngine.EventSystems;
-using Unity.Cinemachine;
-using System.Collections.Generic;
 
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
@@ -12,7 +14,7 @@ namespace SeekerDungeon.Dungeon
     /// <summary>
     /// Handles camera zoom (scroll / pinch) and pan (drag).
     /// Only writes to panTarget.position during an active drag gesture or an explicit snap.
-    /// Never touches panTarget outside of those two cases -- Cinemachine owns it otherwise.
+    /// Never touches panTarget outside of those two cases. Cinemachine owns it otherwise.
     /// </summary>
     public sealed class CameraZoomController : MonoBehaviour
     {
@@ -33,34 +35,49 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private Vector2 panBoundsX = new(-3f, 3f);
         [SerializeField] private Vector2 panBoundsY = new(-3f, 3f);
 
+        [Header("First-Time Camera Tutorial")]
+        [SerializeField] private GameObject cameraControlsTutorialCanvas;
+        [SerializeField] private float tutorialHideDelaySeconds = 2.0f;
+
         /// <summary>Minimum pixel distance before a press becomes a drag.</summary>
         private const float DragThresholdPixelsSq = 10f * 10f;
 
-        // ── Zoom state ──
+        private const string CameraTutorialCompletedPrefKeyPrefix = "dungeon.camera_controls_tutorial.completed";
+
+        // Zoom state
         private float _targetZoom;
 
-        // ── Pan / drag state ──
+        // Pan/drag state
         private bool _pointerDown;
-        private bool _isDragging; // true only after pointer moved past threshold
+        private bool _isDragging;
         private int _activePointerId = int.MinValue;
         private Vector2 _pointerDownScreenPos;
         private Vector2 _lastPointerScreenPos;
         private bool _pointerStartedOverUi;
 
-        public bool IsPanning => _isDragging;
+        // Tutorial state
+        private bool _cameraTutorialCompleted;
+        private bool _cameraTutorialHideQueued;
+        private float _cameraTutorialHideAtUnscaledTime = -1f;
 
-        // ──────────────────────────────────────────────
+        public bool IsPanning => _isDragging;
 
         private void Awake()
         {
             if (worldCamera == null)
+            {
                 worldCamera = Camera.main;
+            }
 
             if (cinemachineCamera == null)
-                cinemachineCamera = FindObjectOfType<CinemachineCamera>();
+            {
+                cinemachineCamera = FindFirstObjectByType<CinemachineCamera>();
+            }
 
             if (panTarget == null && cinemachineCamera != null)
+            {
                 panTarget = cinemachineCamera.Follow;
+            }
 
             if (panTarget == null)
             {
@@ -72,44 +89,57 @@ namespace SeekerDungeon.Dungeon
             }
 
             if (cinemachineCamera != null && cinemachineCamera.Follow != panTarget)
+            {
                 cinemachineCamera.Follow = panTarget;
+            }
 
             _targetZoom = GetCurrentZoom();
+            InitializeCameraTutorialState();
         }
 
         private void Update()
         {
-            // ── Zoom (always active) ──
+            // Zoom
             HandleZoomInput();
             ApplyZoomSmoothing();
 
-            // ── Pan: only process when pointer is inside the game view ──
+            // Pan only when pointer is inside game view
             if (!IsPointerInsideGameView())
             {
                 if (_pointerDown)
+                {
                     CancelDrag();
+                }
+
+                ProcessCameraTutorialHideTimer();
                 return;
             }
 
             HandlePanInput();
+            ProcessCameraTutorialHideTimer();
         }
-
-        // ═══════════════════════════════════════════
-        //  ZOOM
-        // ═══════════════════════════════════════════
 
         private void HandleZoomInput()
         {
             // Mouse wheel
-            float scrollDelta = 0f;
+            var scrollDelta = 0f;
 #if ENABLE_INPUT_SYSTEM
             if (Mouse.current != null)
+            {
                 scrollDelta = Mouse.current.scroll.ReadValue().y;
+            }
 #else
             scrollDelta = Input.mouseScrollDelta.y;
 #endif
             if (Mathf.Abs(scrollDelta) > 0.01f)
-                _targetZoom = Mathf.Clamp(_targetZoom - Mathf.Sign(scrollDelta) * mouseWheelZoomStep, minZoom, maxZoom);
+            {
+                var nextZoom = Mathf.Clamp(_targetZoom - Mathf.Sign(scrollDelta) * mouseWheelZoomStep, minZoom, maxZoom);
+                if (Mathf.Abs(nextZoom - _targetZoom) > 0.0001f)
+                {
+                    _targetZoom = nextZoom;
+                    NotifyCameraControlUsed();
+                }
+            }
 
             // Pinch
             HandlePinchZoom();
@@ -118,25 +148,54 @@ namespace SeekerDungeon.Dungeon
         private void HandlePinchZoom()
         {
 #if ENABLE_INPUT_SYSTEM
-            if (Touchscreen.current == null) return;
-            var touches = Touchscreen.current.touches;
-            UnityEngine.InputSystem.Controls.TouchControl t0 = null, t1 = null;
-            int count = 0;
-            for (int i = 0; i < touches.Count; i++)
+            if (Touchscreen.current == null)
             {
-                if (!touches[i].isInProgress) continue;
-                if (count == 0) t0 = touches[i];
-                else if (count == 1) t1 = touches[i];
-                if (++count >= 2) break;
+                return;
             }
-            if (count < 2) return;
+
+            var touches = Touchscreen.current.touches;
+            UnityEngine.InputSystem.Controls.TouchControl t0 = null;
+            UnityEngine.InputSystem.Controls.TouchControl t1 = null;
+            var count = 0;
+            for (var i = 0; i < touches.Count; i += 1)
+            {
+                if (!touches[i].isInProgress)
+                {
+                    continue;
+                }
+
+                if (count == 0)
+                {
+                    t0 = touches[i];
+                }
+                else if (count == 1)
+                {
+                    t1 = touches[i];
+                }
+
+                count += 1;
+                if (count >= 2)
+                {
+                    break;
+                }
+            }
+
+            if (count < 2)
+            {
+                return;
+            }
+
             var curDist = Vector2.Distance(t0.position.ReadValue(), t1.position.ReadValue());
             var prevDist = Vector2.Distance(
                 t0.position.ReadValue() - t0.delta.ReadValue(),
                 t1.position.ReadValue() - t1.delta.ReadValue());
             var delta = curDist - prevDist;
 #else
-            if (Input.touchCount < 2) return;
+            if (Input.touchCount < 2)
+            {
+                return;
+            }
+
             var t0 = Input.GetTouch(0);
             var t1 = Input.GetTouch(1);
             var curDist = Vector2.Distance(t0.position, t1.position);
@@ -144,28 +203,38 @@ namespace SeekerDungeon.Dungeon
             var delta = curDist - prevDist;
 #endif
             if (Mathf.Abs(delta) > 0.01f)
-                _targetZoom = Mathf.Clamp(_targetZoom - delta * pinchZoomSensitivity, minZoom, maxZoom);
+            {
+                var nextZoom = Mathf.Clamp(_targetZoom - delta * pinchZoomSensitivity, minZoom, maxZoom);
+                if (Mathf.Abs(nextZoom - _targetZoom) > 0.0001f)
+                {
+                    _targetZoom = nextZoom;
+                    NotifyCameraControlUsed();
+                }
+            }
 
             // Cancel any single-finger drag when pinching
-            if (_pointerDown) CancelDrag();
+            if (_pointerDown)
+            {
+                CancelDrag();
+            }
         }
 
         private void ApplyZoomSmoothing()
         {
             var cur = GetCurrentZoom();
             if (Mathf.Abs(cur - _targetZoom) < 0.001f)
+            {
                 SetCurrentZoom(_targetZoom);
+            }
             else
+            {
                 SetCurrentZoom(Mathf.Lerp(cur, _targetZoom, zoomLerpSpeed * Time.unscaledDeltaTime));
+            }
         }
-
-        // ═══════════════════════════════════════════
-        //  PAN (drag only)
-        // ═══════════════════════════════════════════
 
         private void HandlePanInput()
         {
-            // ── Pointer down ──
+            // Pointer down
             if (!_pointerDown && TryGetPointerDown(out var downPos, out var downId))
             {
                 _pointerDown = true;
@@ -177,18 +246,23 @@ namespace SeekerDungeon.Dungeon
                 return;
             }
 
-            if (!_pointerDown) return;
+            if (!_pointerDown)
+            {
+                return;
+            }
 
-            // ── Pointer up ──
+            // Pointer up
             if (TryGetPointerUp(out _, out var upId) && upId == _activePointerId)
             {
                 CancelDrag();
                 return;
             }
 
-            // ── Pointer held: compute drag ──
+            // Pointer held: compute drag
             if (!TryGetPointerPosition(_activePointerId, out var currentScreenPos))
+            {
                 return;
+            }
 
             if (_pointerStartedOverUi)
             {
@@ -204,16 +278,22 @@ namespace SeekerDungeon.Dungeon
                     _lastPointerScreenPos = currentScreenPos;
                     return;
                 }
+
                 _isDragging = true;
             }
 
-            // Apply drag delta to panTarget directly -- no lerp, no smoothing.
+            // Apply drag delta to panTarget directly with no smoothing.
             if (TryScreenToWorldOnPanPlane(_lastPointerScreenPos, out var prevWorld) &&
                 TryScreenToWorldOnPanPlane(currentScreenPos, out var curWorld))
             {
                 var worldDelta = prevWorld - curWorld;
                 var pos = panTarget.position + worldDelta * dragPanSensitivity;
                 pos = ClampPan(pos);
+                if ((pos - panTarget.position).sqrMagnitude > 0.000001f)
+                {
+                    NotifyCameraControlUsed();
+                }
+
                 panTarget.position = pos;
             }
 
@@ -228,24 +308,20 @@ namespace SeekerDungeon.Dungeon
             _pointerStartedOverUi = false;
         }
 
-        // ═══════════════════════════════════════════
-        //  PUBLIC API
-        // ═══════════════════════════════════════════
-
         /// <summary>
         /// Instantly move the camera to a world position. Called once per room transition.
-        /// Sets panTarget directly -- no lerp.
+        /// Sets panTarget directly with no lerp.
         /// </summary>
         public void SnapToWorldPositionInstant(Vector3 worldPosition)
         {
-            if (panTarget == null) return;
+            if (panTarget == null)
+            {
+                return;
+            }
+
             worldPosition.z = panTarget.position.z;
             panTarget.position = ClampPan(worldPosition);
         }
-
-        // ═══════════════════════════════════════════
-        //  HELPERS
-        // ═══════════════════════════════════════════
 
         private Vector3 ClampPan(Vector3 p)
         {
@@ -259,12 +335,16 @@ namespace SeekerDungeon.Dungeon
             if (cinemachineCamera != null)
             {
                 var lens = cinemachineCamera.Lens;
-                return (lens.Orthographic || (worldCamera != null && worldCamera.orthographic))
+                return lens.Orthographic || (worldCamera != null && worldCamera.orthographic)
                     ? lens.OrthographicSize
                     : lens.FieldOfView;
             }
+
             if (worldCamera != null)
+            {
                 return worldCamera.orthographic ? worldCamera.orthographicSize : worldCamera.fieldOfView;
+            }
+
             return 5f;
         }
 
@@ -274,15 +354,31 @@ namespace SeekerDungeon.Dungeon
             {
                 var lens = cinemachineCamera.Lens;
                 if (lens.Orthographic || (worldCamera != null && worldCamera.orthographic))
+                {
                     lens.OrthographicSize = zoom;
+                }
                 else
+                {
                     lens.FieldOfView = zoom;
+                }
+
                 cinemachineCamera.Lens = lens;
                 return;
             }
-            if (worldCamera == null) return;
-            if (worldCamera.orthographic) worldCamera.orthographicSize = zoom;
-            else worldCamera.fieldOfView = zoom;
+
+            if (worldCamera == null)
+            {
+                return;
+            }
+
+            if (worldCamera.orthographic)
+            {
+                worldCamera.orthographicSize = zoom;
+            }
+            else
+            {
+                worldCamera.fieldOfView = zoom;
+            }
         }
 
         private bool TryScreenToWorldOnPanPlane(Vector2 screenPt, out Vector3 worldPt)
@@ -291,12 +387,20 @@ namespace SeekerDungeon.Dungeon
             if (worldCamera == null)
             {
                 worldCamera = Camera.main;
-                if (worldCamera == null) return false;
+                if (worldCamera == null)
+                {
+                    return false;
+                }
             }
+
             var z = panTarget != null ? panTarget.position.z : 0f;
             var plane = new Plane(Vector3.forward, new Vector3(0f, 0f, z));
             var ray = worldCamera.ScreenPointToRay(screenPt);
-            if (!plane.Raycast(ray, out var enter)) return false;
+            if (!plane.Raycast(ray, out var enter))
+            {
+                return false;
+            }
+
             worldPt = ray.GetPoint(enter);
             return true;
         }
@@ -323,7 +427,11 @@ namespace SeekerDungeon.Dungeon
                 }
             }
 
-            if (Mouse.current == null) return false;
+            if (Mouse.current == null)
+            {
+                return false;
+            }
+
             var mp = Mouse.current.position.ReadValue();
 #else
             if (Input.touchCount > 0)
@@ -342,7 +450,11 @@ namespace SeekerDungeon.Dungeon
 
         private static bool IsPointerOverUi(int pointerId)
         {
-            if (EventSystem.current == null) return false;
+            if (EventSystem.current == null)
+            {
+                return false;
+            }
+
             if (TryGetPointerPosition(pointerId, out var pos))
             {
                 var data = new PointerEventData(EventSystem.current) { position = pos };
@@ -350,43 +462,96 @@ namespace SeekerDungeon.Dungeon
                 EventSystem.current.RaycastAll(data, results);
                 return results.Count > 0;
             }
+
             return pointerId < 0
                 ? EventSystem.current.IsPointerOverGameObject()
                 : EventSystem.current.IsPointerOverGameObject(pointerId);
         }
 
-        // ── Pointer abstraction ──
-
         private static bool TryGetPointerDown(out Vector2 pos, out int id)
         {
-            pos = default; id = -1;
+            pos = default;
+            id = -1;
 #if ENABLE_INPUT_SYSTEM
             if (Touchscreen.current != null)
             {
                 var pt = Touchscreen.current.primaryTouch;
-                if (pt.press.wasPressedThisFrame) { pos = pt.position.ReadValue(); id = pt.touchId.ReadValue(); return true; }
+                if (pt.press.wasPressedThisFrame)
+                {
+                    pos = pt.position.ReadValue();
+                    id = pt.touchId.ReadValue();
+                    return true;
+                }
             }
-            if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame) { pos = Mouse.current.position.ReadValue(); id = -1; return true; }
+
+            if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
+            {
+                pos = Mouse.current.position.ReadValue();
+                id = -1;
+                return true;
+            }
 #else
-            if (Input.touchCount > 0) { var t = Input.GetTouch(0); if (t.phase == TouchPhase.Began) { pos = t.position; id = t.fingerId; return true; } }
-            if (Input.GetMouseButtonDown(0)) { pos = Input.mousePosition; id = -1; return true; }
+            if (Input.touchCount > 0)
+            {
+                var t = Input.GetTouch(0);
+                if (t.phase == TouchPhase.Began)
+                {
+                    pos = t.position;
+                    id = t.fingerId;
+                    return true;
+                }
+            }
+
+            if (Input.GetMouseButtonDown(0))
+            {
+                pos = Input.mousePosition;
+                id = -1;
+                return true;
+            }
 #endif
             return false;
         }
 
         private static bool TryGetPointerUp(out Vector2 pos, out int id)
         {
-            pos = default; id = -1;
+            pos = default;
+            id = -1;
 #if ENABLE_INPUT_SYSTEM
             if (Touchscreen.current != null)
             {
                 var pt = Touchscreen.current.primaryTouch;
-                if (pt.press.wasReleasedThisFrame) { pos = pt.position.ReadValue(); id = pt.touchId.ReadValue(); return true; }
+                if (pt.press.wasReleasedThisFrame)
+                {
+                    pos = pt.position.ReadValue();
+                    id = pt.touchId.ReadValue();
+                    return true;
+                }
             }
-            if (Mouse.current != null && Mouse.current.leftButton.wasReleasedThisFrame) { pos = Mouse.current.position.ReadValue(); id = -1; return true; }
+
+            if (Mouse.current != null && Mouse.current.leftButton.wasReleasedThisFrame)
+            {
+                pos = Mouse.current.position.ReadValue();
+                id = -1;
+                return true;
+            }
 #else
-            if (Input.touchCount > 0) { var t = Input.GetTouch(0); if (t.phase == TouchPhase.Ended || t.phase == TouchPhase.Canceled) { pos = t.position; id = t.fingerId; return true; } }
-            if (Input.GetMouseButtonUp(0)) { pos = Input.mousePosition; id = -1; return true; }
+            if (Input.touchCount > 0)
+            {
+                var t = Input.GetTouch(0);
+                if (t.phase == TouchPhase.Ended || t.phase == TouchPhase.Canceled)
+                {
+                    pos = t.position;
+                    id = t.fingerId;
+                    return true;
+                }
+            }
+
+            if (Input.GetMouseButtonUp(0))
+            {
+                pos = Input.mousePosition;
+                id = -1;
+                return true;
+            }
 #endif
             return false;
         }
@@ -398,17 +563,116 @@ namespace SeekerDungeon.Dungeon
             if (pointerId >= 0 && Touchscreen.current != null)
             {
                 var touches = Touchscreen.current.touches;
-                for (int i = 0; i < touches.Count; i++)
+                for (var i = 0; i < touches.Count; i += 1)
                 {
-                    if (touches[i].isInProgress && touches[i].touchId.ReadValue() == pointerId) { pos = touches[i].position.ReadValue(); return true; }
+                    if (touches[i].isInProgress && touches[i].touchId.ReadValue() == pointerId)
+                    {
+                        pos = touches[i].position.ReadValue();
+                        return true;
+                    }
                 }
             }
-            if (pointerId < 0 && Mouse.current != null && Mouse.current.leftButton.isPressed) { pos = Mouse.current.position.ReadValue(); return true; }
+
+            if (pointerId < 0 && Mouse.current != null && Mouse.current.leftButton.isPressed)
+            {
+                pos = Mouse.current.position.ReadValue();
+                return true;
+            }
 #else
-            if (pointerId >= 0) { for (int i = 0; i < Input.touchCount; i++) { var t = Input.GetTouch(i); if (t.fingerId == pointerId && t.phase != TouchPhase.Ended && t.phase != TouchPhase.Canceled) { pos = t.position; return true; } } }
-            if (pointerId < 0 && Input.GetMouseButton(0)) { pos = Input.mousePosition; return true; }
+            if (pointerId >= 0)
+            {
+                for (var i = 0; i < Input.touchCount; i += 1)
+                {
+                    var t = Input.GetTouch(i);
+                    if (t.fingerId == pointerId && t.phase != TouchPhase.Ended && t.phase != TouchPhase.Canceled)
+                    {
+                        pos = t.position;
+                        return true;
+                    }
+                }
+            }
+
+            if (pointerId < 0 && Input.GetMouseButton(0))
+            {
+                pos = Input.mousePosition;
+                return true;
+            }
 #endif
             return false;
+        }
+
+        private void InitializeCameraTutorialState()
+        {
+            _cameraTutorialCompleted = PlayerPrefs.GetInt(GetCameraTutorialPrefKey(), 0) == 1;
+            SetCameraTutorialVisible(!_cameraTutorialCompleted);
+        }
+
+        private void NotifyCameraControlUsed()
+        {
+            if (_cameraTutorialCompleted)
+            {
+                return;
+            }
+
+            _cameraTutorialCompleted = true;
+            PlayerPrefs.SetInt(GetCameraTutorialPrefKey(), 1);
+            PlayerPrefs.Save();
+
+            if (cameraControlsTutorialCanvas == null || !cameraControlsTutorialCanvas.activeSelf)
+            {
+                return;
+            }
+
+            _cameraTutorialHideQueued = true;
+            _cameraTutorialHideAtUnscaledTime = Time.unscaledTime + Mathf.Max(0f, tutorialHideDelaySeconds);
+        }
+
+        private void ProcessCameraTutorialHideTimer()
+        {
+            if (!_cameraTutorialHideQueued)
+            {
+                return;
+            }
+
+            if (Time.unscaledTime < _cameraTutorialHideAtUnscaledTime)
+            {
+                return;
+            }
+
+            _cameraTutorialHideQueued = false;
+            _cameraTutorialHideAtUnscaledTime = -1f;
+            SetCameraTutorialVisible(false);
+        }
+
+        private void SetCameraTutorialVisible(bool isVisible)
+        {
+            if (cameraControlsTutorialCanvas == null)
+            {
+                return;
+            }
+
+            if (cameraControlsTutorialCanvas.activeSelf == isVisible)
+            {
+                return;
+            }
+
+            cameraControlsTutorialCanvas.SetActive(isVisible);
+        }
+
+        private string GetCameraTutorialPrefKey()
+        {
+            var walletKey = Web3.Wallet?.Account?.PublicKey?.Key;
+            if (string.IsNullOrWhiteSpace(walletKey))
+            {
+                walletKey = LGManager.Instance?.CurrentPlayerState?.Owner?.Key;
+            }
+
+            if (string.IsNullOrWhiteSpace(walletKey))
+            {
+                return CameraTutorialCompletedPrefKeyPrefix;
+            }
+
+            return $"{CameraTutorialCompletedPrefKeyPrefix}.{walletKey}";
         }
     }
 }

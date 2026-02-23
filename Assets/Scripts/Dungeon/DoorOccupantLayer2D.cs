@@ -41,12 +41,14 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private float despawnPopTargetScaleMultiplier = 0.58f;
         [SerializeField] private bool logOccupantDebug;
         private const int MaxVisibleOccupants = 5;
+        private const int LocalReservedSlotIndex = 0;
 
         private readonly Dictionary<string, DoorOccupantVisual2D> _activeByOccupantKey = new();
         private readonly Dictionary<string, int> _slotByOccupantKey = new();
         private readonly Queue<DoorOccupantVisual2D> _pooledVisuals = new();
         private readonly List<string> _releaseBuffer = new();
         private bool _suppressSpawnPop;
+        private bool _hasLocalOccupantInThisDoor;
 
         public void SetVisualSpawnRoot(Transform spawnRoot)
         {
@@ -59,6 +61,15 @@ namespace SeekerDungeon.Dungeon
             if (logOccupantDebug)
             {
                 Debug.Log($"[OccDbg][DoorLayer:{name}] suppressSpawnPop={_suppressSpawnPop}");
+            }
+        }
+
+        public void SetLocalOccupantPresent(bool isPresent)
+        {
+            _hasLocalOccupantInThisDoor = isPresent;
+            if (logOccupantDebug)
+            {
+                Debug.Log($"[OccDbg][DoorLayer:{name}] localOccupantPresent={_hasLocalOccupantInThisDoor}");
             }
         }
 
@@ -92,6 +103,12 @@ namespace SeekerDungeon.Dungeon
             if (visualSlots == null || visualSlots.Length == 0)
             {
                 return false;
+            }
+
+            if (_hasLocalOccupantInThisDoor &&
+                TryGetSlotPlacement(LocalReservedSlotIndex, out worldPosition, out facingDirection))
+            {
+                return true;
             }
 
             var occupiedVisibleCount = _activeByOccupantKey.Count;
@@ -135,6 +152,14 @@ namespace SeekerDungeon.Dungeon
             var visibleCount = Mathf.Min(MaxVisibleOccupants, visualSlots.Length, occupants.Count);
             var resolvedKeysByIndex = new string[visibleCount];
             var newVisualIndex = 0;
+            if (_hasLocalOccupantInThisDoor &&
+                LocalReservedSlotIndex >= 0 &&
+                LocalReservedSlotIndex < visualSlots.Length &&
+                visualSlots[LocalReservedSlotIndex] != null &&
+                visualSlots[LocalReservedSlotIndex].Anchor != null)
+            {
+                usedSlotIndices.Add(LocalReservedSlotIndex);
+            }
             if (logOccupantDebug)
             {
                 Debug.Log(
@@ -300,15 +325,23 @@ namespace SeekerDungeon.Dungeon
             for (var i = 0; i < _releaseBuffer.Count; i += 1)
             {
                 var key = _releaseBuffer[i];
+                var keepLockedVisual = false;
                 if (_activeByOccupantKey.TryGetValue(key, out var visual))
                 {
                     var lockedWalletKey = ResolveWalletKeyFromOccupantKey(key);
                     if (DuelVisualLockRegistry.IsLocked(lockedWalletKey))
                     {
-                        continue;
+                        keepLockedVisual = true;
                     }
+                    else
+                    {
+                        ReturnVisualToPool(visual, animate: true);
+                    }
+                }
 
-                    ReturnVisualToPool(visual, animate: true);
+                if (keepLockedVisual)
+                {
+                    continue;
                 }
 
                 OccupantPresenceTracker.Forget(key);
@@ -353,6 +386,11 @@ namespace SeekerDungeon.Dungeon
 
             for (var index = 0; index < visualSlots.Length; index += 1)
             {
+                if (_hasLocalOccupantInThisDoor && index == LocalReservedSlotIndex)
+                {
+                    continue;
+                }
+
                 if (usedSlotIndices.Contains(index))
                 {
                     continue;
@@ -490,6 +528,7 @@ namespace SeekerDungeon.Dungeon
     public sealed class DoorOccupantVisual2D : MonoBehaviour
     {
         private const int BaseSortingOrder = 10;
+        private const float SortingUnitsPerWorldUnit = 100f;
         private const float MinScaleMultiplier = 0.05f;
         private static readonly Color ActiveNameColor = Color.white;
         private static readonly Color IdleNameColor = new(0.84f, 0.84f, 0.84f, 1f);
@@ -563,7 +602,10 @@ namespace SeekerDungeon.Dungeon
 
             if (_spriteRenderers != null)
             {
-                var sortingOffset = BaseSortingOrder + stackIndex;
+                // Keep inter-player layering stable by world Y.
+                // Lower Y renders in front (higher sorting order).
+                var ySort = Mathf.RoundToInt(-transform.position.y * SortingUnitsPerWorldUnit);
+                var sortingOffset = BaseSortingOrder + (ySort * 10) + stackIndex;
                 for (var index = 0; index < _spriteRenderers.Length; index += 1)
                 {
                     var spriteRenderer = _spriteRenderers[index];

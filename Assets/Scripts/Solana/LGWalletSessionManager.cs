@@ -145,6 +145,7 @@ namespace SeekerDungeon.Solana
 
         [Header("Session Defaults")]
         [SerializeField] private bool autoBeginSessionAfterConnect;
+        private const bool AllowAutoBeginSessionOnMobile = false;
         [SerializeField] private int sessionDurationMinutes = 60;
         [SerializeField] private ulong defaultSessionMaxTokenSpend = 200_000_000UL;
         // Session signer should stay lightly funded for tx fees, but we avoid
@@ -378,7 +379,14 @@ namespace SeekerDungeon.Solana
 
                 if (autoBeginSessionAfterConnect)
                 {
-                    await BeginGameplaySessionAsync();
+                    if (ShouldAutoBeginSessionAfterConnect())
+                    {
+                        await BeginGameplaySessionAsync();
+                    }
+                    else
+                    {
+                        EmitStatus("Auto-begin session skipped on mobile; waiting for explicit user action.");
+                    }
                 }
 
                 return true;
@@ -638,6 +646,26 @@ namespace SeekerDungeon.Solana
             _isSessionSignerFunded = true;
             OnSessionStateChanged?.Invoke(true);
             EmitStatus($"[{attemptTag}] Session started. Session key={_sessionSignerAccount.PublicKey} tx={signature} funded={_isSessionSignerFunded}");
+
+            return true;
+        }
+
+        private bool ShouldAutoBeginSessionAfterConnect()
+        {
+            if (!autoBeginSessionAfterConnect)
+            {
+                return false;
+            }
+
+            if (Application.isEditor)
+            {
+                return true;
+            }
+
+            if (Application.isMobilePlatform)
+            {
+                return AllowAutoBeginSessionOnMobile;
+            }
 
             return true;
         }

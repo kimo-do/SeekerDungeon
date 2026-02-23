@@ -97,6 +97,7 @@ pub fn handler(ctx: Context<LeaveBossFight>) -> Result<()> {
 
     let room = &mut ctx.accounts.room;
     let clock = Clock::get()?;
+    ctx.accounts.player_account.require_in_dungeon()?;
 
     require!(room.center_type == CENTER_BOSS, ChainDepthError::NoBoss);
     require!(

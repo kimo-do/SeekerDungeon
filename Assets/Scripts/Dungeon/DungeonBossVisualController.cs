@@ -42,6 +42,8 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private bool forceAliveAnimationStateWheneverAlive = true;
         [SerializeField] private Material deadMaterialOverride;
         [SerializeField] private bool logDebugMessages;
+        [Header("Combat Animation")]
+        [SerializeField] private BossCombatAnimator combatAnimator;
         private bool _warnedMissingHealthBar;
         private BossHealthBarView _spawnedHealthBarView;
         private bool _hadMonsterState;
@@ -67,6 +69,7 @@ namespace SeekerDungeon.Dungeon
             var isDeadOnFirstApply = monster != null && isDead && !hadMonsterStateBeforeApply;
             var activeRoot = ApplyVariant(monster);
             UpdateBossJobVfx(activeRoot, monster, bossOccupants);
+            UpdateBossCombatAnimation(activeRoot, monster, fighterCount);
             ApplyDeadMaterialState(activeRoot, isDead);
             ApplyDeathAnimationState(activeRoot, isDead, didTransitionToDead, isDeadOnFirstApply);
             if (didTransitionToDead)
@@ -110,6 +113,7 @@ namespace SeekerDungeon.Dungeon
             _warnedMissingVariantForMonster = false;
             _baseSharedMaterialsByRenderer.Clear();
             SetAllBossJobVfxActive(false);
+            ResolveCombatAnimator()?.SetCombatActive(false);
         }
 
         private GameObject ApplyVariant(MonsterView monster)
@@ -827,6 +831,30 @@ namespace SeekerDungeon.Dungeon
 
                 controller.SetJobActive(active);
             }
+        }
+
+        private void UpdateBossCombatAnimation(GameObject activeRoot, MonsterView monster, int fighterCount)
+        {
+            var resolvedCombatAnimator = ResolveCombatAnimator();
+            if (resolvedCombatAnimator == null)
+            {
+                return;
+            }
+
+            resolvedCombatAnimator.SetAnimatorRoot(activeRoot != null ? activeRoot.transform : transform);
+            var shouldAttack = monster != null && !monster.IsDead && fighterCount > 0;
+            resolvedCombatAnimator.SetCombatActive(shouldAttack);
+        }
+
+        private BossCombatAnimator ResolveCombatAnimator()
+        {
+            if (combatAnimator != null)
+            {
+                return combatAnimator;
+            }
+
+            combatAnimator = GetComponentInChildren<BossCombatAnimator>(true);
+            return combatAnimator;
         }
     }
 }

@@ -131,6 +131,7 @@ pub fn handler(ctx: Context<JoinJobWithSession>, direction: u8) -> Result<()> {
     let player_key = ctx.accounts.player.key();
     let clock = Clock::get()?;
     let direction_index = direction as usize;
+    player_account.require_in_dungeon()?;
 
     let room = &mut ctx.accounts.room;
     require!(room.is_rubble(direction), ChainDepthError::NotRubble);

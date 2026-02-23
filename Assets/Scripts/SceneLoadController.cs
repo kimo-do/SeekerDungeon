@@ -18,10 +18,18 @@ namespace SeekerDungeon
         [SerializeField] private Color fadeColor = Color.black;
         [SerializeField] private int canvasSortOrder = 10000;
         [SerializeField] private float maxBlackHoldSeconds = 20f;
+        [Header("Loading Icon Animation")]
+        [SerializeField] private List<Sprite> loadingAnimationSprites = new();
+        [SerializeField] private float loadingAnimationFps = 12f;
+        [SerializeField] private Vector2 loadingIconSize = new(160f, 160f);
+        [SerializeField] private Vector2 loadingIconAnchoredPosition = new(0f, -220f);
 
         private CanvasGroup _fadeCanvasGroup;
         private TextMeshProUGUI _transitionText;
+        private Image _loadingIconImage;
         private bool _isTransitioning;
+        private bool _isLoadingAnimationRunning;
+        private int _loadingAnimationRunId;
         private readonly Dictionary<string, int> _blackScreenHoldsByReason = new();
         private int _blackScreenHoldCount;
 
@@ -81,6 +89,7 @@ namespace SeekerDungeon
                 }
 
                 await FadeAsync(1f);
+                StartLoadingAnimation();
 
                 var sceneLoadOperation = SceneManager.LoadSceneAsync(sceneName, loadSceneMode);
                 if (sceneLoadOperation == null)
@@ -97,11 +106,13 @@ namespace SeekerDungeon
 
                 await UniTask.NextFrame();
                 await WaitForBlackScreenHoldsAsync();
+                StopLoadingAnimation();
                 await FadeAsync(0f);
                 return true;
             }
             finally
             {
+                StopLoadingAnimation();
                 _isTransitioning = false;
             }
         }
@@ -247,6 +258,21 @@ namespace SeekerDungeon
             _transitionText.alignment = TextAlignmentOptions.Center;
             _transitionText.fontStyle = FontStyles.Italic;
             textObject.SetActive(false);
+
+            // Loading icon near the lower center of the screen
+            var loadingIconObject = new GameObject("LoadingIcon");
+            loadingIconObject.transform.SetParent(canvasObject.transform, false);
+
+            var loadingIconTransform = loadingIconObject.AddComponent<RectTransform>();
+            loadingIconTransform.anchorMin = new Vector2(0.5f, 0.5f);
+            loadingIconTransform.anchorMax = new Vector2(0.5f, 0.5f);
+            loadingIconTransform.pivot = new Vector2(0.5f, 0.5f);
+            loadingIconTransform.sizeDelta = loadingIconSize;
+            loadingIconTransform.anchoredPosition = loadingIconAnchoredPosition;
+
+            _loadingIconImage = loadingIconObject.AddComponent<Image>();
+            _loadingIconImage.preserveAspect = true;
+            _loadingIconImage.enabled = false;
         }
 
         private async UniTask FadeAsync(float targetAlpha)
@@ -288,6 +314,52 @@ namespace SeekerDungeon
 
             _fadeCanvasGroup.alpha = alpha;
             _fadeCanvasGroup.blocksRaycasts = alpha > 0.001f;
+        }
+
+        private void StartLoadingAnimation()
+        {
+            if (_loadingIconImage == null || loadingAnimationSprites == null || loadingAnimationSprites.Count == 0)
+            {
+                return;
+            }
+
+            var iconTransform = _loadingIconImage.rectTransform;
+            iconTransform.sizeDelta = loadingIconSize;
+            iconTransform.anchoredPosition = loadingIconAnchoredPosition;
+
+            _loadingAnimationRunId += 1;
+            _isLoadingAnimationRunning = true;
+            _loadingIconImage.enabled = true;
+            _loadingIconImage.sprite = loadingAnimationSprites[0];
+            AnimateLoadingIconAsync(_loadingAnimationRunId).Forget();
+        }
+
+        private void StopLoadingAnimation()
+        {
+            _isLoadingAnimationRunning = false;
+            if (_loadingIconImage != null)
+            {
+                _loadingIconImage.enabled = false;
+                _loadingIconImage.sprite = null;
+            }
+        }
+
+        private async UniTaskVoid AnimateLoadingIconAsync(int runId)
+        {
+            if (_loadingIconImage == null || loadingAnimationSprites == null || loadingAnimationSprites.Count == 0)
+            {
+                return;
+            }
+
+            var secondsPerFrame = 1f / Mathf.Max(1f, loadingAnimationFps);
+            var frameIndex = 0;
+
+            while (_isLoadingAnimationRunning && runId == _loadingAnimationRunId)
+            {
+                _loadingIconImage.sprite = loadingAnimationSprites[frameIndex];
+                frameIndex = (frameIndex + 1) % loadingAnimationSprites.Count;
+                await UniTask.Delay(System.TimeSpan.FromSeconds(secondsPerFrame), DelayType.UnscaledDeltaTime);
+            }
         }
     }
 }

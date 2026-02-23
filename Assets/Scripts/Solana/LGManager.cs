@@ -1717,7 +1717,7 @@ namespace SeekerDungeon.Solana
                 return TxResult.Fail("Center empty");
             }
 
-            if (room.CenterType == LGConfig.CENTER_CHEST)
+            if (room.CenterType == LGConfig.CENTER_CHEST || room.CenterType == LGConfig.CENTER_BONE_CHEST)
             {
                 Log("Center action: chest loot.");
                 return await LootChest();
@@ -1769,7 +1769,9 @@ namespace SeekerDungeon.Solana
                 }
 
                 var result = await _client.GetBossFightAccountAsync(bossFightPda.Key, Commitment.Confirmed);
-                return result.WasSuccessful && result.ParsedResult != null;
+                return result.WasSuccessful &&
+                       result.ParsedResult != null &&
+                       result.ParsedResult.IsActive;
             }
             catch
             {
@@ -2099,6 +2101,13 @@ namespace SeekerDungeon.Solana
             {
                 LogError("Wallet not connected");
                 return TxResult.Fail("Wallet not connected");
+            }
+
+            await FetchPlayerState();
+            if (CurrentPlayerState != null && CurrentPlayerState.InDungeon)
+            {
+                Log("EnterDungeonAtStart blocked: player is already in dungeon.");
+                return TxResult.Fail("Already in dungeon");
             }
 
             if (CurrentGlobalState == null)
@@ -3409,6 +3418,17 @@ namespace SeekerDungeon.Solana
             {
                 LogError("Wallet not connected");
                 return TxResult.Fail("Wallet not connected");
+            }
+
+            if (CurrentPlayerState == null)
+            {
+                await FetchPlayerState();
+            }
+
+            if (CurrentPlayerState != null && !CurrentPlayerState.InDungeon)
+            {
+                Log("MovePlayer blocked: player is not in dungeon (likely death/exit already applied).");
+                return TxResult.Fail("You are no longer in the dungeon.");
             }
 
             Log($"Moving player to ({newX}, {newY})...");

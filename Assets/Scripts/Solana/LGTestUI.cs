@@ -745,10 +745,11 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
-            if (state.CenterType == LGConfig.CENTER_CHEST)
+            if (state.CenterType == LGConfig.CENTER_CHEST || state.CenterType == LGConfig.CENTER_BONE_CHEST)
             {
                 var lootedCount = state.LootedCount;
-                SetLabel(_chestLabel, $"Center: Chest ({lootedCount} looted)");
+                var chestName = state.CenterType == LGConfig.CENTER_BONE_CHEST ? "Bone Chest" : "Chest";
+                SetLabel(_chestLabel, $"Center: {chestName} ({lootedCount} looted)");
                 _btnLootChest.text = "Loot Center";
                 SetButtonEnabled(_btnLootChest, true);
                 return;
@@ -787,6 +788,7 @@ namespace SeekerDungeon.Solana
             {
                 LGConfig.CENTER_EMPTY => "Empty",
                 LGConfig.CENTER_CHEST => "Chest",
+                LGConfig.CENTER_BONE_CHEST => "Bone Chest",
                 LGConfig.CENTER_BOSS => "Boss",
                 _ => "Unknown"
             };

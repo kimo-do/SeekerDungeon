@@ -59,6 +59,10 @@ namespace SeekerDungeon.Dungeon
         private bool _cachedIsLocalBossFighter;
         private int _bossTickRateLimitFailureCount;
         private int _bossTickFailureCount;
+        private bool _suppressBossAutoTickForRoom;
+        private sbyte _suppressedBossRoomX;
+        private sbyte _suppressedBossRoomY;
+        private bool _handledOutOfDungeonExit;
 
         private void Awake()
         {
@@ -166,8 +170,27 @@ namespace SeekerDungeon.Dungeon
                 _cachedIsLocalBossFighter = false;
                 _bossTickFailureCount = 0;
                 _bossTickRateLimitFailureCount = 0;
+
+                // If on-chain state says we are out of dungeon (death/extract),
+                // force a single client transition back to menu.
+                if (!_handledOutOfDungeonExit)
+                {
+                    if (dungeonInputController == null)
+                    {
+                        dungeonInputController = UnityEngine.Object.FindFirstObjectByType<DungeonInputController>();
+                    }
+
+                    if (dungeonInputController != null)
+                    {
+                        _handledOutOfDungeonExit = true;
+                        await dungeonInputController.HandleDeathExitAlreadyAppliedAsync("auto_loop_player_out_of_dungeon");
+                    }
+                }
+
                 return idlePollSeconds;
             }
+
+            _handledOutOfDungeonExit = false;
 
             // fireEvent: false avoids triggering snapshot rebuilds / pop-in / camera snaps
             var room = await lgManager.FetchRoomState(player.CurrentRoomX, player.CurrentRoomY, fireEvent: false);
@@ -288,7 +311,29 @@ namespace SeekerDungeon.Dungeon
                 _cachedIsLocalBossFighter = false;
                 _bossTickFailureCount = 0;
                 _bossTickRateLimitFailureCount = 0;
+                _suppressBossAutoTickForRoom = false;
                 return -1f;
+            }
+
+            if (_suppressBossAutoTickForRoom &&
+                room.X == _suppressedBossRoomX &&
+                room.Y == _suppressedBossRoomY)
+            {
+                var nowForSuppressedCheck = Time.unscaledTime;
+                if (nowForSuppressedCheck >= _nextBossFighterCheckAt)
+                {
+                    _cachedIsLocalBossFighter = await ResolveLocalBossFighterFromPdaAsync(room);
+                    _nextBossFighterCheckAt = nowForSuppressedCheck + 2f;
+                    if (_cachedIsLocalBossFighter)
+                    {
+                        _suppressBossAutoTickForRoom = false;
+                    }
+                }
+
+                if (_suppressBossAutoTickForRoom)
+                {
+                    return -1f;
+                }
             }
 
             var isLocalFighter = dungeonManager != null && dungeonManager.IsLocalPlayerFightingBoss;
@@ -339,6 +384,53 @@ namespace SeekerDungeon.Dungeon
 
                         return Mathf.Max(minRecheckSeconds, idlePollSeconds);
                     }
+
+                    // Boss auto-tick can transiently think we're still a fighter
+                    // (stale local state / stale occupancy), then onchain rejects
+                    // with NoActiveJob. Treat this as "not an active boss fighter"
+                    // and pause auto-tick until fighter state is re-confirmed.
+                    _cachedIsLocalBossFighter = false;
+                    _bossTickFailureCount = 0;
+                    _bossTickRateLimitFailureCount = 0;
+                    _suppressBossAutoTickForRoom = true;
+                    _suppressedBossRoomX = room.X;
+                    _suppressedBossRoomY = room.Y;
+                    _nextBossFighterCheckAt = now + Mathf.Max(2f, bossTickRetryCooldownSeconds);
+                    _nextBossTickAt = now + Mathf.Max(2f, bossTickRetryCooldownSeconds);
+                    if (dungeonManager != null)
+                    {
+                        dungeonManager.ClearOptimisticBossFight();
+                        await dungeonManager.RefreshCurrentRoomSnapshotAsync();
+                    }
+
+                    GameplayActionLog.AutoComplete("CenterBoss", "TickBossFight", false, tickResult.Error);
+                    Log("Boss tick returned NoActiveJob while still in-dungeon. Auto-tick paused until fighter state is revalidated.");
+                    return Mathf.Max(minRecheckSeconds, _nextBossTickAt - now);
+                }
+
+                if (IsLikelyMissingBossFightContextError(tickResult.Error))
+                {
+                    // Treat missing/invalid boss-fight context as not being an
+                    // active fighter for this room and suppress retries until
+                    // fighter PDA state is re-validated.
+                    _cachedIsLocalBossFighter = false;
+                    _bossTickFailureCount = 0;
+                    _bossTickRateLimitFailureCount = 0;
+                    _suppressBossAutoTickForRoom = true;
+                    _suppressedBossRoomX = room.X;
+                    _suppressedBossRoomY = room.Y;
+                    _nextBossFighterCheckAt = now + Mathf.Max(2f, bossTickRetryCooldownSeconds);
+                    _nextBossTickAt = now + Mathf.Max(2f, bossTickRetryCooldownSeconds);
+                    if (dungeonManager != null)
+                    {
+                        dungeonManager.ClearOptimisticBossFight();
+                    }
+
+                    GameplayActionLog.AutoComplete("CenterBoss", "TickBossFight", false, tickResult.Error);
+                    Log(
+                        "Boss tick returned missing boss-fight context " +
+                        "(NotBossFighter/AccountNotInitialized). Auto-tick paused until fighter state is revalidated.");
+                    return Mathf.Max(minRecheckSeconds, _nextBossTickAt - now);
                 }
 
                 if (logBossCombatTelemetry &&
@@ -412,6 +504,27 @@ namespace SeekerDungeon.Dungeon
             GameplayActionLog.AutoComplete("CenterBoss", "TickBossFight", true, tickResult.Signature);
             _nextBossTickAt = now + Mathf.Max(0.2f, bossTickIntervalSeconds);
             await WaitForBossStatePropagationAsync(room, hpBeforeTick, cancellationToken);
+
+            // Successful boss tick can still kill the player on-chain and apply
+            // death-exit in the same instruction. If that happened, exit immediately.
+            // Always fetch fresh state here because CurrentPlayerState can still
+            // be stale in the same frame that on-chain death-exit was applied.
+            var refreshedPlayerAfterTick = await lgManager.FetchPlayerState();
+            if (refreshedPlayerAfterTick != null && !refreshedPlayerAfterTick.InDungeon)
+            {
+                if (dungeonInputController == null)
+                {
+                    dungeonInputController = UnityEngine.Object.FindFirstObjectByType<DungeonInputController>();
+                }
+
+                if (dungeonInputController != null)
+                {
+                    Log("Boss tick succeeded but player is out of dungeon; handling death-exit transition.");
+                    await dungeonInputController.HandleDeathExitAlreadyAppliedAsync("boss_tick_success_out_of_dungeon");
+                }
+
+                return Mathf.Max(minRecheckSeconds, idlePollSeconds);
+            }
 
             if (logBossCombatTelemetry)
             {
@@ -488,6 +601,19 @@ namespace SeekerDungeon.Dungeon
             }
 
             return error.IndexOf("NoActiveJob", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsLikelyMissingBossFightContextError(string error)
+        {
+            if (string.IsNullOrWhiteSpace(error))
+            {
+                return false;
+            }
+
+            return
+                error.IndexOf("NotBossFighter", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                error.IndexOf("AccountNotInitialized", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                error.IndexOf("0xbc4", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private async UniTask LogBossCombatTelemetryAsync(

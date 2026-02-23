@@ -99,6 +99,8 @@ pub fn handler(ctx: Context<AcceptDuelChallenge>, _challenge_seed: u64) -> Resul
     );
 
     let clock = Clock::get()?;
+    ctx.accounts.challenger_player_account.require_in_dungeon()?;
+    ctx.accounts.opponent_player_account.require_in_dungeon()?;
     ctx.accounts.opponent_player_account.mark_active(clock.slot);
     require!(
         clock.slot <= duel_challenge.expires_at_slot,

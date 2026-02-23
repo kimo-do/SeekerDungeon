@@ -37,12 +37,18 @@ namespace SeekerDungeon.Dungeon
         private readonly Dictionary<RoomWallState, GameObject> _visualByState = new();
         private readonly Dictionary<byte, GameObject> _lockedVisualByKind = new();
         private RubbleJobVfxController[] _rubbleJobVfxControllers = Array.Empty<RubbleJobVfxController>();
+        private GameObject _lastResolvedLockedVisualForOpenState;
 
         /// <summary>
         /// The VisualInteractable on the currently active state visual, or null.
         /// Updated every time ApplyDoorState swaps the active child.
         /// </summary>
         public VisualInteractable ActiveVisualInteractable { get; private set; }
+
+        public void ClearCachedDoorThemeState()
+        {
+            _lastResolvedLockedVisualForOpenState = null;
+        }
 
         private void Awake()
         {
@@ -194,16 +200,25 @@ namespace SeekerDungeon.Dungeon
                 _lockedVisualByKind.TryGetValue(door.LockKind, out var lockedVisual) &&
                 lockedVisual != null)
             {
+                _lastResolvedLockedVisualForOpenState = lockedVisual;
                 return lockedVisual;
             }
 
-            if (keepLockedDoorVisualWhenOpen &&
-                wallState == RoomWallState.Open &&
-                door.LockKind != 0 &&
-                _lockedVisualByKind.TryGetValue(door.LockKind, out var unlockedLockVisual) &&
-                unlockedLockVisual != null)
+            if (keepLockedDoorVisualWhenOpen && wallState == RoomWallState.Open)
             {
-                return unlockedLockVisual;
+                if (door.LockKind != 0 &&
+                    _lockedVisualByKind.TryGetValue(door.LockKind, out var unlockedLockVisual) &&
+                    unlockedLockVisual != null)
+                {
+                    _lastResolvedLockedVisualForOpenState = unlockedLockVisual;
+                    return unlockedLockVisual;
+                }
+
+                if (_lastResolvedLockedVisualForOpenState != null &&
+                    IsLocalVisual(_lastResolvedLockedVisualForOpenState))
+                {
+                    return _lastResolvedLockedVisualForOpenState;
+                }
             }
 
             if (_visualByState.TryGetValue(wallState, out var visual))

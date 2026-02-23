@@ -46,6 +46,7 @@ namespace SeekerDungeon.Dungeon
         private string _lastAppliedLocalDisplayName = string.Empty;
         private bool _isLocalPlayerFightingBoss;
         private CancellationTokenSource _roomOccupantPollCts;
+        private CancellationTokenSource _deferredRoomRecoveryCts;
 
         // Optimistic job state: bridges the gap between a confirmed JoinJob TX
         // and the RPC returning updated data. Prevents stale reads from reverting
@@ -197,12 +198,19 @@ namespace SeekerDungeon.Dungeon
         {
             if (_roomOccupantPollCts == null)
             {
+                _deferredRoomRecoveryCts?.Cancel();
+                _deferredRoomRecoveryCts?.Dispose();
+                _deferredRoomRecoveryCts = null;
                 return;
             }
 
             _roomOccupantPollCts.Cancel();
             _roomOccupantPollCts.Dispose();
             _roomOccupantPollCts = null;
+
+            _deferredRoomRecoveryCts?.Cancel();
+            _deferredRoomRecoveryCts?.Dispose();
+            _deferredRoomRecoveryCts = null;
         }
 
         private async UniTaskVoid PollRoomOccupantsLoopAsync(CancellationToken cancellationToken)
@@ -244,7 +252,11 @@ namespace SeekerDungeon.Dungeon
             await TryRefreshCurrentRoomSnapshotAsync(RoomFetchRetryAttempts, RoomFetchRetryDelayMs);
         }
 
-        private async UniTask<bool> TryRefreshCurrentRoomSnapshotAsync(int maxFetchAttempts, int retryDelayMs)
+        private async UniTask<bool> TryRefreshCurrentRoomSnapshotAsync(
+            int maxFetchAttempts,
+            int retryDelayMs,
+            int? fixedRoomX = null,
+            int? fixedRoomY = null)
         {
             if (_lgManager == null)
             {
@@ -261,16 +273,26 @@ namespace SeekerDungeon.Dungeon
                 Chaindepth.Accounts.RoomAccount room = null;
                 for (var attempt = 0; attempt < Math.Max(1, maxFetchAttempts); attempt += 1)
                 {
+                    if (fixedRoomX.HasValue && fixedRoomY.HasValue)
+                    {
+                        _currentRoomX = fixedRoomX.Value;
+                        _currentRoomY = fixedRoomY.Value;
+                    }
+
                     room = await _lgManager.FetchRoomState(_currentRoomX, _currentRoomY);
                     if (room != null)
                     {
                         break;
                     }
 
-                    // Re-resolve room coordinates during eventual-consistency windows
-                    // so we don't get stuck querying a stale target.
-                    await _lgManager.FetchPlayerState();
-                    await ResolveCurrentRoomCoordinatesAsync();
+                    if (!fixedRoomX.HasValue || !fixedRoomY.HasValue)
+                    {
+                        // Re-resolve room coordinates during eventual-consistency windows
+                        // so we don't get stuck querying a stale target.
+                        await _lgManager.FetchPlayerState();
+                        await ResolveCurrentRoomCoordinatesAsync();
+                    }
+
                     if (attempt < maxFetchAttempts - 1)
                     {
                         await UniTask.Delay(Math.Max(1, retryDelayMs));
@@ -519,10 +541,15 @@ namespace SeekerDungeon.Dungeon
 
             try
             {
+                _deferredRoomRecoveryCts?.Cancel();
+                _deferredRoomRecoveryCts?.Dispose();
+                _deferredRoomRecoveryCts = null;
                 _localPlacementSignature = string.Empty;
                 _hasSnappedCameraForRoom = false;
                 _roomController?.PrepareForRoomTransition();
                 await ResolveCurrentRoomCoordinatesAsync();
+                var transitionTargetX = _currentRoomX;
+                var transitionTargetY = _currentRoomY;
 
                 // Patch CurrentPlayerState so that LGManager (and the input
                 // controller) immediately see the correct room coordinates.
@@ -536,27 +563,28 @@ namespace SeekerDungeon.Dungeon
 
                 GameplayActionLog.RoomTransitionStart(prevX, prevY, _currentRoomX, _currentRoomY);
 
-                var refreshed = await TryRefreshCurrentRoomSnapshotAsync(RoomFetchRetryAttempts, RoomFetchRetryDelayMs);
+                var refreshed = await TryRefreshCurrentRoomSnapshotAsync(
+                    RoomFetchRetryAttempts + 4,
+                    RoomFetchRetryDelayMs,
+                    transitionTargetX,
+                    transitionTargetY);
                 if (!refreshed)
                 {
-                    // If the optimistic target read missed, re-sync from player state
-                    // before giving up. This avoids getting stuck on stale room coords.
-                    await _lgManager.FetchPlayerState();
-                    await ResolveCurrentRoomCoordinatesAsync();
-                    refreshed = await TryRefreshCurrentRoomSnapshotAsync(RoomFetchRetryAttempts, RoomFetchRetryDelayMs);
+                    // Retry once more locked to expected destination to avoid
+                    // stale player-state reads snapping to the previous room.
+                    refreshed = await TryRefreshCurrentRoomSnapshotAsync(
+                        RoomFetchRetryAttempts + 8,
+                        RoomFetchRetryDelayMs,
+                        transitionTargetX,
+                        transitionTargetY);
                     if (!refreshed)
                     {
                         // Keep visual and interactive state aligned with the rendered room
                         // when target-room reads are still unavailable.
                         _currentRoomX = prevX;
                         _currentRoomY = prevY;
-                        if (_lgManager?.CurrentPlayerState != null)
-                        {
-                            _lgManager.CurrentPlayerState.CurrentRoomX = (sbyte)prevX;
-                            _lgManager.CurrentPlayerState.CurrentRoomY = (sbyte)prevY;
-                        }
-
                         await TryRefreshCurrentRoomSnapshotAsync(2, 120);
+                        ScheduleDeferredRoomRecovery(transitionTargetX, transitionTargetY);
                         return;
                     }
                 }
@@ -708,6 +736,55 @@ namespace SeekerDungeon.Dungeon
                 _currentRoomX = _lgManager.CurrentPlayerState.CurrentRoomX;
                 _currentRoomY = _lgManager.CurrentPlayerState.CurrentRoomY;
             }
+        }
+
+        private void ScheduleDeferredRoomRecovery(int targetRoomX, int targetRoomY)
+        {
+            _deferredRoomRecoveryCts?.Cancel();
+            _deferredRoomRecoveryCts?.Dispose();
+            _deferredRoomRecoveryCts = new CancellationTokenSource();
+            DeferredRoomRecoveryLoopAsync(targetRoomX, targetRoomY, _deferredRoomRecoveryCts.Token).Forget();
+        }
+
+        private async UniTaskVoid DeferredRoomRecoveryLoopAsync(int targetRoomX, int targetRoomY, CancellationToken cancellationToken)
+        {
+            for (var attempt = 0; attempt < 16; attempt += 1)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                try
+                {
+                    var recovered = await TryRefreshCurrentRoomSnapshotAsync(1, 1, targetRoomX, targetRoomY);
+                    if (recovered)
+                    {
+                        if (_lgManager != null)
+                        {
+                            await _lgManager.StartRoomOccupantSubscriptions(targetRoomX, targetRoomY);
+                        }
+
+                        Log($"Recovered deferred room transition to ({targetRoomX},{targetRoomY}) after {attempt + 1} attempt(s).");
+                        return;
+                    }
+                }
+                catch (Exception exception)
+                {
+                    Log($"Deferred room recovery attempt failed for ({targetRoomX},{targetRoomY}): {exception.Message}");
+                }
+
+                try
+                {
+                    await UniTask.Delay(TimeSpan.FromMilliseconds(350), cancellationToken: cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+            }
+
+            Log($"Deferred room recovery timed out for ({targetRoomX},{targetRoomY}).");
         }
 
         private void HandleRoomStateUpdated(Chaindepth.Accounts.RoomAccount roomAccount)

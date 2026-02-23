@@ -111,4 +111,9 @@ impl PlayerAccount {
     pub fn mark_active(&mut self, slot: u64) {
         self.last_active_slot = slot;
     }
+
+    pub fn require_in_dungeon(&self) -> Result<()> {
+        require!(self.in_dungeon, crate::errors::ChainDepthError::NotInDungeon);
+        Ok(())
+    }
 }

@@ -97,6 +97,7 @@ pub fn handler(ctx: Context<TickBossFight>) -> Result<()> {
 
     let room = &mut ctx.accounts.room;
     let clock = Clock::get()?;
+    ctx.accounts.player_account.require_in_dungeon()?;
     require!(room.center_type == CENTER_BOSS, ChainDepthError::NoBoss);
     require!(!room.boss_defeated, ChainDepthError::BossAlreadyDefeated);
     require!(room.boss_fighter_count > 0, ChainDepthError::NoActiveJob);

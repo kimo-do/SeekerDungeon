@@ -1,6 +1,6 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
-    <Style src="InventoryPanelUI.uss"/>
-    <ui:VisualElement name="inventory-overlay" class="inventory-overlay" picking-mode="Position">
+    <Style src="project://database/Assets/Scripts/Solana/UI/InventoryPanelUI.uss?fileID=7433441132597879392&amp;guid=4822a282817ddbf4883df64efbce9697&amp;type=3#InventoryPanelUI"/>
+    <ui:VisualElement name="inventory-overlay" picking-mode="Position" class="inventory-overlay" style="display: none;">
         <ui:VisualElement name="inventory-panel" class="inventory-panel">
             <ui:VisualElement name="inventory-header" class="inventory-header">
                 <ui:Label name="inventory-title" text="Inventory" class="inventory-title"/>
@@ -16,7 +16,7 @@
                     <ui:Label name="inventory-selected-amount" text="" class="inventory-selected-amount"/>
                 </ui:VisualElement>
             </ui:VisualElement>
-            <ui:ScrollView name="inventory-scroll" class="inventory-scroll" mode="Vertical">
+            <ui:ScrollView name="inventory-scroll" mode="Vertical" class="inventory-scroll">
                 <ui:VisualElement name="inventory-grid" class="inventory-grid"/>
             </ui:ScrollView>
         </ui:VisualElement>

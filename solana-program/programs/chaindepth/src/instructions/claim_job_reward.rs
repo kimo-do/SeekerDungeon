@@ -116,6 +116,7 @@ pub fn handler(ctx: Context<ClaimJobReward>, direction: u8) -> Result<()> {
     let player_account = &mut ctx.accounts.player_account;
     let clock = Clock::get()?;
     let dir_idx = direction as usize;
+    player_account.require_in_dungeon()?;
 
     require!(
         room.job_completed[dir_idx],

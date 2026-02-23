@@ -12,7 +12,8 @@ namespace SeekerDungeon.Solana
         Unknown = 255,
         Empty = 0,
         Chest = 1,
-        Boss = 2
+        Boss = 2,
+        BoneChest = 3
     }
 
     public enum RoomWallState
@@ -151,7 +152,7 @@ namespace SeekerDungeon.Solana
         public IReadOnlyDictionary<RoomDirection, DoorJobView> Doors { get; init; }
         private MonsterView _monster;
 
-        public bool HasChest() => CenterType == RoomCenterType.Chest;
+        public bool HasChest() => CenterType == RoomCenterType.Chest || CenterType == RoomCenterType.BoneChest;
         public bool IsEmpty() => CenterType == RoomCenterType.Empty;
         public bool HasBoss() => CenterType == RoomCenterType.Boss;
 
@@ -408,6 +409,7 @@ namespace SeekerDungeon.Solana
                 0 => RoomCenterType.Empty,
                 1 => RoomCenterType.Chest,
                 2 => RoomCenterType.Boss,
+                3 => RoomCenterType.BoneChest,
                 _ => RoomCenterType.Unknown
             };
         }

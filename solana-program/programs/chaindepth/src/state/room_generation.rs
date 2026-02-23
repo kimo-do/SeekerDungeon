@@ -1,9 +1,9 @@
 use anchor_lang::prelude::*;
 
 use super::{
-    GlobalAccount, RoomAccount, CENTER_BOSS, CENTER_CHEST, CENTER_EMPTY, DIRECTION_NORTH,
-    DIRECTION_WEST, LOCK_KIND_NONE, LOCK_KIND_SKELETON, WALL_LOCKED, WALL_OPEN, WALL_RUBBLE,
-    WALL_SOLID,
+    GlobalAccount, RoomAccount, CENTER_BONE_CHEST, CENTER_BOSS, CENTER_CHEST, CENTER_EMPTY,
+    DIRECTION_NORTH, DIRECTION_WEST, LOCK_KIND_NONE, LOCK_KIND_SKELETON, WALL_LOCKED, WALL_OPEN,
+    WALL_RUBBLE, WALL_SOLID,
 };
 
 const LOCK_MIN_DEPTH: u32 = 2;
@@ -56,6 +56,18 @@ pub fn generate_room_center(season_seed: u64, room_x: i8, room_y: i8, depth: u32
             return (CENTER_CHEST, 1, false);
         }
         return (CENTER_EMPTY, 0, false);
+    }
+
+    if is_bone_room(season_seed, room_x, room_y, depth) {
+        // Bone rooms are always special centers: either skeleton boss #11 or a bone chest.
+        let bone_hash = generate_room_hash(season_seed ^ 0xB0DE_CAFE_BEEF_D00D, room_x, room_y);
+        let spawn_boss = (bone_hash % 100) < 50;
+        if spawn_boss {
+            return (CENTER_BOSS, 11, false);
+        }
+
+        // Bone chest can still be the forced key chest for this depth ring.
+        return (CENTER_BONE_CHEST, 1, forced_key_drop);
     }
 
     if forced_key_drop {
@@ -124,7 +136,7 @@ pub fn initialize_discovered_room(
         0
     };
 
-    room.has_chest = center_type == CENTER_CHEST;
+    room.has_chest = center_type == CENTER_CHEST || center_type == CENTER_BONE_CHEST;
     room.forced_key_drop = forced_key_drop;
     room.center_type = center_type;
     room.center_id = center_id;
@@ -452,6 +464,29 @@ mod tests {
                         !is_bone_room(seed, nx, ny, neighbor_depth),
                         "Adjacent bone rooms found at ({x},{y}) and ({nx},{ny})"
                     );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bone_rooms_always_spawn_boss_11_or_bone_chest() {
+        let seed = 77123u64;
+        for x in GlobalAccount::MIN_COORD..=GlobalAccount::MAX_COORD {
+            for y in GlobalAccount::MIN_COORD..=GlobalAccount::MAX_COORD {
+                let depth = calculate_depth(x, y);
+                if !is_bone_room(seed, x, y, depth) {
+                    continue;
+                }
+
+                let (center_type, center_id, _forced_key_drop) =
+                    generate_room_center(seed, x, y, depth);
+                assert!(
+                    center_type == CENTER_BOSS || center_type == CENTER_BONE_CHEST,
+                    "Bone room ({x},{y}) produced invalid center_type={center_type}"
+                );
+                if center_type == CENTER_BOSS {
+                    assert_eq!(center_id, 11, "Bone room boss id should be 11");
                 }
             }
         }

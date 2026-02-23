@@ -119,6 +119,12 @@ pub fn handler(ctx: Context<EnterDungeon>) -> Result<()> {
         player.last_active_slot = clock.slot;
         player.bump = player_bump;
     } else {
+        // Explicit enter is only for starting a run when currently out of dungeon.
+        // If already in-dungeon, do not reset HP/position/run state.
+        if player.in_dungeon {
+            return Ok(());
+        }
+
         // Any explicit enter starts/restarts the run at room (10,10).
         player.current_room_x = GlobalAccount::START_X;
         player.current_room_y = GlobalAccount::START_Y;

@@ -128,6 +128,7 @@ pub fn handler(ctx: Context<AbandonJob>, direction: u8) -> Result<()> {
     let player_key = ctx.accounts.player.key();
     let clock = Clock::get()?;
     let dir_idx = direction as usize;
+    player_account.require_in_dungeon()?;
 
     require!(room.is_rubble(direction), ChainDepthError::NotRubble);
     require!(

@@ -50,6 +50,7 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private GameObject centerChestVisualRoot;
         [SerializeField] private GameObject centerBossVisualRoot;
         [SerializeField] private GameObject centerFallbackVisualRoot;
+        [SerializeField] private DungeonCenterLootVisualController centerLootVisualController;
         [SerializeField] private DungeonChestVisualController chestVisualController;
         [SerializeField] private DungeonBossVisualController bossVisualController;
         [SerializeField] private CenterInteractable centerInteractable;
@@ -77,6 +78,14 @@ namespace SeekerDungeon.Dungeon
             if (centerInteractable == null)
             {
                 centerInteractable = UnityEngine.Object.FindFirstObjectByType<CenterInteractable>();
+            }
+            if (centerLootVisualController == null && centerInteractable != null)
+            {
+                centerLootVisualController = centerInteractable.GetComponentInChildren<DungeonCenterLootVisualController>(true);
+            }
+            if (centerLootVisualController == null)
+            {
+                centerLootVisualController = UnityEngine.Object.FindFirstObjectByType<DungeonCenterLootVisualController>();
             }
 
             if (ambientRatSpawner == null)
@@ -106,11 +115,32 @@ namespace SeekerDungeon.Dungeon
                 }
             }
 
+            var activeJobDirections = snapshot.LocalPlayerActiveJobDirections;
+            foreach (var layerBinding in doorLayers)
+            {
+                var layer = layerBinding?.OccupantLayer;
+                if (layer == null)
+                {
+                    continue;
+                }
+
+                var localWorkingThisDoor = activeJobDirections != null &&
+                                           activeJobDirections.Contains(layerBinding.Direction);
+                layer.SetLocalOccupantPresent(localWorkingThisDoor);
+            }
+
             if (snapshot.DoorOccupants != null)
             {
                 foreach (var doorOccupants in snapshot.DoorOccupants)
                 {
-                    SetDoorOccupants(doorOccupants.Key, doorOccupants.Value);
+                    var shouldShowDoorHelpers = snapshot.Room.Doors != null &&
+                                                snapshot.Room.Doors.TryGetValue(doorOccupants.Key, out var doorState) &&
+                                                doorState != null &&
+                                                doorState.IsRubble &&
+                                                !doorState.IsCompleted;
+                    SetDoorOccupants(
+                        doorOccupants.Key,
+                        shouldShowDoorHelpers ? doorOccupants.Value : Array.Empty<DungeonOccupantVisual>());
                 }
             }
 
@@ -310,6 +340,12 @@ namespace SeekerDungeon.Dungeon
             {
                 Debug.Log("[OccDbg][RoomController] PrepareForRoomTransition: clearing occupants and enabling first-snapshot pop.");
             }
+
+            foreach (var visualController in _doorVisualByDirection.Values)
+            {
+                visualController?.ClearCachedDoorThemeState();
+            }
+
             SetDoorOccupants(RoomDirection.North, Array.Empty<DungeonOccupantVisual>());
             SetDoorOccupants(RoomDirection.South, Array.Empty<DungeonOccupantVisual>());
             SetDoorOccupants(RoomDirection.East, Array.Empty<DungeonOccupantVisual>());
@@ -373,7 +409,12 @@ namespace SeekerDungeon.Dungeon
 
             SetOnlyCenterVisualActive(ResolveCenterVisual(room.CenterType));
 
-            if (room.CenterType == RoomCenterType.Chest && chestVisualController != null)
+            if (centerLootVisualController != null)
+            {
+                centerLootVisualController.Apply(room);
+            }
+            else if ((room.CenterType == RoomCenterType.Chest || room.CenterType == RoomCenterType.BoneChest) &&
+                     chestVisualController != null)
             {
                 chestVisualController.Apply(room);
             }
@@ -401,6 +442,12 @@ namespace SeekerDungeon.Dungeon
         /// </summary>
         public void PlayChestOpenAnimation()
         {
+            if (centerLootVisualController != null)
+            {
+                centerLootVisualController.PlayOpenAnimation();
+                return;
+            }
+
             if (chestVisualController != null)
             {
                 chestVisualController.PlayOpenAnimation();
@@ -413,6 +460,7 @@ namespace SeekerDungeon.Dungeon
             {
                 RoomCenterType.Empty => centerEmptyVisualRoot,
                 RoomCenterType.Chest => centerChestVisualRoot,
+                RoomCenterType.BoneChest => centerChestVisualRoot,
                 RoomCenterType.Boss => centerBossVisualRoot,
                 _ => centerFallbackVisualRoot
             };
@@ -659,13 +707,25 @@ namespace SeekerDungeon.Dungeon
                     timerView.Root.transform.position = timerView.Anchor.position + timerWorldOffset;
                 }
 
-                if (timerView.Label == null || timerView.SecondsRemaining <= 0f)
+                if (timerView.SecondsRemaining <= 0f)
                 {
                     continue;
                 }
 
                 timerView.SecondsRemaining = Mathf.Max(0f, timerView.SecondsRemaining - deltaTime);
-                timerView.Label.text = FormatRemainingTime(timerView.SecondsRemaining);
+                var formatted = FormatRemainingTime(timerView.SecondsRemaining);
+                if (timerView.Widget != null)
+                {
+                    timerView.Widget.Apply(
+                        timerView.SecondsRemaining,
+                        timerView.TotalSeconds,
+                        formatted,
+                        timerView.JobHelperCount);
+                }
+                else if (timerView.Label != null)
+                {
+                    timerView.Label.text = formatted;
+                }
             }
         }
 
@@ -696,10 +756,27 @@ namespace SeekerDungeon.Dungeon
                 return;
             }
 
+            var wasActive = timerView.Root.activeSelf;
+            var jobChanged = timerView.JobStartSlot != door.StartSlot ||
+                             timerView.JobHelperCount != door.HelperCount ||
+                             timerView.JobRequiredProgress != door.RequiredProgress;
+
             timerView.Root.SetActive(isActiveJob);
-            if (!isActiveJob || timerView.Label == null)
+            if (!isActiveJob)
             {
                 timerView.SecondsRemaining = 0f;
+                timerView.TotalSeconds = 0f;
+                timerView.JobStartSlot = 0UL;
+                timerView.JobHelperCount = 0U;
+                timerView.JobRequiredProgress = 0UL;
+                if (timerView.Widget != null)
+                {
+                    timerView.Widget.Apply(0f, 1f, string.Empty, 0U);
+                }
+                else if (timerView.Label != null)
+                {
+                    timerView.Label.text = string.Empty;
+                }
                 return;
             }
 
@@ -717,9 +794,34 @@ namespace SeekerDungeon.Dungeon
                 ? (float)remainingProgress / door.HelperCount
                 : 0f;
             var secondsRemaining = remainingSlots * Mathf.Max(0.01f, slotSecondsEstimate);
+            if (!wasActive || jobChanged || timerView.SecondsRemaining <= 0f)
+            {
+                timerView.SecondsRemaining = secondsRemaining;
+                timerView.TotalSeconds = Mathf.Max(0.01f, secondsRemaining);
+            }
+            else
+            {
+                // Keep local countdown monotonic across polling; never jump backwards.
+                timerView.SecondsRemaining = Mathf.Min(timerView.SecondsRemaining, secondsRemaining);
+                timerView.TotalSeconds = Mathf.Max(timerView.TotalSeconds, timerView.SecondsRemaining);
+            }
 
-            timerView.SecondsRemaining = secondsRemaining;
-            timerView.Label.text = FormatRemainingTime(secondsRemaining);
+            timerView.JobStartSlot = door.StartSlot;
+            timerView.JobHelperCount = door.HelperCount;
+            timerView.JobRequiredProgress = door.RequiredProgress;
+            var formatted = FormatRemainingTime(timerView.SecondsRemaining);
+            if (timerView.Widget != null)
+            {
+                timerView.Widget.Apply(
+                    timerView.SecondsRemaining,
+                    timerView.TotalSeconds,
+                    formatted,
+                    timerView.JobHelperCount);
+            }
+            else if (timerView.Label != null)
+            {
+                timerView.Label.text = formatted;
+            }
         }
 
         /// <summary>
@@ -762,7 +864,8 @@ namespace SeekerDungeon.Dungeon
             root.name = $"{timerCanvasPrefab.name}_{direction}";
 
             var label = root.GetComponentInChildren<TMP_Text>(true);
-            var timerView = new DoorTimerView(root, label, anchor);
+            var widget = root.GetComponentInChildren<RubbleJobTimerView>(true);
+            var timerView = new DoorTimerView(root, label, widget, anchor);
             _doorTimers[direction] = timerView;
             root.SetActive(false);
             return timerView;
@@ -937,17 +1040,23 @@ namespace SeekerDungeon.Dungeon
 
         private sealed class DoorTimerView
         {
-            public DoorTimerView(GameObject root, TMP_Text label, Transform anchor)
+            public DoorTimerView(GameObject root, TMP_Text label, RubbleJobTimerView widget, Transform anchor)
             {
                 Root = root;
                 Label = label;
+                Widget = widget;
                 Anchor = anchor;
             }
 
             public GameObject Root { get; }
             public TMP_Text Label { get; }
+            public RubbleJobTimerView Widget { get; }
             public Transform Anchor { get; set; }
             public float SecondsRemaining { get; set; }
+            public float TotalSeconds { get; set; }
+            public ulong JobStartSlot { get; set; }
+            public uint JobHelperCount { get; set; }
+            public ulong JobRequiredProgress { get; set; }
         }
     }
 }

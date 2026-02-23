@@ -5,7 +5,7 @@ use crate::events::{item_types, ChestLooted};
 use crate::instructions::session_auth::authorize_player_action;
 use crate::state::{
     item_ids, session_instruction_bits, GlobalAccount, InventoryAccount, LootReceipt,
-    PlayerAccount, RoomAccount, SessionAuthority, CENTER_CHEST,
+    PlayerAccount, RoomAccount, SessionAuthority, CENTER_BONE_CHEST, CENTER_CHEST,
 };
 
 #[derive(Accounts)]
@@ -98,8 +98,12 @@ pub fn handler(ctx: Context<LootChest>) -> Result<()> {
     let loot_receipt = &mut ctx.accounts.loot_receipt;
     let player_key = ctx.accounts.player.key();
     let clock = Clock::get()?;
+    player_account.require_in_dungeon()?;
 
-    require!(room.center_type == CENTER_CHEST, ChainDepthError::NoChest);
+    require!(
+        room.center_type == CENTER_CHEST || room.center_type == CENTER_BONE_CHEST,
+        ChainDepthError::NoChest
+    );
 
     // Check player is in this room
     require!(
@@ -127,7 +131,7 @@ pub fn handler(ctx: Context<LootChest>) -> Result<()> {
 
     // Generate deterministic loot bundle based on slot + player pubkey
     let loot_hash = generate_loot_hash(clock.slot, &player_key);
-    let loot_bundle = build_chest_loot_bundle(loot_hash);
+    let loot_bundle = build_chest_loot_bundle(loot_hash, room.center_type);
 
     if inventory.owner == Pubkey::default() {
         inventory.owner = player_key;
@@ -181,6 +185,12 @@ struct LootSpec {
     weight: u16,
     min_amount: u8,
     max_amount: u8,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ChestLootTier {
+    Standard,
+    Bone,
 }
 
 #[derive(Clone, Copy)]
@@ -243,33 +253,70 @@ const CHEST_WEAPONS: [LootSpec; 7] = [
     LootSpec { item_id: item_ids::WOODEN_TANKARD, weight: 18, min_amount: 1, max_amount: 1 },
 ];
 
-const CHEST_BUFFS: [LootSpec; 2] = [
-    LootSpec { item_id: item_ids::MINOR_BUFF, weight: 13, min_amount: 1, max_amount: 2 },
-    LootSpec { item_id: item_ids::MAJOR_BUFF, weight: 5, min_amount: 1, max_amount: 1 },
+const BONE_CHEST_VALUABLES: [LootSpec; 12] = [
+    LootSpec { item_id: item_ids::GOLD_COIN, weight: 20, min_amount: 8, max_amount: 22 },
+    LootSpec { item_id: item_ids::GOLD_BAR, weight: 13, min_amount: 2, max_amount: 4 },
+    LootSpec { item_id: item_ids::RUBY, weight: 8, min_amount: 1, max_amount: 3 },
+    LootSpec { item_id: item_ids::SAPPHIRE, weight: 8, min_amount: 1, max_amount: 3 },
+    LootSpec { item_id: item_ids::EMERALD, weight: 8, min_amount: 1, max_amount: 3 },
+    LootSpec { item_id: item_ids::DIAMOND, weight: 6, min_amount: 1, max_amount: 2 },
+    LootSpec { item_id: item_ids::ANCIENT_CROWN, weight: 4, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::CURSED_AMULET, weight: 5, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::GOLDEN_CHALICE, weight: 6, min_amount: 1, max_amount: 2 },
+    LootSpec { item_id: item_ids::MYSTIC_ORB, weight: 4, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::VOID_SHARD, weight: 4, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::SKELETON_KEY, weight: 4, min_amount: 1, max_amount: 2 },
 ];
 
-fn build_chest_loot_bundle(seed: u64) -> Vec<LootStack> {
+const BONE_CHEST_WEAPONS: [LootSpec; 7] = [
+    LootSpec { item_id: item_ids::IRON_PICKAXE, weight: 18, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::IRON_SWORD, weight: 18, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::IRON_SCIMITAR, weight: 15, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::DIAMOND_SWORD, weight: 9, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::NOKIA_3310, weight: 4, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::BRONZE_SWORD, weight: 18, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::WOODEN_PIPE, weight: 18, min_amount: 1, max_amount: 1 },
+];
+
+fn build_chest_loot_bundle(seed: u64, center_type: u8) -> Vec<LootStack> {
     let mut rng = LootRng::new(seed);
     let mut drops = Vec::<LootStack>::new();
+    let loot_tier = if center_type == CENTER_BONE_CHEST {
+        ChestLootTier::Bone
+    } else {
+        ChestLootTier::Standard
+    };
 
-    // Guaranteed valuables: 1-2 stacks.
-    let valuable_stacks = if rng.range_u32(100) < 35 { 2 } else { 1 };
+    // Guaranteed valuables: bone chests always roll more stacks.
+    let valuable_stacks = if loot_tier == ChestLootTier::Bone {
+        if rng.range_u32(100) < 55 { 3 } else { 2 }
+    } else if rng.range_u32(100) < 35 {
+        2
+    } else {
+        1
+    };
+    let valuable_pool = if loot_tier == ChestLootTier::Bone {
+        &BONE_CHEST_VALUABLES[..]
+    } else {
+        &CHEST_VALUABLES[..]
+    };
     append_unique_rolls(
         &mut drops,
-        &CHEST_VALUABLES,
+        valuable_pool,
         valuable_stacks,
         item_types::ORE,
         &mut rng,
     );
 
-    // Optional weapon stack ~25%.
-    if rng.range_u32(100) < 25 {
-        append_single_roll(&mut drops, &CHEST_WEAPONS, item_types::TOOL, &mut rng);
-    }
-
-    // Optional buff stack ~18%.
-    if rng.range_u32(100) < 18 {
-        append_single_roll(&mut drops, &CHEST_BUFFS, item_types::BUFF, &mut rng);
+    // Optional weapon stack (higher chance for bone chest).
+    let weapon_chance = if loot_tier == ChestLootTier::Bone { 50 } else { 25 };
+    if rng.range_u32(100) < weapon_chance {
+        let weapon_pool = if loot_tier == ChestLootTier::Bone {
+            &BONE_CHEST_WEAPONS[..]
+        } else {
+            &CHEST_WEAPONS[..]
+        };
+        append_single_roll(&mut drops, weapon_pool, item_types::TOOL, &mut rng);
     }
 
     drops

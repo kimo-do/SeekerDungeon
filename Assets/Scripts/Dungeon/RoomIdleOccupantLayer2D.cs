@@ -236,15 +236,23 @@ namespace SeekerDungeon.Dungeon
             for (var i = 0; i < _releaseBuffer.Count; i += 1)
             {
                 var key = _releaseBuffer[i];
+                var keepLockedVisual = false;
                 if (_activeByOccupantKey.TryGetValue(key, out var visual))
                 {
                     var lockedWalletKey = ResolveWalletKeyFromOccupantKey(key);
                     if (DuelVisualLockRegistry.IsLocked(lockedWalletKey))
                     {
-                        continue;
+                        keepLockedVisual = true;
                     }
+                    else
+                    {
+                        ReturnVisualToPool(visual, animate: true);
+                    }
+                }
 
-                    ReturnVisualToPool(visual, animate: true);
+                if (keepLockedVisual)
+                {
+                    continue;
                 }
 
                 OccupantPresenceTracker.Forget(key);
