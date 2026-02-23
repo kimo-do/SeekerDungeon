@@ -195,6 +195,8 @@ namespace SeekerDungeon.Dungeon
                     _activeByOccupantKey[key] = visual;
                 }
 
+                var isVisualLocked = DuelVisualLockRegistry.IsLocked(keyOccupant.WalletKey);
+
                 var presenceState = OccupantPresenceTracker.UpdateAndGetState(
                     keyOccupant.WalletKey,
                     BuildPresenceSignature(keyOccupant, "door"),
@@ -209,6 +211,12 @@ namespace SeekerDungeon.Dungeon
                 if (visualTransform.parent != parent)
                 {
                     visualTransform.SetParent(parent, true);
+                }
+
+                if (isVisualLocked && !isNewVisual)
+                {
+                    OccupantSpawnPopTracker.MarkSeen(key);
+                    continue;
                 }
 
                 visualTransform.SetPositionAndRotation(slot.Anchor.position, Quaternion.identity);
@@ -294,6 +302,12 @@ namespace SeekerDungeon.Dungeon
                 var key = _releaseBuffer[i];
                 if (_activeByOccupantKey.TryGetValue(key, out var visual))
                 {
+                    var lockedWalletKey = ResolveWalletKeyFromOccupantKey(key);
+                    if (DuelVisualLockRegistry.IsLocked(lockedWalletKey))
+                    {
+                        continue;
+                    }
+
                     ReturnVisualToPool(visual, animate: true);
                 }
 
@@ -419,6 +433,17 @@ namespace SeekerDungeon.Dungeon
             }
 
             return $"{occupant.DisplayName}_{index}";
+        }
+
+        private static string ResolveWalletKeyFromOccupantKey(string occupantKey)
+        {
+            if (string.IsNullOrWhiteSpace(occupantKey))
+            {
+                return string.Empty;
+            }
+
+            var separatorIndex = occupantKey.IndexOf('#');
+            return separatorIndex > 0 ? occupantKey.Substring(0, separatorIndex) : occupantKey;
         }
 
         private static string BuildPresenceSignature(DungeonOccupantVisual occupant, string layerTag)

@@ -2139,6 +2139,54 @@ namespace SeekerDungeon.Solana
             }
         }
 
+        /// <summary>
+        /// Returns true when the local player has a current-season room_presence
+        /// account for the provided room coordinates.
+        /// This is used to detect stale cross-season in_dungeon flags.
+        /// </summary>
+        public async UniTask<bool> HasCurrentSeasonPresenceAtAsync(int roomX, int roomY)
+        {
+            if (Web3.Wallet?.Account?.PublicKey == null)
+            {
+                return false;
+            }
+
+            if (CurrentGlobalState == null)
+            {
+                await FetchGlobalState();
+                if (CurrentGlobalState == null)
+                {
+                    return false;
+                }
+            }
+
+            var presencePda = DeriveRoomPresencePda(
+                CurrentGlobalState.SeasonSeed,
+                roomX,
+                roomY,
+                Web3.Wallet.Account.PublicKey);
+            if (presencePda == null)
+            {
+                return false;
+            }
+
+            var rpc = GetRpcClient();
+            if (rpc == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                var accountInfo = await rpc.GetAccountInfoAsync(presencePda, Commitment.Confirmed);
+                return accountInfo.WasSuccessful && accountInfo.Result?.Value != null;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public bool IsDuelOpenStatus(byte status)
         {
             return status == (byte)DuelChallengeStatus.Open ||

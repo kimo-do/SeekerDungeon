@@ -482,7 +482,24 @@ namespace SeekerDungeon.Solana
                     playerState = lgManager.CurrentPlayerState;
                 }
 
-                if (playerState != null && !playerState.InDungeon)
+                var shouldForceFreshEnter = false;
+                if (playerState != null && playerState.InDungeon)
+                {
+                    var hasCurrentSeasonPresence = await lgManager.HasCurrentSeasonPresenceAtAsync(
+                        playerState.CurrentRoomX,
+                        playerState.CurrentRoomY);
+                    if (!hasCurrentSeasonPresence)
+                    {
+                        shouldForceFreshEnter = true;
+                        if (logDebugMessages)
+                        {
+                            Debug.Log(
+                                $"[MainMenuCharacter] Stale in-dungeon state detected (missing current-season presence at ({playerState.CurrentRoomX},{playerState.CurrentRoomY})). Forcing fresh enter at start room.");
+                        }
+                    }
+                }
+
+                if (playerState != null && (!playerState.InDungeon || shouldForceFreshEnter))
                 {
                     EmitState("Entering dungeon...");
                     var enterResult = await lgManager.EnterDungeonAtStart();

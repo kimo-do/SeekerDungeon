@@ -123,6 +123,7 @@ namespace SeekerDungeon.Dungeon
                     idleThresholdSeconds,
                     occupant.LastActionAgeSecondsEstimate,
                     forceRefresh: isNewVisual);
+                var isVisualLocked = DuelVisualLockRegistry.IsLocked(occupant.WalletKey);
                 if (isNewVisual)
                 {
                     if (!TryFindSpawnPosition(_reservedPositions, out var spawnPosition))
@@ -166,6 +167,12 @@ namespace SeekerDungeon.Dungeon
                 else if (logOccupantDebug)
                 {
                     Debug.Log($"[OccDbg][IdleLayer:{name}] key={key} isNew=false presence={presenceState}");
+                }
+
+                if (isVisualLocked && !isNewVisual)
+                {
+                    OccupantSpawnPopTracker.MarkSeen(key);
+                    continue;
                 }
 
                 visual.transform.rotation = Quaternion.identity;
@@ -231,6 +238,12 @@ namespace SeekerDungeon.Dungeon
                 var key = _releaseBuffer[i];
                 if (_activeByOccupantKey.TryGetValue(key, out var visual))
                 {
+                    var lockedWalletKey = ResolveWalletKeyFromOccupantKey(key);
+                    if (DuelVisualLockRegistry.IsLocked(lockedWalletKey))
+                    {
+                        continue;
+                    }
+
                     ReturnVisualToPool(visual, animate: true);
                 }
 
@@ -369,6 +382,17 @@ namespace SeekerDungeon.Dungeon
             }
 
             return $"{occupant.DisplayName}_{index}";
+        }
+
+        private static string ResolveWalletKeyFromOccupantKey(string occupantKey)
+        {
+            if (string.IsNullOrWhiteSpace(occupantKey))
+            {
+                return string.Empty;
+            }
+
+            var separatorIndex = occupantKey.IndexOf('#');
+            return separatorIndex > 0 ? occupantKey.Substring(0, separatorIndex) : occupantKey;
         }
 
         private static string BuildPresenceSignature(DungeonOccupantVisual occupant, string layerTag)

@@ -428,6 +428,10 @@ namespace SeekerDungeon.Solana
 
             Transform duelCenterAnchor = null;
             ActivateDuelReplayCamera(localPlayer.transform);
+            var localWalletKey = localWallet?.Key;
+            var remoteWalletKey = remoteWallet?.Key;
+            DuelVisualLockRegistry.Lock(localWalletKey);
+            DuelVisualLockRegistry.Lock(remoteWalletKey);
             try
             {
                 var challengerIsLocal = string.Equals(challenge.Challenger?.Key, localWallet.Key, StringComparison.Ordinal);
@@ -632,6 +636,8 @@ namespace SeekerDungeon.Solana
                 DuelSwingEventRelay.OnSwing -= HandleDuelSwingEvent;
                 _activeReplayLocalPlayer = null;
                 _activeReplayRemotePlayer = null;
+                DuelVisualLockRegistry.Unlock(localWalletKey);
+                DuelVisualLockRegistry.Unlock(remoteWalletKey);
                 if (duelCenterAnchor != null)
                 {
                     Destroy(duelCenterAnchor.gameObject);
