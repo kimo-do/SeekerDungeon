@@ -23,6 +23,7 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private DungeonJobAutoCompleter jobAutoCompleter;
         [Header("Occupants")]
         [SerializeField] private float roomOccupantPollIntervalSeconds = 2f;
+        [SerializeField] private bool logOccupantDebug;
 
         public event Action<DungeonRoomSnapshot> OnRoomSnapshotUpdated;
         public event Action<DoorOccupancyDelta> OnDoorOccupancyDelta;
@@ -225,6 +226,10 @@ namespace SeekerDungeon.Dungeon
 
                 try
                 {
+                    if (logOccupantDebug)
+                    {
+                        Log($"[OccDbg][DungeonManager] poll room=({_currentRoomX},{_currentRoomY})");
+                    }
                     await _lgManager.FetchRoomOccupants(_currentRoomX, _currentRoomY);
                 }
                 catch (Exception exception)

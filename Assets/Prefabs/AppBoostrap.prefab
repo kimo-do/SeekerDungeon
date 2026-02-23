@@ -162,6 +162,7 @@ Transform:
   m_Children:
   - {fileID: 4551386619361278432}
   - {fileID: 6130143049817901838}
+  - {fileID: 4541972100541004301}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &3095660089801292672
@@ -179,6 +180,8 @@ MonoBehaviour:
   rpcUrl: https://api.devnet.solana.com
   fallbackRpcUrl: https://rpc.magicblock.app/devnet/
   commitment: 1
+  web3InstanceOverride: {fileID: 4444386634789750353}
+  keepAssignedWeb3InspectorValues: 1
   connectOnStart: 1
   allowAutoConnectOnDeviceBuilds: 0
   requireManualConnectOnDevice: 1
@@ -214,6 +217,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Solana.LGManager
   logDebugMessages: 1
+  logRoomOccupantDebug: 0
   rpcUrl: https://api.devnet.solana.com
   fallbackRpcUrl: https://rpc.magicblock.app/devnet/
   enableStreamingRpc: 0
@@ -244,3 +248,84 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SeekerDungeon.Audio.GameAudioManager
   audioCatalog: {fileID: 11400000, guid: 2b00c745a5270d647b4779fbb45ee9ca, type: 2}
   logDebugMessages: 0
+--- !u!1001 &4540682344556987353
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 3493712294466225802}
+    m_Modifications:
+    - target: {fileID: 3356840294234580, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3356840294234580, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3356840294234580, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3356840294234580, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3356840294234580, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3356840294234580, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3356840294234580, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3356840294234580, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3356840294234580, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3356840294234580, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 131655441423024152, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
+      propertyPath: m_Name
+      value: '[WalletController]'
+      objectReference: {fileID: 0}
+    - target: {fileID: 193123239798900104, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
+      propertyPath: solanaWalletAdapterOptions.solanaMobileWalletAdapterOptions.iconUri
+      value: /favicon.ico
+      objectReference: {fileID: 0}
+    - target: {fileID: 193123239798900104, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
+      propertyPath: solanaWalletAdapterOptions.solanaMobileWalletAdapterOptions.identityUri
+      value: https://loot-goblins.vercel.app/
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
+--- !u!114 &4444386634789750353 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 193123239798900104, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
+  m_PrefabInstance: {fileID: 4540682344556987353}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b75a4e92c14884ea6bf3e46d07a33eb0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!4 &4541972100541004301 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 3356840294234580, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
+  m_PrefabInstance: {fileID: 4540682344556987353}
+  m_PrefabAsset: {fileID: 0}

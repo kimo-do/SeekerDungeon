@@ -34,12 +34,16 @@ namespace SeekerDungeon.Dungeon
         [Tooltip("Where the local player appears when traveling through this door into the room.")]
         [SerializeField] private Transform arrivalAnchor;
         [Header("Spawn Pop")]
-        [SerializeField] private float spawnPopDuration = 0.1f;
-        [SerializeField] private float spawnPopStartScaleMultiplier = 0.82f;
+        [SerializeField] private float spawnPopDuration = 0.11f;
+        [SerializeField] private float spawnPopStartScaleMultiplier = 0.62f;
         [SerializeField] private float spawnStaggerSeconds = 0.05f;
+        [SerializeField] private float despawnPopDuration = 0.09f;
+        [SerializeField] private float despawnPopTargetScaleMultiplier = 0.58f;
+        [SerializeField] private bool logOccupantDebug;
         private const int MaxVisibleOccupants = 5;
 
         private readonly Dictionary<string, DoorOccupantVisual2D> _activeByOccupantKey = new();
+        private readonly Dictionary<string, int> _slotByOccupantKey = new();
         private readonly Queue<DoorOccupantVisual2D> _pooledVisuals = new();
         private readonly List<string> _releaseBuffer = new();
         private bool _suppressSpawnPop;
@@ -52,6 +56,10 @@ namespace SeekerDungeon.Dungeon
         public void SetSuppressSpawnPop(bool suppress)
         {
             _suppressSpawnPop = suppress;
+            if (logOccupantDebug)
+            {
+                Debug.Log($"[OccDbg][DoorLayer:{name}] suppressSpawnPop={_suppressSpawnPop}");
+            }
         }
 
         /// <summary>
@@ -111,28 +119,29 @@ namespace SeekerDungeon.Dungeon
         {
             if (occupantVisualPrefab == null || visualSlots == null || visualSlots.Length == 0 || occupants == null)
             {
+                if (logOccupantDebug)
+                {
+                    Debug.Log(
+                        $"[OccDbg][DoorLayer:{name}] release-all reason=null-input prefabNull={occupantVisualPrefab == null} slotsNull={visualSlots == null} occNull={occupants == null}");
+                }
                 ReleaseAllActiveVisuals();
                 return;
             }
 
             var nowRealtime = Time.realtimeSinceStartup;
             var usedKeys = new HashSet<string>(StringComparer.Ordinal);
-            var newVisualIndex = 0;
+            var usedSlotIndices = new HashSet<int>();
+            var occupantsByKey = new Dictionary<string, DungeonOccupantVisual>(StringComparer.Ordinal);
             var visibleCount = Mathf.Min(MaxVisibleOccupants, visualSlots.Length, occupants.Count);
+            var resolvedKeysByIndex = new string[visibleCount];
+            var newVisualIndex = 0;
+            if (logOccupantDebug)
+            {
+                Debug.Log(
+                    $"[OccDbg][DoorLayer:{name}] set-occupants incoming={occupants.Count} visible={visibleCount} activeBefore={_activeByOccupantKey.Count} slots={visualSlots.Length} suppress={_suppressSpawnPop}");
+            }
             for (var index = 0; index < visibleCount; index += 1)
             {
-                var slot = visualSlots[index];
-                if (slot == null || slot.Anchor == null)
-                {
-                    continue;
-                }
-
-                // Apply slot-facing to anchor so entire slot scale X is -1 when facing left
-                var anchor = slot.Anchor;
-                var anchorScale = anchor.localScale;
-                anchorScale.x = slot.FacingDirection == OccupantFacingDirection.Left ? -1f : 1f;
-                anchor.localScale = anchorScale;
-
                 var occupant = occupants[index];
                 var key = ResolveOccupantKey(occupant, index);
                 if (!usedKeys.Add(key))
@@ -140,13 +149,39 @@ namespace SeekerDungeon.Dungeon
                     key = $"{key}#{index}";
                     usedKeys.Add(key);
                 }
-                var presenceState = OccupantPresenceTracker.UpdateAndGetState(
-                    occupant.WalletKey,
-                    BuildPresenceSignature(occupant, "door"),
-                    nowRealtime,
-                    activeThresholdSeconds,
-                    idleThresholdSeconds,
-                    occupant.LastActionAgeSecondsEstimate);
+                resolvedKeysByIndex[index] = key;
+
+                occupantsByKey[key] = occupant;
+            }
+
+            for (var index = 0; index < visibleCount; index += 1)
+            {
+                var key = resolvedKeysByIndex[index];
+
+                if (string.IsNullOrWhiteSpace(key) || !occupantsByKey.TryGetValue(key, out var keyOccupant))
+                {
+                    continue;
+                }
+
+                var slotIndex = ResolveAssignedSlotIndex(key, usedSlotIndices);
+                if (slotIndex < 0 || slotIndex >= visualSlots.Length)
+                {
+                    continue;
+                }
+
+                var slot = visualSlots[slotIndex];
+                if (slot == null || slot.Anchor == null)
+                {
+                    continue;
+                }
+
+                usedSlotIndices.Add(slotIndex);
+
+                // Apply slot-facing to anchor so entire slot scale X is -1 when facing left
+                var anchor = slot.Anchor;
+                var anchorScale = anchor.localScale;
+                anchorScale.x = slot.FacingDirection == OccupantFacingDirection.Left ? -1f : 1f;
+                anchor.localScale = anchorScale;
 
                 var isNewVisual = !_activeByOccupantKey.TryGetValue(key, out var visual) || visual == null;
                 if (isNewVisual)
@@ -160,6 +195,15 @@ namespace SeekerDungeon.Dungeon
                     _activeByOccupantKey[key] = visual;
                 }
 
+                var presenceState = OccupantPresenceTracker.UpdateAndGetState(
+                    keyOccupant.WalletKey,
+                    BuildPresenceSignature(keyOccupant, "door"),
+                    nowRealtime,
+                    activeThresholdSeconds,
+                    idleThresholdSeconds,
+                    keyOccupant.LastActionAgeSecondsEstimate,
+                    forceRefresh: isNewVisual);
+
                 var visualTransform = visual.transform;
                 var parent = visualSpawnRoot != null ? visualSpawnRoot : null;
                 if (visualTransform.parent != parent)
@@ -168,11 +212,16 @@ namespace SeekerDungeon.Dungeon
                 }
 
                 visualTransform.SetPositionAndRotation(slot.Anchor.position, Quaternion.identity);
-                visual.Bind(occupant, index, slot.FacingDirection, presenceState);
+                visual.Bind(keyOccupant, slotIndex, slot.FacingDirection, presenceState);
 
                 var shouldPlaySpawnPop = isNewVisual &&
                                          !_suppressSpawnPop &&
                                          !OccupantSpawnPopTracker.HasSeen(key);
+                if (logOccupantDebug)
+                {
+                    Debug.Log(
+                        $"[OccDbg][DoorLayer:{name}] key={key} slot={slotIndex} isNew={isNewVisual} seen={OccupantSpawnPopTracker.HasSeen(key)} shouldPop={shouldPlaySpawnPop} presence={presenceState}");
+                }
                 if (shouldPlaySpawnPop)
                 {
                     var spawnDelay = newVisualIndex * spawnStaggerSeconds;
@@ -184,6 +233,12 @@ namespace SeekerDungeon.Dungeon
             }
 
             ReleaseUnusedVisuals(usedKeys);
+            ReleaseUnusedSlotAssignments(usedKeys);
+            if (logOccupantDebug)
+            {
+                Debug.Log(
+                    $"[OccDbg][DoorLayer:{name}] activeAfter={_activeByOccupantKey.Count} keys=[{string.Join(",", _activeByOccupantKey.Keys)}]");
+            }
 
             // Hook for overflow visuals (e.g. +95 near door) can be added here later.
         }
@@ -239,34 +294,121 @@ namespace SeekerDungeon.Dungeon
                 var key = _releaseBuffer[i];
                 if (_activeByOccupantKey.TryGetValue(key, out var visual))
                 {
-                    ReturnVisualToPool(visual);
+                    ReturnVisualToPool(visual, animate: true);
                 }
 
+                OccupantPresenceTracker.Forget(key);
                 _activeByOccupantKey.Remove(key);
+            }
+            if (logOccupantDebug && _releaseBuffer.Count > 0)
+            {
+                Debug.Log($"[OccDbg][DoorLayer:{name}] released={_releaseBuffer.Count} keys=[{string.Join(",", _releaseBuffer)}]");
             }
         }
 
         private void ReleaseAllActiveVisuals()
         {
+            if (logOccupantDebug && _activeByOccupantKey.Count > 0)
+            {
+                Debug.Log($"[OccDbg][DoorLayer:{name}] release-all active={_activeByOccupantKey.Count}");
+            }
             foreach (var visual in _activeByOccupantKey.Values)
             {
-                ReturnVisualToPool(visual);
+                ReturnVisualToPool(visual, animate: false);
+            }
+
+            foreach (var key in _activeByOccupantKey.Keys)
+            {
+                OccupantPresenceTracker.Forget(key);
             }
 
             _activeByOccupantKey.Clear();
+            _slotByOccupantKey.Clear();
             _releaseBuffer.Clear();
         }
 
-        private void ReturnVisualToPool(DoorOccupantVisual2D visual)
+        private int ResolveAssignedSlotIndex(string key, HashSet<int> usedSlotIndices)
+        {
+            if (_slotByOccupantKey.TryGetValue(key, out var existingSlotIndex) &&
+                existingSlotIndex >= 0 &&
+                existingSlotIndex < visualSlots.Length &&
+                !usedSlotIndices.Contains(existingSlotIndex))
+            {
+                return existingSlotIndex;
+            }
+
+            for (var index = 0; index < visualSlots.Length; index += 1)
+            {
+                if (usedSlotIndices.Contains(index))
+                {
+                    continue;
+                }
+
+                if (visualSlots[index] == null || visualSlots[index].Anchor == null)
+                {
+                    continue;
+                }
+
+                _slotByOccupantKey[key] = index;
+                return index;
+            }
+
+            return -1;
+        }
+
+        private void ReleaseUnusedSlotAssignments(HashSet<string> usedKeys)
+        {
+            if (_slotByOccupantKey.Count == 0)
+            {
+                return;
+            }
+
+            _releaseBuffer.Clear();
+            foreach (var key in _slotByOccupantKey.Keys)
+            {
+                if (!usedKeys.Contains(key))
+                {
+                    _releaseBuffer.Add(key);
+                }
+            }
+
+            for (var index = 0; index < _releaseBuffer.Count; index += 1)
+            {
+                _slotByOccupantKey.Remove(_releaseBuffer[index]);
+            }
+
+            _releaseBuffer.Clear();
+        }
+
+        private void ReturnVisualToPool(DoorOccupantVisual2D visual, bool animate)
         {
             if (visual == null)
             {
                 return;
             }
 
-            visual.ResetForPool();
-            visual.gameObject.SetActive(false);
-            _pooledVisuals.Enqueue(visual);
+            if (!animate || !visual.gameObject.activeInHierarchy)
+            {
+                visual.ResetForPool();
+                visual.gameObject.SetActive(false);
+                _pooledVisuals.Enqueue(visual);
+                return;
+            }
+
+            visual.PlayDespawnPop(
+                despawnPopDuration,
+                despawnPopTargetScaleMultiplier,
+                () =>
+                {
+                    if (visual == null)
+                    {
+                        return;
+                    }
+
+                    visual.ResetForPool();
+                    visual.gameObject.SetActive(false);
+                    _pooledVisuals.Enqueue(visual);
+                });
         }
 
         private static string ResolveOccupantKey(DungeonOccupantVisual occupant, int index)
@@ -428,9 +570,29 @@ namespace SeekerDungeon.Dungeon
 
             _spawnTween = transform
                 .DOScale(targetScale, duration)
-                .SetEase(Ease.OutQuad)
+                .SetEase(Ease.OutBack)
                 .SetDelay(Mathf.Max(0f, delaySeconds))
                 .SetUpdate(true);
+        }
+
+        public void PlayDespawnPop(float duration, float targetScaleMultiplier, Action onComplete = null)
+        {
+            KillSpawnTween();
+
+            var sourceScale = transform.localScale;
+            var clampedMultiplier = Mathf.Max(MinScaleMultiplier, targetScaleMultiplier);
+            var targetScale = sourceScale * clampedMultiplier;
+            targetScale.x = Mathf.Sign(sourceScale.x) * Mathf.Abs(sourceScale.x) * clampedMultiplier;
+
+            _spawnTween = transform
+                .DOScale(targetScale, Mathf.Max(0.01f, duration))
+                .SetEase(Ease.InBack)
+                .SetUpdate(true)
+                .OnComplete(() =>
+                {
+                    _spawnTween = null;
+                    onComplete?.Invoke();
+                });
         }
 
         public void ResetForPool()

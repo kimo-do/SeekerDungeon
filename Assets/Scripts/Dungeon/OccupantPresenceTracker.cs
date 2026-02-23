@@ -28,7 +28,8 @@ namespace SeekerDungeon.Dungeon
             float nowRealtime,
             float activeThresholdSeconds,
             float idleThresholdSeconds,
-            float initialElapsedSecondsEstimate = 0f)
+            float initialElapsedSecondsEstimate = 0f,
+            bool forceRefresh = false)
         {
             if (string.IsNullOrWhiteSpace(walletKey))
             {
@@ -53,6 +54,11 @@ namespace SeekerDungeon.Dungeon
                     entry.Signature = newSignature;
                     entry.LastChangedRealtime = nowRealtime;
                 }
+            }
+
+            if (forceRefresh)
+            {
+                entry.LastChangedRealtime = nowRealtime;
             }
 
             // If chain-derived activity indicates a more recent action than we have locally,
@@ -80,6 +86,16 @@ namespace SeekerDungeon.Dungeon
             }
 
             return OccupantPresenceState.Afk;
+        }
+
+        public static void Forget(string walletKey)
+        {
+            if (string.IsNullOrWhiteSpace(walletKey))
+            {
+                return;
+            }
+
+            Entries.Remove(walletKey);
         }
 
         private static void CleanupStale(float nowRealtime)

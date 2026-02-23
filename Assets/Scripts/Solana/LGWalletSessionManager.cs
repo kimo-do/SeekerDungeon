@@ -120,6 +120,10 @@ namespace SeekerDungeon.Solana
         [SerializeField] private string fallbackRpcUrl = LGConfig.RPC_FALLBACK_URL;
         [SerializeField] private Commitment commitment = Commitment.Confirmed;
 
+        [Header("Web3")]
+        [SerializeField] private Web3 web3InstanceOverride;
+        [SerializeField] private bool keepAssignedWeb3InspectorValues = true;
+
         [Header("Startup Login")]
         [SerializeField] private bool connectOnStart = true;
         [SerializeField] private bool allowAutoConnectOnDeviceBuilds = false;
@@ -2089,18 +2093,67 @@ namespace SeekerDungeon.Solana
 
         private void EnsureWeb3ExistsAndConfigured()
         {
-            if (Web3.Instance != null)
+            var web3 = ResolvePreferredWeb3Instance();
+            if (web3 != null)
             {
-                ApplyWeb3RpcOverrides(Web3.Instance);
-                EnsureWalletAdapterOptions(Web3.Instance);
+                var usingAssignedWeb3 = web3InstanceOverride != null && web3 == web3InstanceOverride;
+                if (!usingAssignedWeb3 || !keepAssignedWeb3InspectorValues)
+                {
+                    ApplyWeb3RpcOverrides(web3);
+                }
+                else
+                {
+                    EmitStatus("Using assigned Web3 inspector values (RPC overrides skipped).");
+                }
+
+                EnsureWalletAdapterOptions(web3);
+                DontDestroyOnLoad(web3.gameObject);
                 return;
             }
 
             var web3GameObject = new GameObject("Web3");
             DontDestroyOnLoad(web3GameObject);
-            var web3 = web3GameObject.AddComponent<Web3>();
-            ApplyWeb3RpcOverrides(web3);
-            EnsureWalletAdapterOptions(web3);
+            var createdWeb3 = web3GameObject.AddComponent<Web3>();
+            ApplyWeb3RpcOverrides(createdWeb3);
+            EnsureWalletAdapterOptions(createdWeb3);
+        }
+
+        private Web3 ResolvePreferredWeb3Instance()
+        {
+            if (web3InstanceOverride != null)
+            {
+                return web3InstanceOverride;
+            }
+
+            if (Web3.Instance != null)
+            {
+                return Web3.Instance;
+            }
+
+            var existing = FindExistingWeb3Instance();
+            return existing;
+        }
+
+        private static Web3 FindExistingWeb3Instance()
+        {
+            var allInstances = Resources.FindObjectsOfTypeAll<Web3>();
+            for (var index = 0; index < allInstances.Length; index += 1)
+            {
+                var candidate = allInstances[index];
+                if (candidate == null || candidate.gameObject == null)
+                {
+                    continue;
+                }
+
+                if (!candidate.gameObject.scene.IsValid())
+                {
+                    continue;
+                }
+
+                return candidate;
+            }
+
+            return null;
         }
 
         private void ApplyWeb3RpcOverrides(Web3 web3)

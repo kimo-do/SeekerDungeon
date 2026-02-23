@@ -51,6 +51,7 @@ namespace SeekerDungeon.Solana
 
         [Header("Debug")]
         [SerializeField] private bool logDebugMessages = true;
+        [SerializeField] private bool logRoomOccupantDebug = false;
 
         [Header("RPC Settings")]
         [SerializeField] private string rpcUrl = LGConfig.RPC_URL;
@@ -94,10 +95,15 @@ namespace SeekerDungeon.Solana
         private List<DuelChallengeView> _lastRelevantDuelChallenges = new();
         private DateTime _lastDuelRateLimitLogUtc = DateTime.MinValue;
         private DateTime _lastDuelCachedFallbackLogUtc = DateTime.MinValue;
+        private DateTime _lastRoomOccupantCachedFallbackLogUtc = DateTime.MinValue;
         private readonly List<SessionExpenseEntry> _sessionExpenseEntries = new();
         private readonly Dictionary<string, OccupantDisplayNameCacheEntry> _occupantDisplayNameCache =
             new(StringComparer.Ordinal);
         private readonly Dictionary<string, OccupantLastActiveSlotCacheEntry> _occupantLastActiveSlotCache =
+            new(StringComparer.Ordinal);
+        private readonly Dictionary<string, List<RoomOccupantView>> _roomOccupantCacheByRoomKey =
+            new(StringComparer.Ordinal);
+        private readonly Dictionary<string, DateTime> _roomOccupantLastNonEmptyUtcByRoomKey =
             new(StringComparer.Ordinal);
 
         private struct GameplaySigningContext
@@ -123,6 +129,8 @@ namespace SeekerDungeon.Solana
         private const ulong DuelMaxExpirySlots = 21600UL;
         private const string SessionExpenseLogFileName = "session-expense-log.jsonl";
         private const int DuelFetchLogThrottleSeconds = 20;
+        private const int RoomOccupantFetchLogThrottleSeconds = 20;
+        private const int RoomOccupantEmptyGraceSeconds = 6;
 
         [Serializable]
         public sealed class SessionExpenseEntry
@@ -267,6 +275,22 @@ namespace SeekerDungeon.Solana
         {
             Debug.LogError($"[LG] {message}");
             OnError?.Invoke(message);
+        }
+
+        private static string ShortWalletForLog(string walletKey)
+        {
+            if (string.IsNullOrWhiteSpace(walletKey))
+            {
+                return "<none>";
+            }
+
+            var trimmed = walletKey.Trim();
+            if (trimmed.Length <= 10)
+            {
+                return trimmed;
+            }
+
+            return $"{trimmed.Substring(0, 4)}...{trimmed.Substring(trimmed.Length - 4)}";
         }
 
         private async UniTask<bool> AccountHasData(PublicKey accountPda)
@@ -965,7 +989,7 @@ namespace SeekerDungeon.Solana
 
             if (CurrentGlobalState == null)
             {
-                return Array.Empty<RoomOccupantView>();
+                return GetCachedRoomOccupants(roomX, roomY);
             }
 
             try
@@ -980,7 +1004,14 @@ namespace SeekerDungeon.Solana
                     try
                     {
                         var roomPresenceResult = await _client.GetRoomPresencesAsync(_programId.Key, Commitment.Confirmed);
-                        allPresences = roomPresenceResult?.ParsedResult ?? new List<RoomPresence>();
+                        if (roomPresenceResult == null || !roomPresenceResult.WasSuccessful)
+                        {
+                            allPresences = null;
+                        }
+                        else
+                        {
+                            allPresences = roomPresenceResult.ParsedResult ?? new List<RoomPresence>();
+                        }
                     }
                     catch (ArgumentOutOfRangeException decodeError)
                     {
@@ -998,6 +1029,25 @@ namespace SeekerDungeon.Solana
                     }
                 }
 
+                if (allPresences == null)
+                {
+                    if ((DateTime.UtcNow - _lastRoomOccupantCachedFallbackLogUtc).TotalSeconds >=
+                        RoomOccupantFetchLogThrottleSeconds)
+                    {
+                        Log($"FetchRoomOccupants: using cached occupant snapshot for room ({roomX},{roomY}) after transient fetch failure.");
+                        _lastRoomOccupantCachedFallbackLogUtc = DateTime.UtcNow;
+                    }
+
+                    if (logDebugMessages && logRoomOccupantDebug)
+                    {
+                        var cached = GetCachedRoomOccupants(roomX, roomY);
+                        Log(
+                            $"[RoomOccDbg] source=cached-after-failure room=({roomX},{roomY}) count={cached.Count} keys=[{string.Join(",", cached.Select(o => o?.Wallet?.Key ?? "?"))}]");
+                    }
+
+                    return GetCachedRoomOccupants(roomX, roomY);
+                }
+
                 var roomPresences = allPresences
                     .Where(presence =>
                         presence != null &&
@@ -1005,6 +1055,37 @@ namespace SeekerDungeon.Solana
                         presence.RoomX == roomX &&
                         presence.RoomY == roomY &&
                         presence.IsCurrent)
+                    .ToList();
+
+                // Defensive de-dupe: some devnet states can contain duplicate "current"
+                // presence accounts for the same wallet, which causes visual jitter/pop
+                // when list ordering changes between polls.
+                var dedupedRoomPresences = new Dictionary<string, RoomPresence>(StringComparer.Ordinal);
+                for (var index = 0; index < roomPresences.Count; index += 1)
+                {
+                    var presence = roomPresences[index];
+                    var walletKey = presence?.Player?.Key;
+                    if (string.IsNullOrWhiteSpace(walletKey))
+                    {
+                        continue;
+                    }
+
+                    if (!dedupedRoomPresences.TryGetValue(walletKey, out var existing))
+                    {
+                        dedupedRoomPresences[walletKey] = presence;
+                        continue;
+                    }
+
+                    // Keep the most "active" state if duplicates disagree.
+                    // Boss fight (2) > door job (1) > idle (0)
+                    if (presence.Activity > existing.Activity)
+                    {
+                        dedupedRoomPresences[walletKey] = presence;
+                    }
+                }
+
+                roomPresences = dedupedRoomPresences.Values
+                    .OrderBy(presence => presence.Player.Key, StringComparer.Ordinal)
                     .ToList();
 
                 var currentSlot = await GetCurrentSlotAsync();
@@ -1032,6 +1113,26 @@ namespace SeekerDungeon.Solana
                     };
                 }
 
+                if (occupants.Length == 0 &&
+                    TryGetRecentNonEmptyRoomOccupants(roomX, roomY, out var recentNonEmptyOccupants))
+                {
+                    if ((DateTime.UtcNow - _lastRoomOccupantCachedFallbackLogUtc).TotalSeconds >=
+                        RoomOccupantFetchLogThrottleSeconds)
+                    {
+                        Log($"FetchRoomOccupants: empty snapshot for room ({roomX},{roomY}); reusing recent non-empty occupants.");
+                        _lastRoomOccupantCachedFallbackLogUtc = DateTime.UtcNow;
+                    }
+
+                    if (logDebugMessages && logRoomOccupantDebug)
+                    {
+                        Log(
+                            $"[RoomOccDbg] source=recent-non-empty room=({roomX},{roomY}) count={recentNonEmptyOccupants.Count} keys=[{string.Join(",", recentNonEmptyOccupants.Select(o => o?.Wallet?.Key ?? "?"))}]");
+                    }
+
+                    OnRoomOccupantsUpdated?.Invoke(recentNonEmptyOccupants);
+                    return recentNonEmptyOccupants;
+                }
+
                 if (logDebugMessages)
                 {
                     var rawDirections = string.Join(",",
@@ -1046,15 +1147,50 @@ namespace SeekerDungeon.Solana
 
                     Log(
                         $"RoomOccupants ({roomX},{roomY}) total={occupants.Length} doorJobRawDirs=[{rawDirections}] mapped N={mappedNorth} S={mappedSouth} E={mappedEast} W={mappedWest}");
+                    if (logRoomOccupantDebug)
+                    {
+                        var currentSlotText = currentSlot.HasValue ? currentSlot.Value.ToString() : "<null>";
+                        var activityAges = string.Join(",",
+                            occupants.Select(o =>
+                                $"{ShortWalletForLog(o?.Wallet?.Key)}:last={o?.LastActiveSlot ?? 0UL}/age={o?.LastActionAgeSecondsEstimate:F1}"));
+                        var rawKeys = string.Join(",",
+                            allPresences
+                                .Where(p => p != null &&
+                                            p.SeasonSeed == CurrentGlobalState.SeasonSeed &&
+                                            p.RoomX == roomX &&
+                                            p.RoomY == roomY &&
+                                            p.IsCurrent)
+                                .Select(p => p.Player?.Key ?? "?"));
+                        var dedupedKeys = string.Join(",", roomPresences.Select(p => p.Player?.Key ?? "?"));
+                        var occupantKeys = string.Join(",", occupants.Select(o => o?.Wallet?.Key ?? "?"));
+                        Log(
+                            $"[RoomOccDbg] source=chain room=({roomX},{roomY}) raw={rawKeys} deduped={dedupedKeys} occupants={occupantKeys}");
+                        Log(
+                            $"[RoomOccDbg] activity room=({roomX},{roomY}) currentSlot={currentSlotText} {activityAges}");
+                    }
                 }
 
+                CacheRoomOccupants(roomX, roomY, occupants);
                 OnRoomOccupantsUpdated?.Invoke(occupants);
                 return occupants;
             }
             catch (Exception error)
             {
-                LogError($"FetchRoomOccupants failed: {error.Message}");
-                return Array.Empty<RoomOccupantView>();
+                if ((DateTime.UtcNow - _lastRoomOccupantCachedFallbackLogUtc).TotalSeconds >=
+                    RoomOccupantFetchLogThrottleSeconds)
+                {
+                    Log($"FetchRoomOccupants failed for room ({roomX},{roomY}); using cached snapshot. Reason: {error.Message}");
+                    _lastRoomOccupantCachedFallbackLogUtc = DateTime.UtcNow;
+                }
+
+                if (logDebugMessages && logRoomOccupantDebug)
+                {
+                    var cached = GetCachedRoomOccupants(roomX, roomY);
+                    Log(
+                        $"[RoomOccDbg] source=cached-on-exception room=({roomX},{roomY}) count={cached.Count} keys=[{string.Join(",", cached.Select(o => o?.Wallet?.Key ?? "?"))}]");
+                }
+
+                return GetCachedRoomOccupants(roomX, roomY);
             }
         }
 
@@ -1063,7 +1199,7 @@ namespace SeekerDungeon.Solana
             var rpc = GetRpcClient();
             if (rpc == null)
             {
-                return new List<RoomPresence>();
+                return null;
             }
 
             var filters = new List<MemCmp>
@@ -1075,7 +1211,12 @@ namespace SeekerDungeon.Solana
                 }
             };
             var raw = await rpc.GetProgramAccountsAsync(_programId.Key, Commitment.Confirmed, memCmpList: filters);
-            if (!raw.WasSuccessful || !(raw.Result?.Count > 0))
+            if (!raw.WasSuccessful)
+            {
+                return null;
+            }
+
+            if (!(raw.Result?.Count > 0))
             {
                 return new List<RoomPresence>();
             }
@@ -1111,6 +1252,68 @@ namespace SeekerDungeon.Solana
             }
 
             return parsed;
+        }
+
+        private static string BuildRoomOccupantCacheKey(int roomX, int roomY)
+        {
+            return $"{roomX}:{roomY}";
+        }
+
+        private IReadOnlyList<RoomOccupantView> GetCachedRoomOccupants(int roomX, int roomY)
+        {
+            var key = BuildRoomOccupantCacheKey(roomX, roomY);
+            if (_roomOccupantCacheByRoomKey.TryGetValue(key, out var cached) && cached != null)
+            {
+                return cached;
+            }
+
+            return Array.Empty<RoomOccupantView>();
+        }
+
+        private void CacheRoomOccupants(int roomX, int roomY, IReadOnlyList<RoomOccupantView> occupants)
+        {
+            var key = BuildRoomOccupantCacheKey(roomX, roomY);
+            if (occupants == null)
+            {
+                _roomOccupantCacheByRoomKey[key] = new List<RoomOccupantView>();
+                return;
+            }
+
+            var snapshot = new List<RoomOccupantView>(occupants);
+            _roomOccupantCacheByRoomKey[key] = snapshot;
+            if (snapshot.Count > 0)
+            {
+                _roomOccupantLastNonEmptyUtcByRoomKey[key] = DateTime.UtcNow;
+            }
+        }
+
+        private bool TryGetRecentNonEmptyRoomOccupants(
+            int roomX,
+            int roomY,
+            out IReadOnlyList<RoomOccupantView> occupants)
+        {
+            occupants = null;
+            var key = BuildRoomOccupantCacheKey(roomX, roomY);
+            if (!_roomOccupantCacheByRoomKey.TryGetValue(key, out var cached) ||
+                cached == null ||
+                cached.Count == 0)
+            {
+                return false;
+            }
+
+            if (!_roomOccupantLastNonEmptyUtcByRoomKey.TryGetValue(key, out var lastNonEmptyUtc))
+            {
+                return false;
+            }
+
+            var ageSeconds = (DateTime.UtcNow - lastNonEmptyUtc).TotalSeconds;
+            if (ageSeconds < 0 || ageSeconds > RoomOccupantEmptyGraceSeconds)
+            {
+                return false;
+            }
+
+            occupants = cached;
+            return true;
         }
 
         private async UniTask<string> ResolveOccupantDisplayNameAsync(PublicKey wallet)

@@ -254,6 +254,7 @@ namespace SeekerDungeon.Solana
         public bool ApplySkin(PlayerSkinId skin)
         {
             if (this == null) return false;
+            var skinChanged = CurrentSkin != skin;
             CurrentSkin = skin;
 
             var rigApplied = ActivateRigForSkin(skin);
@@ -262,7 +263,10 @@ namespace SeekerDungeon.Solana
                 EnsurePlayerNameTag();
                 AttachActiveWieldedItemToHand();
                 ApplyAnimatorJobState();
-                PlaySkinSwitchAnimation();
+                if (skinChanged)
+                {
+                    PlaySkinSwitchAnimation();
+                }
                 return true;
             }
 
@@ -277,7 +281,10 @@ namespace SeekerDungeon.Solana
             {
                 _activeVisualRootForAnimation = skinSpriteRenderer.transform;
                 _skinBaseScale = _activeVisualRootForAnimation.localScale;
-                PlaySkinSwitchAnimation();
+                if (skinChanged)
+                {
+                    PlaySkinSwitchAnimation();
+                }
             }
 
             return mappedSprite != null;

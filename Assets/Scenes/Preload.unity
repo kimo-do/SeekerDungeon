@@ -256,79 +256,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1001 &566343507
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 0}
-    m_Modifications:
-    - target: {fileID: 3356840294234580, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: -0.0162
-      objectReference: {fileID: 0}
-    - target: {fileID: 3356840294234580, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0.63473
-      objectReference: {fileID: 0}
-    - target: {fileID: 3356840294234580, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3356840294234580, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 3356840294234580, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3356840294234580, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3356840294234580, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3356840294234580, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3356840294234580, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3356840294234580, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 131655441423024152, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
-      propertyPath: m_Name
-      value: '[WalletController]'
-      objectReference: {fileID: 0}
-    - target: {fileID: 193123239798900104, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
-      propertyPath: solanaWalletAdapterOptions.phantomWalletOptions.appMetaDataUrl
-      value: https://github.com/kimo-do/SeekerDungeon
-      objectReference: {fileID: 0}
-    - target: {fileID: 193123239798900104, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
-      propertyPath: solanaWalletAdapterOptions.solanaMobileWalletAdapterOptions.name
-      value: Kimo.LootGoblins
-      objectReference: {fileID: 0}
-    - target: {fileID: 193123239798900104, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
-      propertyPath: solanaWalletAdapterOptions.solanaMobileWalletAdapterOptions.iconUri
-      value: /tree/master/Assets/favicon.ico
-      objectReference: {fileID: 0}
-    - target: {fileID: 193123239798900104, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
-      propertyPath: solanaWalletAdapterOptions.solanaMobileWalletAdapterOptions.identityUri
-      value: https://github.com/kimo-do/SeekerDungeon/
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: 0cd00aa49ba0c16439fe77925554ebe2, type: 3}
 --- !u!1 &619394800
 GameObject:
   m_ObjectHideFlags: 0
@@ -469,10 +396,6 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
-    - target: {fileID: 3095660089801292672, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
-      propertyPath: simulateMobileFlowInEditor
-      value: 0
-      objectReference: {fileID: 0}
     - target: {fileID: 3493712294466225802, guid: 05be8e568ba1f1c40b6398aaab88cac7, type: 3}
       propertyPath: m_LocalPosition.x
       value: -0.0162
@@ -530,4 +453,3 @@ SceneRoots:
   - {fileID: 619394802}
   - {fileID: 1794898720}
   - {fileID: 2042139982}
-  - {fileID: 566343507}

@@ -30,6 +30,8 @@ namespace SeekerDungeon.Dungeon
 
     public sealed class RoomController : MonoBehaviour
     {
+        [Header("Debug")]
+        [SerializeField] private bool logOccupantDebug;
         [SerializeField] private List<DoorLayerBinding> doorLayers = new();
         [Header("Door Job Timers")]
         [SerializeField] private GameObject timerCanvasPrefab;
@@ -304,6 +306,10 @@ namespace SeekerDungeon.Dungeon
 
         public void PrepareForRoomTransition()
         {
+            if (logOccupantDebug)
+            {
+                Debug.Log("[OccDbg][RoomController] PrepareForRoomTransition: clearing occupants and enabling first-snapshot pop.");
+            }
             SetDoorOccupants(RoomDirection.North, Array.Empty<DungeonOccupantVisual>());
             SetDoorOccupants(RoomDirection.South, Array.Empty<DungeonOccupantVisual>());
             SetDoorOccupants(RoomDirection.East, Array.Empty<DungeonOccupantVisual>());
@@ -794,6 +800,10 @@ namespace SeekerDungeon.Dungeon
 
         private void SetAllLayersSuppressSpawnPop(bool suppress)
         {
+            if (logOccupantDebug)
+            {
+                Debug.Log($"[OccDbg][RoomController] SetAllLayersSuppressSpawnPop suppress={suppress}");
+            }
             foreach (var layer in _doorLayerByDirection.Values)
             {
                 if (layer != null)

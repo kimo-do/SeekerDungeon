@@ -15,9 +15,12 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private float idleThresholdSeconds = 180f;
         [SerializeField] private float minDistanceBetweenOccupants = 0.1f;
         [SerializeField] private int maxSpawnAttemptsPerOccupant = 18;
-        [SerializeField] private float spawnPopDuration = 0.1f;
-        [SerializeField] private float spawnPopStartScaleMultiplier = 0.82f;
+        [SerializeField] private float spawnPopDuration = 0.11f;
+        [SerializeField] private float spawnPopStartScaleMultiplier = 0.62f;
         [SerializeField] private float spawnStaggerSeconds = 0.05f;
+        [SerializeField] private float despawnPopDuration = 0.09f;
+        [SerializeField] private float despawnPopTargetScaleMultiplier = 0.58f;
+        [SerializeField] private bool logOccupantDebug;
 
         private readonly Dictionary<string, DoorOccupantVisual2D> _activeByOccupantKey = new();
         private readonly Queue<DoorOccupantVisual2D> _pooledVisuals = new();
@@ -34,6 +37,10 @@ namespace SeekerDungeon.Dungeon
         public void SetSuppressSpawnPop(bool suppress)
         {
             _suppressSpawnPop = suppress;
+            if (logOccupantDebug)
+            {
+                Debug.Log($"[OccDbg][IdleLayer:{name}] suppressSpawnPop={_suppressSpawnPop}");
+            }
         }
 
         public bool TryGetLocalPlayerSpawnPosition(out Vector3 worldPosition)
@@ -69,6 +76,11 @@ namespace SeekerDungeon.Dungeon
         {
             if (occupantVisualPrefab == null || spawnZones == null || spawnZones.Count == 0 || occupants == null)
             {
+                if (logOccupantDebug)
+                {
+                    Debug.Log(
+                        $"[OccDbg][IdleLayer:{name}] release-all reason=null-input prefabNull={occupantVisualPrefab == null} zonesNull={spawnZones == null} occNull={occupants == null}");
+                }
                 ReleaseAllActiveVisuals();
                 return;
             }
@@ -77,6 +89,11 @@ namespace SeekerDungeon.Dungeon
             _usedKeys.Clear();
             _reservedPositions.Clear();
             var newVisualIndex = 0;
+            if (logOccupantDebug)
+            {
+                Debug.Log(
+                    $"[OccDbg][IdleLayer:{name}] set-occupants incoming={occupants.Count} activeBefore={_activeByOccupantKey.Count} suppress={_suppressSpawnPop}");
+            }
             foreach (var visual in _activeByOccupantKey.Values)
             {
                 if (visual == null)
@@ -97,15 +114,15 @@ namespace SeekerDungeon.Dungeon
                     _usedKeys.Add(key);
                 }
 
+                var isNewVisual = !_activeByOccupantKey.TryGetValue(key, out var visual) || visual == null;
                 var presenceState = OccupantPresenceTracker.UpdateAndGetState(
                     occupant.WalletKey,
                     BuildPresenceSignature(occupant, "idle"),
                     nowRealtime,
                     activeThresholdSeconds,
                     idleThresholdSeconds,
-                    occupant.LastActionAgeSecondsEstimate);
-
-                var isNewVisual = !_activeByOccupantKey.TryGetValue(key, out var visual) || visual == null;
+                    occupant.LastActionAgeSecondsEstimate,
+                    forceRefresh: isNewVisual);
                 if (isNewVisual)
                 {
                     if (!TryFindSpawnPosition(_reservedPositions, out var spawnPosition))
@@ -134,12 +151,21 @@ namespace SeekerDungeon.Dungeon
 
                     var shouldPlaySpawnPop = !_suppressSpawnPop &&
                                              !OccupantSpawnPopTracker.HasSeen(key);
+                    if (logOccupantDebug)
+                    {
+                        Debug.Log(
+                            $"[OccDbg][IdleLayer:{name}] key={key} isNew=true seen={OccupantSpawnPopTracker.HasSeen(key)} shouldPop={shouldPlaySpawnPop} presence={presenceState}");
+                    }
                     if (shouldPlaySpawnPop)
                     {
                         var spawnDelay = newVisualIndex * spawnStaggerSeconds;
                         visual.PlaySpawnPop(spawnPopDuration, spawnPopStartScaleMultiplier, spawnDelay);
                     }
                     newVisualIndex += 1;
+                }
+                else if (logOccupantDebug)
+                {
+                    Debug.Log($"[OccDbg][IdleLayer:{name}] key={key} isNew=false presence={presenceState}");
                 }
 
                 visual.transform.rotation = Quaternion.identity;
@@ -148,6 +174,11 @@ namespace SeekerDungeon.Dungeon
             }
 
             ReleaseUnusedVisuals(_usedKeys);
+            if (logOccupantDebug)
+            {
+                Debug.Log(
+                    $"[OccDbg][IdleLayer:{name}] activeAfter={_activeByOccupantKey.Count} keys=[{string.Join(",", _activeByOccupantKey.Keys)}]");
+            }
         }
 
         private void OnDisable()
@@ -200,18 +231,32 @@ namespace SeekerDungeon.Dungeon
                 var key = _releaseBuffer[i];
                 if (_activeByOccupantKey.TryGetValue(key, out var visual))
                 {
-                    ReturnVisualToPool(visual);
+                    ReturnVisualToPool(visual, animate: true);
                 }
 
+                OccupantPresenceTracker.Forget(key);
                 _activeByOccupantKey.Remove(key);
+            }
+            if (logOccupantDebug && _releaseBuffer.Count > 0)
+            {
+                Debug.Log($"[OccDbg][IdleLayer:{name}] released={_releaseBuffer.Count} keys=[{string.Join(",", _releaseBuffer)}]");
             }
         }
 
         private void ReleaseAllActiveVisuals()
         {
+            if (logOccupantDebug && _activeByOccupantKey.Count > 0)
+            {
+                Debug.Log($"[OccDbg][IdleLayer:{name}] release-all active={_activeByOccupantKey.Count}");
+            }
             foreach (var visual in _activeByOccupantKey.Values)
             {
-                ReturnVisualToPool(visual);
+                ReturnVisualToPool(visual, animate: false);
+            }
+
+            foreach (var key in _activeByOccupantKey.Keys)
+            {
+                OccupantPresenceTracker.Forget(key);
             }
 
             _activeByOccupantKey.Clear();
@@ -220,16 +265,35 @@ namespace SeekerDungeon.Dungeon
             _reservedPositions.Clear();
         }
 
-        private void ReturnVisualToPool(DoorOccupantVisual2D visual)
+        private void ReturnVisualToPool(DoorOccupantVisual2D visual, bool animate)
         {
             if (visual == null)
             {
                 return;
             }
 
-            visual.ResetForPool();
-            visual.gameObject.SetActive(false);
-            _pooledVisuals.Enqueue(visual);
+            if (!animate || !visual.gameObject.activeInHierarchy)
+            {
+                visual.ResetForPool();
+                visual.gameObject.SetActive(false);
+                _pooledVisuals.Enqueue(visual);
+                return;
+            }
+
+            visual.PlayDespawnPop(
+                despawnPopDuration,
+                despawnPopTargetScaleMultiplier,
+                () =>
+                {
+                    if (visual == null)
+                    {
+                        return;
+                    }
+
+                    visual.ResetForPool();
+                    visual.gameObject.SetActive(false);
+                    _pooledVisuals.Enqueue(visual);
+                });
         }
 
         private bool TryFindSpawnPosition(IReadOnlyList<Vector2> reservedPositions, out Vector2 spawnPosition)
