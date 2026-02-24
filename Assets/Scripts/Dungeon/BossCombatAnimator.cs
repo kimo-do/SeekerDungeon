@@ -16,11 +16,15 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private float attackIntervalSeconds = 1.25f;
         [SerializeField] private float attackIntervalJitterSeconds = 0.2f;
         [SerializeField] private Animator[] explicitAnimators;
+        [SerializeField] private GameObject aliveVisualRoot;
+        [SerializeField] private GameObject deadVisualRoot;
 
         private readonly List<Animator> _resolvedAnimators = new();
         private Transform _animatorRoot;
         private bool _isCombatActive;
         private Coroutine _combatLoopCoroutine;
+
+        public bool UsesAliveDeadVisualRoots => aliveVisualRoot != null || deadVisualRoot != null;
 
         public void SetAnimatorRoot(Transform animatorRoot)
         {
@@ -31,6 +35,24 @@ namespace SeekerDungeon.Dungeon
 
             _animatorRoot = animatorRoot;
             _resolvedAnimators.Clear();
+        }
+
+        public void SetIsDead(bool isDead)
+        {
+            if (!UsesAliveDeadVisualRoots)
+            {
+                return;
+            }
+
+            if (aliveVisualRoot != null)
+            {
+                aliveVisualRoot.SetActive(!isDead);
+            }
+
+            if (deadVisualRoot != null)
+            {
+                deadVisualRoot.SetActive(isDead);
+            }
         }
 
         public void SetCombatActive(bool isActive)

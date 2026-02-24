@@ -214,6 +214,7 @@ namespace SeekerDungeon.Dungeon
             }
 
             var animators = activeRoot.GetComponentsInChildren<Animator>(true);
+            var useAliveDeadVisualRoots = ResolveCombatAnimator()?.UsesAliveDeadVisualRoots ?? false;
             var appliedDeadVisualToAnyAnimator = false;
             for (var index = 0; index < animators.Length; index += 1)
             {
@@ -287,7 +288,8 @@ namespace SeekerDungeon.Dungeon
                     deathAnimatorParameter,
                     deathAnimatorParameterFallbackNames,
                     AnimatorControllerParameterType.Trigger);
-                if (shouldTriggerDead &&
+                if (!useAliveDeadVisualRoots &&
+                    shouldTriggerDead &&
                     !string.IsNullOrWhiteSpace(triggerParameter))
                 {
                     animator.SetTrigger(triggerParameter);
@@ -842,6 +844,7 @@ namespace SeekerDungeon.Dungeon
             }
 
             resolvedCombatAnimator.SetAnimatorRoot(activeRoot != null ? activeRoot.transform : transform);
+            resolvedCombatAnimator.SetIsDead(monster != null && monster.IsDead);
             var shouldAttack = monster != null && !monster.IsDead && fighterCount > 0;
             resolvedCombatAnimator.SetCombatActive(shouldAttack);
         }

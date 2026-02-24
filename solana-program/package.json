@@ -13,6 +13,7 @@
     "mint-tokens": "npx tsx scripts/mint-test-tokens.ts",
     "reset-player-only": "npx tsx scripts/reset-player-only-devnet.ts",
     "reset-player-and-fund": "npx tsx scripts/reset-player-and-fund-devnet.ts",
+    "grant-self-item": "npx tsx scripts/grant-self-item-devnet.ts",
     "smoke-door": "npx tsx scripts/smoke-door-devnet.ts",
     "smoke-locked-door": "npx tsx scripts/smoke-locked-door-unlock-devnet.ts",
     "smoke-room-routing": "npx tsx scripts/smoke-room-routing-devnet.ts",

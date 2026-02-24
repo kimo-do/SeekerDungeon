@@ -129,6 +129,8 @@ impl RoomAccount {
     /// Refund percentage when abandoning (80%)
     pub const ABANDON_REFUND_PERCENT: u64 = 80;
     pub const BOSS_BASE_HP: u64 = 300;
+    pub const BONE_BOSS_ID: u16 = 11;
+    pub const BONE_BOSS_HP_MULTIPLIER: u64 = 5;
 
     /// Get opposite direction
     pub fn opposite_direction(direction: u8) -> u8 {
@@ -187,9 +189,12 @@ impl RoomAccount {
     pub fn boss_hp_for_depth(depth: u32, boss_id: u16) -> u64 {
         let depth_multiplier = 1 + (depth / 4) as u64;
         let id_multiplier = 1 + (boss_id % 5) as u64;
-        let hp = Self::BOSS_BASE_HP
+        let mut hp = Self::BOSS_BASE_HP
             .saturating_mul(depth_multiplier)
             .saturating_mul(id_multiplier);
+        if boss_id == Self::BONE_BOSS_ID {
+            hp = hp.saturating_mul(Self::BONE_BOSS_HP_MULTIPLIER);
+        }
         hp.min(MAX_BOSS_HP)
     }
 

@@ -286,6 +286,7 @@ MonoBehaviour:
   forceAliveAnimationStateWheneverAlive: 1
   deadMaterialOverride: {fileID: 2100000, guid: a93ae552c46019f48a0d3b4bd839b641, type: 2}
   logDebugMessages: 0
+  combatAnimator: {fileID: 0}
 --- !u!1 &1594370321450786081
 GameObject:
   m_ObjectHideFlags: 0
