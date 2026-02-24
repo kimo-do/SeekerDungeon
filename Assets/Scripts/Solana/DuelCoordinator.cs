@@ -18,6 +18,9 @@ namespace SeekerDungeon.Solana
     [DisallowMultipleComponent]
     public sealed class DuelCoordinator : MonoBehaviour
     {
+        private const float EstimatedSecondsPerSlot = 0.4f;
+        private const string SpectatorReplaySeenPrefsKey = "LG_DUEL_SPECTATOR_SEEN_V1";
+
         private static DuelCoordinator _activeInstance;
 
         [SerializeField] private LGManager manager;
@@ -43,6 +46,8 @@ namespace SeekerDungeon.Solana
         [SerializeField] private float spectatorReplaySpeedMultiplier = 1.2f;
         [SerializeField] private bool spectatorReplayShowToast = true;
         [SerializeField] private float spectatorReplayCooldownSeconds = 7f;
+        [SerializeField] private float spectatorReplayMaxAgeSeconds = 300f;
+        [SerializeField] private float spectatorReplaySeenRetentionSeconds = 86400f;
         [SerializeField] private bool duelReplayDebugLogs;
         [Header("Duel Camera")]
         [SerializeField] private CinemachineCamera gameplayCamera;
@@ -65,6 +70,7 @@ namespace SeekerDungeon.Solana
         private readonly HashSet<string> _spectatorReplayTransitionsSeen = new(StringComparer.Ordinal);
         private readonly Dictionary<string, float> _spectatorReplayCooldownUntilByPda = new(StringComparer.Ordinal);
         private readonly Dictionary<string, float> _spectatorReplaySessionExpiryByPda = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, long> _spectatorReplaySeenAtUnixByTransition = new(StringComparer.Ordinal);
         private readonly Queue<SpectatorReplayRequest> _spectatorReplayQueue = new();
         private static float _lastCreateRequestRealtime;
         private static string _lastCreateRequestFingerprint = string.Empty;
@@ -92,6 +98,19 @@ namespace SeekerDungeon.Solana
             public DuelChallengeView Challenge { get; }
             public sbyte RoomX { get; }
             public sbyte RoomY { get; }
+        }
+
+        [Serializable]
+        private sealed class SpectatorReplaySeenStore
+        {
+            public List<SpectatorReplaySeenEntry> Entries = new();
+        }
+
+        [Serializable]
+        private sealed class SpectatorReplaySeenEntry
+        {
+            public string TransitionKey;
+            public long SeenAtUnix;
         }
 
         private void Awake()
@@ -131,6 +150,7 @@ namespace SeekerDungeon.Solana
             }
 
             gameplayCamera ??= ResolveGameplayCamera();
+            LoadSpectatorReplaySeenStore();
         }
 
         private void OnDestroy()
@@ -260,7 +280,7 @@ namespace SeekerDungeon.Solana
             _isRefreshInFlight = true;
             try
             {
-                if (Time.realtimeSinceStartup - _lastSlotRefreshRealtime >= 10f)
+                if (!_latestKnownSlot.HasValue || Time.realtimeSinceStartup - _lastSlotRefreshRealtime >= 10f)
                 {
                     _latestKnownSlot = await manager.GetCurrentSlotAsync();
                     _lastSlotRefreshRealtime = Time.realtimeSinceStartup;
@@ -376,7 +396,12 @@ namespace SeekerDungeon.Solana
             for (var index = 0; index < roomChallenges.Count; index += 1)
             {
                 var challenge = roomChallenges[index];
-                if (!ShouldQueueSpectatorReplay(localWallet, challenge, localPlayer.CurrentRoomX, localPlayer.CurrentRoomY))
+                if (!ShouldQueueSpectatorReplay(
+                        localWallet,
+                        challenge,
+                        localPlayer.CurrentRoomX,
+                        localPlayer.CurrentRoomY,
+                        _latestKnownSlot))
                 {
                     continue;
                 }
@@ -392,7 +417,12 @@ namespace SeekerDungeon.Solana
             }
         }
 
-        private bool ShouldQueueSpectatorReplay(PublicKey localWallet, DuelChallengeView challenge, sbyte roomX, sbyte roomY)
+        private bool ShouldQueueSpectatorReplay(
+            PublicKey localWallet,
+            DuelChallengeView challenge,
+            sbyte roomX,
+            sbyte roomY,
+            ulong? currentSlot)
         {
             if (challenge == null || challenge.Pda == null)
             {
@@ -410,6 +440,11 @@ namespace SeekerDungeon.Solana
                 return false;
             }
 
+            if (!IsChallengeRecentEnoughForSpectatorReplay(challenge, currentSlot))
+            {
+                return false;
+            }
+
             if (localWallet != null &&
                 (string.Equals(challenge.Challenger?.Key, localWallet.Key, StringComparison.Ordinal) ||
                  string.Equals(challenge.Opponent?.Key, localWallet.Key, StringComparison.Ordinal)))
@@ -420,6 +455,11 @@ namespace SeekerDungeon.Solana
             var challengePdaKey = challenge.Pda.Key;
             var transitionKey = BuildReplayTransitionKey(challenge);
             if (_spectatorReplayTransitionsSeen.Contains(transitionKey))
+            {
+                return false;
+            }
+
+            if (_spectatorReplaySeenAtUnixByTransition.ContainsKey(transitionKey))
             {
                 return false;
             }
@@ -538,6 +578,11 @@ namespace SeekerDungeon.Solana
                     var cooldownSeconds = Mathf.Max(1f, spectatorReplayCooldownSeconds);
                     _spectatorReplayCooldownUntilByPda[challenge.Pda.Key] = Time.realtimeSinceStartup + cooldownSeconds;
                     _spectatorReplaySessionExpiryByPda.Remove(challenge.Pda.Key);
+                    if (replayPlayed)
+                    {
+                        MarkSpectatorReplaySeen(BuildReplayTransitionKey(challenge));
+                    }
+
                     LogReplayDebug(
                         $"spectator replay {(replayPlayed ? "completed" : "skipped")} pda={challenge.Pda.Key} cooldown={cooldownSeconds:0.0}s");
                 }
@@ -554,6 +599,27 @@ namespace SeekerDungeon.Solana
             var status = challenge?.Status ?? DuelChallengeStatus.Unknown;
             var settledSlot = challenge?.SettledSlot ?? 0UL;
             return $"{pda}:{(byte)status}:{settledSlot}";
+        }
+
+        private bool IsChallengeRecentEnoughForSpectatorReplay(DuelChallengeView challenge, ulong? currentSlot)
+        {
+            var maxAgeSeconds = Mathf.Max(0f, spectatorReplayMaxAgeSeconds);
+            if (maxAgeSeconds <= 0f || !currentSlot.HasValue)
+            {
+                return true;
+            }
+
+            var referenceSlot = challenge.Status == DuelChallengeStatus.Settled && challenge.SettledSlot > 0UL
+                ? challenge.SettledSlot
+                : challenge.RequestedSlot;
+            if (referenceSlot == 0UL || currentSlot.Value <= referenceSlot)
+            {
+                return true;
+            }
+
+            var maxAgeSlotsFloat = maxAgeSeconds / EstimatedSecondsPerSlot;
+            var maxAgeSlots = maxAgeSlotsFloat <= 0f ? 0UL : (ulong)Mathf.CeilToInt(maxAgeSlotsFloat);
+            return currentSlot.Value - referenceSlot <= maxAgeSlots;
         }
 
         private static string GetReplayDisplayName(string snapshotDisplayName, PublicKey wallet)
@@ -607,6 +673,118 @@ namespace SeekerDungeon.Solana
                 {
                     _spectatorReplayCooldownUntilByPda.Remove(expiredKeys[i]);
                 }
+            }
+
+            PrunePersistedSpectatorReplaySeenStore();
+        }
+
+        private void LoadSpectatorReplaySeenStore()
+        {
+            _spectatorReplaySeenAtUnixByTransition.Clear();
+            if (!PlayerPrefs.HasKey(SpectatorReplaySeenPrefsKey))
+            {
+                return;
+            }
+
+            var raw = PlayerPrefs.GetString(SpectatorReplaySeenPrefsKey, string.Empty);
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return;
+            }
+
+            try
+            {
+                var store = JsonUtility.FromJson<SpectatorReplaySeenStore>(raw);
+                var entries = store?.Entries;
+                if (entries == null || entries.Count == 0)
+                {
+                    return;
+                }
+
+                for (var i = 0; i < entries.Count; i += 1)
+                {
+                    var entry = entries[i];
+                    if (entry == null || string.IsNullOrWhiteSpace(entry.TransitionKey) || entry.SeenAtUnix <= 0L)
+                    {
+                        continue;
+                    }
+
+                    _spectatorReplaySeenAtUnixByTransition[entry.TransitionKey] = entry.SeenAtUnix;
+                }
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"[DuelCoordinator] Failed to load spectator replay seen store: {exception.Message}");
+            }
+
+            PrunePersistedSpectatorReplaySeenStore();
+        }
+
+        private void MarkSpectatorReplaySeen(string transitionKey)
+        {
+            if (string.IsNullOrWhiteSpace(transitionKey))
+            {
+                return;
+            }
+
+            _spectatorReplaySeenAtUnixByTransition[transitionKey] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            SaveSpectatorReplaySeenStore();
+        }
+
+        private void PrunePersistedSpectatorReplaySeenStore()
+        {
+            if (_spectatorReplaySeenAtUnixByTransition.Count == 0)
+            {
+                return;
+            }
+
+            var retentionSeconds = Mathf.Max(
+                Mathf.Max(60f, spectatorReplaySeenRetentionSeconds),
+                Mathf.Max(60f, spectatorReplayMaxAgeSeconds) * 2f);
+            var cutoffUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - (long)Mathf.CeilToInt(retentionSeconds);
+            var keysToRemove = new List<string>();
+            foreach (var kvp in _spectatorReplaySeenAtUnixByTransition)
+            {
+                if (kvp.Value < cutoffUnix)
+                {
+                    keysToRemove.Add(kvp.Key);
+                }
+            }
+
+            if (keysToRemove.Count == 0)
+            {
+                return;
+            }
+
+            for (var i = 0; i < keysToRemove.Count; i += 1)
+            {
+                _spectatorReplaySeenAtUnixByTransition.Remove(keysToRemove[i]);
+            }
+
+            SaveSpectatorReplaySeenStore();
+        }
+
+        private void SaveSpectatorReplaySeenStore()
+        {
+            try
+            {
+                var store = new SpectatorReplaySeenStore();
+                foreach (var kvp in _spectatorReplaySeenAtUnixByTransition)
+                {
+                    store.Entries.Add(new SpectatorReplaySeenEntry
+                    {
+                        TransitionKey = kvp.Key,
+                        SeenAtUnix = kvp.Value
+                    });
+                }
+
+                var raw = JsonUtility.ToJson(store);
+                PlayerPrefs.SetString(SpectatorReplaySeenPrefsKey, raw);
+                PlayerPrefs.Save();
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"[DuelCoordinator] Failed to save spectator replay seen store: {exception.Message}");
             }
         }
 
