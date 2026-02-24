@@ -9,15 +9,18 @@ import {
 } from "@solana/spl-token";
 import { Keypair, SystemProgram, Transaction } from "@solana/web3.js";
 import BN from "bn.js";
+import { START_X, START_Y } from "./constants";
 
 const DEFAULT_QUEUE = new anchor.web3.PublicKey(
   "Cuj97ggrhhidhbu39TijNVqE74xvKJ69gDervRUXAxGh",
 );
 const DEFAULT_PUBKEY = new anchor.web3.PublicKey("11111111111111111111111111111111");
-const START_ROOM_X = 5;
-const START_ROOM_Y = 5;
+const START_ROOM_X = START_X;
+const START_ROOM_Y = START_Y;
 const PLAYER_SOL_FUNDING_LAMPORTS = 250_000_000;
 const DUEL_STAKE_AMOUNT = 5_000_000;
+const DUEL_WINNER_TAX_BASIS_POINTS = 200n;
+const BASIS_POINTS_DENOMINATOR = 10_000n;
 const PLAYER_SKR_FUNDING = 50_000_000;
 const MAX_SETTLEMENT_POLLS = 40;
 const POLL_DELAY_MS = 2_500;
@@ -275,6 +278,7 @@ async function main(): Promise<void> {
       opponentPlayerAccount: opponentPlayerPda,
       challengerTokenAccount,
       opponentTokenAccount,
+      devTreasuryTokenAccount: adminTokenAccount,
       oracleQueue: DEFAULT_QUEUE,
       tokenProgram: TOKEN_PROGRAM_ID,
     })
@@ -316,7 +320,9 @@ async function main(): Promise<void> {
 
   const netChallenger = challengerAfter - challengerBefore;
   const netOpponent = opponentAfter - opponentBefore;
-  const expectedWinNet = BigInt(DUEL_STAKE_AMOUNT);
+  const duelTotalPot = BigInt(DUEL_STAKE_AMOUNT) * 2n;
+  const duelTaxAmount = (duelTotalPot * DUEL_WINNER_TAX_BASIS_POINTS) / BASIS_POINTS_DENOMINATOR;
+  const expectedWinNet = BigInt(DUEL_STAKE_AMOUNT) - duelTaxAmount;
   const expectedLossNet = -BigInt(DUEL_STAKE_AMOUNT);
   const expectedDrawNet = 0n;
   if (isDraw) {

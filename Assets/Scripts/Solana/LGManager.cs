@@ -253,6 +253,16 @@ namespace SeekerDungeon.Solana
             Log($"RPC primary={rpcUrl} fallback={fallbackRpcUrl}");
             Log($"Runtime network={LGConfig.ActiveRuntimeNetwork}");
             Log($"SKR mint={LGConfig.ActiveSkrMint}");
+            if (LGConfig.IsRuntimeClusterMismatch(rpcUrl))
+            {
+                LogError(
+                    $"Configured primary RPC ({rpcUrl}) does not match runtime network ({LGConfig.ActiveRuntimeNetwork}).");
+            }
+            if (LGConfig.IsRuntimeClusterMismatch(fallbackRpcUrl))
+            {
+                LogError(
+                    $"Configured fallback RPC ({fallbackRpcUrl}) does not match runtime network ({LGConfig.ActiveRuntimeNetwork}).");
+            }
             if (LGConfig.IsUsingMainnetSkrMint &&
                 rpcUrl.IndexOf("devnet", StringComparison.OrdinalIgnoreCase) >= 0)
             {
@@ -3010,6 +3020,9 @@ namespace SeekerDungeon.Solana
             var opponentTokenAccount = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(
                 challenge.Opponent,
                 CurrentGlobalState.SkrMint);
+            var devTreasuryTokenAccount = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(
+                CurrentGlobalState.Admin,
+                CurrentGlobalState.SkrMint);
             var programIdentityPda = DeriveProgramIdentityPda();
             if (programIdentityPda == null)
             {
@@ -3042,6 +3055,7 @@ namespace SeekerDungeon.Solana
                         OpponentPlayerAccount = opponentPlayerPda,
                         ChallengerTokenAccount = challengerTokenAccount,
                         OpponentTokenAccount = opponentTokenAccount,
+                        DevTreasuryTokenAccount = devTreasuryTokenAccount,
                         ProgramIdentity = programIdentityPda
                     }),
                 ensureSessionIfPossible: false,
@@ -5458,6 +5472,12 @@ namespace SeekerDungeon.Solana
                 LogError($"LGManager WalletAdapter path aborted: wallet={wallet != null} account={walletAccount != null} ixNull={instruction == null}");
                 return null;
             }
+            var walletRpcEndpoint = DescribeRpcEndpoint(wallet.ActiveRpcClient);
+            if (LGConfig.IsRuntimeClusterMismatch(walletRpcEndpoint))
+            {
+                LogError(
+                    $"Wallet RPC endpoint appears on the wrong cluster for runtime ({LGConfig.ActiveRuntimeNetwork}). endpoint={walletRpcEndpoint}");
+            }
 
             Log("LGManager WalletAdapter: requesting blockhash...");
             var blockhash = await wallet.GetBlockHash(Commitment.Confirmed, useCache: false);
@@ -5990,12 +6010,6 @@ namespace SeekerDungeon.Solana
             if (_fallbackRpcClient != null && !candidates.Contains(_fallbackRpcClient))
             {
                 candidates.Add(_fallbackRpcClient);
-            }
-
-            var walletRpc = Web3.Wallet?.ActiveRpcClient;
-            if (walletRpc != null && !candidates.Contains(walletRpc))
-            {
-                candidates.Add(walletRpc);
             }
 
             return candidates;

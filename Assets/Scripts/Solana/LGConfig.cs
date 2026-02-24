@@ -7,7 +7,11 @@ namespace SeekerDungeon.Solana
     /// </summary>
     public static class LGConfig
     {
-        private const string DeploymentConfigResourcePath = "Solana/LGSolanaDeploymentConfig";
+        private static readonly string[] DeploymentConfigResourcePaths =
+        {
+            "LocalSecrets/LGSolanaDeploymentConfig",
+            "Solana/LGSolanaDeploymentConfig"
+        };
 
         // Program addresses (from devnet-config.json)
         public const string PROGRAM_ID = "3Ctc2FgnNHQtGAcZftMS4ykLhJYjLzBD3hELKy55DnKo";
@@ -178,7 +182,16 @@ namespace SeekerDungeon.Solana
             }
 
             _deploymentConfigLoadAttempted = true;
-            _cachedDeploymentConfig = Resources.Load<LGSolanaDeploymentConfig>(DeploymentConfigResourcePath);
+            for (var index = 0; index < DeploymentConfigResourcePaths.Length; index += 1)
+            {
+                var path = DeploymentConfigResourcePaths[index];
+                var loaded = Resources.Load<LGSolanaDeploymentConfig>(path);
+                if (loaded != null)
+                {
+                    _cachedDeploymentConfig = loaded;
+                    break;
+                }
+            }
             return _cachedDeploymentConfig;
         }
 
@@ -229,6 +242,24 @@ namespace SeekerDungeon.Solana
             return
                 (primaryIsDevnet && fallbackIsMainnet) ||
                 (primaryIsMainnet && fallbackIsDevnet);
+        }
+
+        public static bool IsRuntimeClusterMismatch(string rpcUrl)
+        {
+            if (string.IsNullOrWhiteSpace(rpcUrl))
+            {
+                return false;
+            }
+
+            var normalized = rpcUrl.Trim();
+            var urlLooksMainnet = normalized.IndexOf("mainnet", System.StringComparison.OrdinalIgnoreCase) >= 0;
+            var urlLooksDevnet = normalized.IndexOf("devnet", System.StringComparison.OrdinalIgnoreCase) >= 0;
+            if (!urlLooksMainnet && !urlLooksDevnet)
+            {
+                return false;
+            }
+
+            return IsMainnetRuntime ? urlLooksDevnet : urlLooksMainnet;
         }
 
         private static string NormalizeFallbackForPrimaryCluster(string primary)

@@ -499,8 +499,8 @@
 
 .hud-modal-close-button {
     position: absolute;
-    top: 4px;
-    right: 4px;
+    top: 8px;
+    right: 8px;
     width: 122px;
     height: 122px;
     min-width: 122px;
@@ -519,6 +519,7 @@
     border-bottom-right-radius: 18px;
     -unity-text-outline-width: 1px;
     -unity-text-outline-color: rgba(0, 0, 0, 0.8);
+    z-index: 120;
 }
 
 .hud-modal-title {

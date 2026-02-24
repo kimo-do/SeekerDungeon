@@ -274,6 +274,16 @@ namespace SeekerDungeon.Solana
             EmitStatus($"RPC primary={rpcUrl} fallback={fallbackRpcUrl}");
             EmitStatus($"Runtime network={LGConfig.ActiveRuntimeNetwork}");
             EmitStatus($"Session-on-Android-wallet-adapter enabled={allowWalletAdapterSessionOnAndroid}");
+            if (LGConfig.IsRuntimeClusterMismatch(rpcUrl))
+            {
+                EmitError(
+                    $"Configured primary RPC ({rpcUrl}) does not match runtime network ({LGConfig.ActiveRuntimeNetwork}).");
+            }
+            if (LGConfig.IsRuntimeClusterMismatch(fallbackRpcUrl))
+            {
+                EmitError(
+                    $"Configured fallback RPC ({fallbackRpcUrl}) does not match runtime network ({LGConfig.ActiveRuntimeNetwork}).");
+            }
         }
 
         private void OnEnable()
@@ -1557,6 +1567,12 @@ namespace SeekerDungeon.Solana
                 EmitError($"{tracePrefix}WalletAdapter path aborted: wallet={wallet != null} account={walletAccount != null} ixCount={instructions?.Count ?? 0}");
                 return null;
             }
+            var walletRpcEndpoint = DescribeRpcEndpoint(wallet.ActiveRpcClient);
+            if (LGConfig.IsRuntimeClusterMismatch(walletRpcEndpoint))
+            {
+                EmitError(
+                    $"{tracePrefix}Wallet RPC endpoint appears on the wrong cluster for runtime ({LGConfig.ActiveRuntimeNetwork}). endpoint={walletRpcEndpoint}");
+            }
 
             var hasExtraLocalSigners = false;
             for (var signerIndex = 0; signerIndex < signers.Count; signerIndex += 1)
@@ -1993,12 +2009,6 @@ namespace SeekerDungeon.Solana
             if (_secondaryRpcClient != null && !candidates.Contains(_secondaryRpcClient))
             {
                 candidates.Add(_secondaryRpcClient);
-            }
-
-            var walletRpc = Web3.Wallet?.ActiveRpcClient;
-            if (walletRpc != null && !candidates.Contains(walletRpc))
-            {
-                candidates.Add(walletRpc);
             }
 
             return candidates;

@@ -24,6 +24,7 @@ namespace SeekerDungeon.Dungeon
         [SerializeField] private RoomController roomController;
         [SerializeField] private DungeonManager dungeonManager;
         [SerializeField] private LootSequenceController lootSequenceController;
+        [SerializeField] private ItemRegistry itemRegistry;
         [SerializeField] private SeekerDungeon.Solana.LGGameHudUI gameHudUI;
         [SerializeField] private string exitSceneName = "MenuScene";
 
@@ -72,6 +73,11 @@ namespace SeekerDungeon.Dungeon
             if (gameHudUI == null)
             {
                 gameHudUI = UnityEngine.Object.FindFirstObjectByType<SeekerDungeon.Solana.LGGameHudUI>();
+            }
+
+            if (itemRegistry == null)
+            {
+                itemRegistry = Resources.Load<ItemRegistry>("ItemRegistry");
             }
 
             _serverFeedClient = ServerFeedClient.Instance ?? UnityEngine.Object.FindFirstObjectByType<ServerFeedClient>();
@@ -1172,8 +1178,19 @@ namespace SeekerDungeon.Dungeon
                 return;
             }
 
-            var itemName = LGConfig.GetItemDisplayName(firstItem.ItemId);
-            var itemRarity = string.Empty;
+            if (itemRegistry == null)
+            {
+                return;
+            }
+
+            var rarity = itemRegistry.GetRarity(firstItem.ItemId);
+            if (rarity != ItemRarity.Legendary && rarity != ItemRarity.Mystic)
+            {
+                return;
+            }
+
+            var itemName = itemRegistry.GetDisplayName(firstItem.ItemId);
+            var itemRarity = rarity.ToString().ToLowerInvariant();
             _serverFeedClient.PublishChestLoot(itemName, itemRarity, roomLabel);
         }
     }

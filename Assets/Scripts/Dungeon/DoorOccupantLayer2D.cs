@@ -527,12 +527,12 @@ namespace SeekerDungeon.Dungeon
 
     public sealed class DoorOccupantVisual2D : MonoBehaviour
     {
-        private const int BaseSortingOrder = 10;
-        private const float SortingUnitsPerWorldUnit = 100f;
+        private const int PlayerSortOrderStep = 20;
         private const float MinScaleMultiplier = 0.05f;
         private static readonly Color ActiveNameColor = Color.white;
         private static readonly Color IdleNameColor = new(0.84f, 0.84f, 0.84f, 1f);
         private static readonly Color AfkNameColor = new(0.68f, 0.68f, 0.68f, 1f);
+        private static readonly List<DoorOccupantVisual2D> SortingBuffer = new();
 
         private LGPlayerController _playerController;
         private SpriteRenderer[] _spriteRenderers;
@@ -563,6 +563,7 @@ namespace SeekerDungeon.Dungeon
         private void OnDisable()
         {
             KillSpawnTween();
+            RefreshRelativeSortingOrders();
         }
 
         public void Bind(
@@ -571,6 +572,7 @@ namespace SeekerDungeon.Dungeon
             OccupantFacingDirection facingDirection,
             OccupantPresenceState presenceState = OccupantPresenceState.Active)
         {
+            _ = stackIndex;
             transform.rotation = Quaternion.identity;
             BoundPresenceState = presenceState;
             BoundWalletKey = occupant?.WalletKey ?? string.Empty;
@@ -600,29 +602,8 @@ namespace SeekerDungeon.Dungeon
 
             ApplyFacing(facingDirection);
 
-            if (_spriteRenderers != null)
-            {
-                // Keep inter-player layering stable by world Y.
-                // Lower Y renders in front (higher sorting order).
-                var ySort = Mathf.RoundToInt(-transform.position.y * SortingUnitsPerWorldUnit);
-                var sortingOffset = BaseSortingOrder + (ySort * 10) + stackIndex;
-                for (var index = 0; index < _spriteRenderers.Length; index += 1)
-                {
-                    var spriteRenderer = _spriteRenderers[index];
-                    if (spriteRenderer == null)
-                    {
-                        continue;
-                    }
-
-                    var baseSortingOrder =
-                        _baseSortingOrders != null && index < _baseSortingOrders.Length
-                            ? _baseSortingOrders[index]
-                            : spriteRenderer.sortingOrder;
-                    spriteRenderer.sortingOrder = baseSortingOrder + sortingOffset;
-                }
-            }
-
             gameObject.name = $"Occupant_{occupant.DisplayName}";
+            RefreshRelativeSortingOrders();
         }
 
         public void PlaySpawnPop(float duration, float startScaleMultiplier, float delaySeconds = 0f)
@@ -674,6 +655,7 @@ namespace SeekerDungeon.Dungeon
                 _playerController.ClearDisplayNameStyleOverride();
                 _playerController.SetOccupantPresenceState(OccupantPresenceState.Active);
             }
+            RefreshRelativeSortingOrders();
         }
 
         private static Color ResolveNameColor(OccupantPresenceState state)
@@ -736,6 +718,73 @@ namespace SeekerDungeon.Dungeon
 
             _spawnTween.Kill();
             _spawnTween = null;
+        }
+
+        private void ApplyPlayerSortingOffset(int playerSortingOffset)
+        {
+            if (_spriteRenderers == null)
+            {
+                return;
+            }
+
+            for (var index = 0; index < _spriteRenderers.Length; index += 1)
+            {
+                var spriteRenderer = _spriteRenderers[index];
+                if (spriteRenderer == null)
+                {
+                    continue;
+                }
+
+                var baseSortingOrder =
+                    _baseSortingOrders != null && index < _baseSortingOrders.Length
+                        ? _baseSortingOrders[index]
+                        : spriteRenderer.sortingOrder;
+                spriteRenderer.sortingOrder = baseSortingOrder + playerSortingOffset;
+            }
+        }
+
+        private static void RefreshRelativeSortingOrders()
+        {
+            var visuals = FindObjectsByType<DoorOccupantVisual2D>(
+                FindObjectsInactive.Exclude,
+                FindObjectsSortMode.None);
+
+            SortingBuffer.Clear();
+            for (var index = 0; index < visuals.Length; index += 1)
+            {
+                var visual = visuals[index];
+                if (visual == null || !visual.gameObject.activeInHierarchy)
+                {
+                    continue;
+                }
+
+                SortingBuffer.Add(visual);
+            }
+
+            SortingBuffer.Sort(CompareByWorldDepth);
+            for (var index = 0; index < SortingBuffer.Count; index += 1)
+            {
+                var visual = SortingBuffer[index];
+                var playerSortingOffset = index * PlayerSortOrderStep;
+                visual.ApplyPlayerSortingOffset(playerSortingOffset);
+            }
+        }
+
+        private static int CompareByWorldDepth(DoorOccupantVisual2D left, DoorOccupantVisual2D right)
+        {
+            var yCompare = right.transform.position.y.CompareTo(left.transform.position.y);
+            if (yCompare != 0)
+            {
+                return yCompare;
+            }
+
+            var xCompare = left.transform.position.x.CompareTo(right.transform.position.x);
+            if (xCompare != 0)
+            {
+                return xCompare;
+            }
+
+            return left.GetInstanceID().CompareTo(right.GetInstanceID());
         }
     }
 }

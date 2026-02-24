@@ -33,6 +33,7 @@ namespace SeekerDungeon.Solana
             public int id;
             public string type;
             public string message;
+            public string actorDisplayName;
             public long createdAtUnix;
         }
 
@@ -410,6 +411,11 @@ namespace SeekerDungeon.Solana
                     continue;
                 }
 
+                if (ShouldIgnoreLocalEvent(evt))
+                {
+                    continue;
+                }
+
                 _lastSeenEventId = Mathf.Max(_lastSeenEventId, evt.id);
                 if (hudQueue != null)
                 {
@@ -449,6 +455,11 @@ namespace SeekerDungeon.Solana
             }
 
             if (!MarkSeen(parsed.id))
+            {
+                return;
+            }
+
+            if (ShouldIgnoreLocalEvent(parsed))
             {
                 return;
             }
@@ -499,6 +510,55 @@ namespace SeekerDungeon.Solana
             }
 
             return $"{wallet.Substring(0, 4)}...{wallet.Substring(wallet.Length - 4)}";
+        }
+
+        private bool ShouldIgnoreLocalEvent(FeedEventDto evt)
+        {
+            if (evt == null)
+            {
+                return false;
+            }
+
+            var localDisplayName = GetLocalDisplayName();
+            if (string.IsNullOrWhiteSpace(localDisplayName))
+            {
+                return false;
+            }
+
+            var localDisplayTrimmed = localDisplayName.Trim();
+            if (string.Equals(localDisplayTrimmed, "Unknown", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(evt.actorDisplayName) &&
+                string.Equals(evt.actorDisplayName.Trim(), localDisplayTrimmed, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            var message = evt.message?.Trim();
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return false;
+            }
+
+            if (message.StartsWith(localDisplayTrimmed + " ", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            var wallet = Web3.Wallet?.Account?.PublicKey?.Key;
+            if (!string.IsNullOrWhiteSpace(wallet) && wallet.Length >= 8)
+            {
+                var shortWallet = $"{wallet.Substring(0, 4)}...{wallet.Substring(wallet.Length - 4)}";
+                if (message.StartsWith(shortWallet + " ", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void Log(string message)

@@ -5,6 +5,9 @@ use crate::errors::ChainDepthError;
 use crate::events::DuelSettled;
 use crate::state::{DuelChallenge, GlobalAccount, MAX_DUEL_HITS_PER_PLAYER};
 
+const BASIS_POINTS_DENOMINATOR: u64 = 10_000;
+const DUEL_WINNER_TAX_BASIS_POINTS: u64 = 200;
+
 #[derive(Accounts)]
 pub struct ConsumeDuelRandomness<'info> {
     #[account(address = ephemeral_vrf_sdk::consts::VRF_PROGRAM_IDENTITY)]
@@ -31,6 +34,13 @@ pub struct ConsumeDuelRandomness<'info> {
 
     #[account(mut)]
     pub opponent_token_account: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        constraint = dev_treasury_token_account.mint == global.skr_mint,
+        constraint = dev_treasury_token_account.owner == global.admin
+    )]
+    pub dev_treasury_token_account: Account<'info, TokenAccount>,
 
     pub token_program: Program<'info, Token>,
 }
@@ -102,12 +112,20 @@ pub fn handler(
         duel_challenge.winner = Pubkey::default();
     } else {
         let winner = duel_outcome.winner.ok_or(ChainDepthError::InvalidDuelState)?;
+        let tax_amount = total_pot
+            .checked_mul(DUEL_WINNER_TAX_BASIS_POINTS)
+            .ok_or(ChainDepthError::Overflow)?
+            / BASIS_POINTS_DENOMINATOR;
+        let winner_payout_amount = total_pot
+            .checked_sub(tax_amount)
+            .ok_or(ChainDepthError::Overflow)?;
+
         let winner_token_account = if winner == duel_challenge.challenger {
             ctx.accounts.challenger_token_account.to_account_info()
         } else {
             ctx.accounts.opponent_token_account.to_account_info()
         };
-        let payout_context = CpiContext::new_with_signer(
+        let winner_payout_context = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             Transfer {
                 from: ctx.accounts.duel_escrow.to_account_info(),
@@ -116,7 +134,20 @@ pub fn handler(
             },
             duel_escrow_signer,
         );
-        token::transfer(payout_context, total_pot)?;
+        token::transfer(winner_payout_context, winner_payout_amount)?;
+
+        if tax_amount > 0 {
+            let tax_transfer_context = CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.duel_escrow.to_account_info(),
+                    to: ctx.accounts.dev_treasury_token_account.to_account_info(),
+                    authority: ctx.accounts.duel_escrow.to_account_info(),
+                },
+                duel_escrow_signer,
+            );
+            token::transfer(tax_transfer_context, tax_amount)?;
+        }
         duel_challenge.winner = winner;
     }
 

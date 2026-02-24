@@ -62,14 +62,21 @@ pub struct AcceptDuelChallenge<'info> {
         constraint = challenger_token_account.mint == global.skr_mint,
         constraint = challenger_token_account.owner == challenger.key()
     )]
-    pub challenger_token_account: Account<'info, TokenAccount>,
+    pub challenger_token_account: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,
         constraint = opponent_token_account.mint == global.skr_mint,
         constraint = opponent_token_account.owner == opponent.key()
     )]
-    pub opponent_token_account: Account<'info, TokenAccount>,
+    pub opponent_token_account: Box<Account<'info, TokenAccount>>,
+
+    #[account(
+        mut,
+        constraint = dev_treasury_token_account.mint == global.skr_mint,
+        constraint = dev_treasury_token_account.owner == global.admin
+    )]
+    pub dev_treasury_token_account: Box<Account<'info, TokenAccount>>,
 
     /// CHECK: VRF oracle queue account.
     #[account(mut, address = ephemeral_vrf_sdk::consts::DEFAULT_QUEUE)]
@@ -159,6 +166,11 @@ pub fn handler(ctx: Context<AcceptDuelChallenge>, _challenge_seed: u64) -> Resul
         },
         SerializableAccountMeta {
             pubkey: ctx.accounts.opponent_token_account.key(),
+            is_signer: false,
+            is_writable: true,
+        },
+        SerializableAccountMeta {
+            pubkey: ctx.accounts.dev_treasury_token_account.key(),
             is_signer: false,
             is_writable: true,
         },
