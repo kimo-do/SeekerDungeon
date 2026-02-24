@@ -6,6 +6,7 @@ use crate::instructions::session_auth::authorize_player_action;
 use crate::state::{
     item_ids, session_instruction_bits, GlobalAccount, InventoryAccount, LootReceipt,
     PlayerAccount, RoomAccount, SessionAuthority, CENTER_BONE_CHEST, CENTER_CHEST,
+    CENTER_GILDED_CHEST, CENTER_SARCOPHAGUS_CHEST,
 };
 
 #[derive(Accounts)]
@@ -101,7 +102,10 @@ pub fn handler(ctx: Context<LootChest>) -> Result<()> {
     player_account.require_in_dungeon()?;
 
     require!(
-        room.center_type == CENTER_CHEST || room.center_type == CENTER_BONE_CHEST,
+        room.center_type == CENTER_CHEST
+            || room.center_type == CENTER_BONE_CHEST
+            || room.center_type == CENTER_GILDED_CHEST
+            || room.center_type == CENTER_SARCOPHAGUS_CHEST,
         ChainDepthError::NoChest
     );
 
@@ -190,6 +194,8 @@ struct LootSpec {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ChestLootTier {
     Standard,
+    Gilded,
+    Sarcophagus,
     Bone,
 }
 
@@ -278,27 +284,97 @@ const BONE_CHEST_WEAPONS: [LootSpec; 7] = [
     LootSpec { item_id: item_ids::WOODEN_PIPE, weight: 18, min_amount: 1, max_amount: 1 },
 ];
 
+const GILDED_CHEST_VALUABLES: [LootSpec; 12] = [
+    LootSpec { item_id: item_ids::GOLD_COIN, weight: 21, min_amount: 7, max_amount: 18 },
+    LootSpec { item_id: item_ids::GOLD_BAR, weight: 12, min_amount: 2, max_amount: 4 },
+    LootSpec { item_id: item_ids::RUBY, weight: 9, min_amount: 1, max_amount: 3 },
+    LootSpec { item_id: item_ids::SAPPHIRE, weight: 9, min_amount: 1, max_amount: 3 },
+    LootSpec { item_id: item_ids::EMERALD, weight: 9, min_amount: 1, max_amount: 3 },
+    LootSpec { item_id: item_ids::DIAMOND, weight: 7, min_amount: 1, max_amount: 2 },
+    LootSpec { item_id: item_ids::GOLDEN_CHALICE, weight: 8, min_amount: 1, max_amount: 2 },
+    LootSpec { item_id: item_ids::ANCIENT_CROWN, weight: 5, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::CURSED_AMULET, weight: 5, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::MYSTIC_ORB, weight: 5, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::VOID_SHARD, weight: 4, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::SKELETON_KEY, weight: 6, min_amount: 1, max_amount: 2 },
+];
+
+const GILDED_CHEST_WEAPONS: [LootSpec; 7] = [
+    LootSpec { item_id: item_ids::IRON_PICKAXE, weight: 18, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::IRON_SWORD, weight: 17, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::IRON_SCIMITAR, weight: 14, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::DIAMOND_SWORD, weight: 8, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::BRONZE_SWORD, weight: 14, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::WOODEN_PIPE, weight: 15, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::WOODEN_TANKARD, weight: 14, min_amount: 1, max_amount: 1 },
+];
+
+const SARCOPHAGUS_CHEST_VALUABLES: [LootSpec; 12] = [
+    LootSpec { item_id: item_ids::GOLD_COIN, weight: 20, min_amount: 9, max_amount: 24 },
+    LootSpec { item_id: item_ids::GOLD_BAR, weight: 13, min_amount: 2, max_amount: 5 },
+    LootSpec { item_id: item_ids::RUBY, weight: 8, min_amount: 2, max_amount: 4 },
+    LootSpec { item_id: item_ids::SAPPHIRE, weight: 8, min_amount: 2, max_amount: 4 },
+    LootSpec { item_id: item_ids::EMERALD, weight: 8, min_amount: 2, max_amount: 4 },
+    LootSpec { item_id: item_ids::DIAMOND, weight: 8, min_amount: 1, max_amount: 3 },
+    LootSpec { item_id: item_ids::ANCIENT_CROWN, weight: 6, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::CURSED_AMULET, weight: 6, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::GOLDEN_CHALICE, weight: 7, min_amount: 1, max_amount: 2 },
+    LootSpec { item_id: item_ids::MYSTIC_ORB, weight: 6, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::VOID_SHARD, weight: 5, min_amount: 1, max_amount: 2 },
+    LootSpec { item_id: item_ids::SKELETON_KEY, weight: 5, min_amount: 1, max_amount: 2 },
+];
+
+const SARCOPHAGUS_CHEST_WEAPONS: [LootSpec; 7] = [
+    LootSpec { item_id: item_ids::IRON_PICKAXE, weight: 18, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::IRON_SWORD, weight: 17, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::IRON_SCIMITAR, weight: 16, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::DIAMOND_SWORD, weight: 11, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::NOKIA_3310, weight: 4, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::BRONZE_SWORD, weight: 18, min_amount: 1, max_amount: 1 },
+    LootSpec { item_id: item_ids::WOODEN_PIPE, weight: 16, min_amount: 1, max_amount: 1 },
+];
+
 fn build_chest_loot_bundle(seed: u64, center_type: u8) -> Vec<LootStack> {
     let mut rng = LootRng::new(seed);
     let mut drops = Vec::<LootStack>::new();
-    let loot_tier = if center_type == CENTER_BONE_CHEST {
-        ChestLootTier::Bone
-    } else {
-        ChestLootTier::Standard
-    };
+    let loot_tier = chest_loot_tier_for_center_type(center_type);
 
-    // Guaranteed valuables: bone chests always roll more stacks.
-    let valuable_stacks = if loot_tier == ChestLootTier::Bone {
-        if rng.range_u32(100) < 55 { 3 } else { 2 }
-    } else if rng.range_u32(100) < 35 {
-        2
-    } else {
-        1
+    // Guaranteed valuables: richer tiers roll more stacks.
+    let valuable_stacks = match loot_tier {
+        ChestLootTier::Standard => {
+            if rng.range_u32(100) < 35 {
+                2
+            } else {
+                1
+            }
+        }
+        ChestLootTier::Gilded => {
+            if rng.range_u32(100) < 35 {
+                3
+            } else {
+                2
+            }
+        }
+        ChestLootTier::Sarcophagus => {
+            if rng.range_u32(100) < 60 {
+                3
+            } else {
+                2
+            }
+        }
+        ChestLootTier::Bone => {
+            if rng.range_u32(100) < 55 {
+                3
+            } else {
+                2
+            }
+        }
     };
-    let valuable_pool = if loot_tier == ChestLootTier::Bone {
-        &BONE_CHEST_VALUABLES[..]
-    } else {
-        &CHEST_VALUABLES[..]
+    let valuable_pool = match loot_tier {
+        ChestLootTier::Standard => &CHEST_VALUABLES[..],
+        ChestLootTier::Gilded => &GILDED_CHEST_VALUABLES[..],
+        ChestLootTier::Sarcophagus => &SARCOPHAGUS_CHEST_VALUABLES[..],
+        ChestLootTier::Bone => &BONE_CHEST_VALUABLES[..],
     };
     append_unique_rolls(
         &mut drops,
@@ -308,18 +384,46 @@ fn build_chest_loot_bundle(seed: u64, center_type: u8) -> Vec<LootStack> {
         &mut rng,
     );
 
-    // Optional weapon stack (higher chance for bone chest).
-    let weapon_chance = if loot_tier == ChestLootTier::Bone { 50 } else { 25 };
+    // Optional weapon stack chances by tier.
+    let weapon_chance = match loot_tier {
+        ChestLootTier::Standard => 25,
+        ChestLootTier::Gilded => 40,
+        ChestLootTier::Sarcophagus => 55,
+        ChestLootTier::Bone => 50,
+    };
     if rng.range_u32(100) < weapon_chance {
-        let weapon_pool = if loot_tier == ChestLootTier::Bone {
-            &BONE_CHEST_WEAPONS[..]
-        } else {
-            &CHEST_WEAPONS[..]
+        let weapon_pool = match loot_tier {
+            ChestLootTier::Standard => &CHEST_WEAPONS[..],
+            ChestLootTier::Gilded => &GILDED_CHEST_WEAPONS[..],
+            ChestLootTier::Sarcophagus => &SARCOPHAGUS_CHEST_WEAPONS[..],
+            ChestLootTier::Bone => &BONE_CHEST_WEAPONS[..],
         };
         append_single_roll(&mut drops, weapon_pool, item_types::TOOL, &mut rng);
     }
 
     drops
+}
+
+fn chest_loot_tier_for_center_type(center_type: u8) -> ChestLootTier {
+    match center_type {
+        CENTER_BONE_CHEST => ChestLootTier::Bone,
+        CENTER_GILDED_CHEST => ChestLootTier::Gilded,
+        CENTER_SARCOPHAGUS_CHEST => ChestLootTier::Sarcophagus,
+        _ => ChestLootTier::Standard,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn loot_chest_accepts_new_center_types() {
+        let gilded = build_chest_loot_bundle(123, CENTER_GILDED_CHEST);
+        let sarcophagus = build_chest_loot_bundle(456, CENTER_SARCOPHAGUS_CHEST);
+        assert!(!gilded.is_empty());
+        assert!(!sarcophagus.is_empty());
+    }
 }
 
 fn append_single_roll(

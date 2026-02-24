@@ -2,8 +2,8 @@ use anchor_lang::prelude::*;
 
 use super::{
     GlobalAccount, RoomAccount, CENTER_BONE_CHEST, CENTER_BOSS, CENTER_CHEST, CENTER_EMPTY,
-    DIRECTION_NORTH, DIRECTION_WEST, LOCK_KIND_NONE, LOCK_KIND_SKELETON, WALL_LOCKED, WALL_OPEN,
-    WALL_RUBBLE, WALL_SOLID,
+    CENTER_GILDED_CHEST, CENTER_SARCOPHAGUS_CHEST, DIRECTION_NORTH, DIRECTION_WEST,
+    LOCK_KIND_NONE, LOCK_KIND_SKELETON, WALL_LOCKED, WALL_OPEN, WALL_RUBBLE, WALL_SOLID,
 };
 
 const LOCK_MIN_DEPTH: u32 = 2;
@@ -11,6 +11,18 @@ const MAX_LOCKED_DOORS_PER_ROOM: usize = 1;
 const FORCED_KEY_CHEST_MIN_DEPTH: u32 = 2;
 const BONE_ROOM_MIN_DEPTH: u32 = 2;
 const BONE_ROOM_CHANCE_PERCENT: u64 = 18;
+const WALL_ROLL_SIDES: u64 = 100;
+const WALL_RUBBLE_THRESHOLD: u64 = 65;
+const WALL_SOLID_THRESHOLD: u64 = 80;
+const ROOM_CENTER_ROLL_SIDES: u64 = 100;
+const ROOM_CENTER_DEPTH_ONE_CHEST_THRESHOLD: u64 = 50;
+const ROOM_CENTER_BOSS_WEIGHT: u64 = 50;
+const ROOM_CENTER_CHEST_WEIGHT: u64 = 25;
+const ROOM_CENTER_EMPTY_WEIGHT: u64 = 25;
+const DEPTH_THREE_PLUS_BASIC_CHEST_WEIGHT: u64 = 70;
+const DEPTH_THREE_PLUS_GILDED_CHEST_WEIGHT: u64 = 20;
+const DEPTH_THREE_PLUS_SARCOPHAGUS_CHEST_WEIGHT: u64 = 10;
+const STANDARD_BOSS_VARIANTS: i16 = 4;
 
 pub fn calculate_depth(x: i8, y: i8) -> u32 {
     let dx = (x - GlobalAccount::START_X).abs() as u32;
@@ -34,10 +46,10 @@ pub fn generate_walls(hash: u64, entrance_direction: u8) -> [u8; 4] {
             continue;
         }
 
-        let wall_hash = (hash >> (direction * 8)) % 10;
-        *wall = if wall_hash < 6 {
+        let wall_hash = (hash >> (direction * 8)) % WALL_ROLL_SIDES;
+        *wall = if wall_hash < WALL_RUBBLE_THRESHOLD {
             WALL_RUBBLE
-        } else if wall_hash < 9 {
+        } else if wall_hash < WALL_SOLID_THRESHOLD {
             WALL_SOLID
         } else {
             WALL_OPEN
@@ -52,7 +64,9 @@ pub fn generate_room_center(season_seed: u64, room_x: i8, room_y: i8, depth: u32
     let forced_key_drop = is_forced_key_chest(season_seed, room_x, room_y, depth);
 
     if depth == 1 {
-        if is_forced_depth_one_chest(season_seed, room_x, room_y) || (room_hash % 100) < 50 {
+        if is_forced_depth_one_chest(season_seed, room_x, room_y)
+            || (room_hash % ROOM_CENTER_ROLL_SIDES) < ROOM_CENTER_DEPTH_ONE_CHEST_THRESHOLD
+        {
             return (CENTER_CHEST, 1, false);
         }
         return (CENTER_EMPTY, 0, false);
@@ -61,7 +75,7 @@ pub fn generate_room_center(season_seed: u64, room_x: i8, room_y: i8, depth: u32
     if is_bone_room(season_seed, room_x, room_y, depth) {
         // Bone rooms are always special centers: either skeleton boss #11 or a bone chest.
         let bone_hash = generate_room_hash(season_seed ^ 0xB0DE_CAFE_BEEF_D00D, room_x, room_y);
-        let spawn_boss = (bone_hash % 100) < 50;
+        let spawn_boss = (bone_hash % ROOM_CENTER_ROLL_SIDES) < ROOM_CENTER_DEPTH_ONE_CHEST_THRESHOLD;
         if spawn_boss {
             return (CENTER_BOSS, 11, false);
         }
@@ -74,12 +88,55 @@ pub fn generate_room_center(season_seed: u64, room_x: i8, room_y: i8, depth: u32
         return (CENTER_CHEST, 1, true);
     }
 
-    if depth >= 2 && (room_hash % 100) < 50 {
-        let boss_id = ((room_hash % 4) + 1) as u16;
+    let center_roll = room_hash % ROOM_CENTER_ROLL_SIDES;
+    let chest_cutoff = ROOM_CENTER_BOSS_WEIGHT + ROOM_CENTER_CHEST_WEIGHT;
+    let empty_cutoff = chest_cutoff + ROOM_CENTER_EMPTY_WEIGHT;
+    if center_roll < ROOM_CENTER_BOSS_WEIGHT {
+        let boss_id = select_standard_boss_id(season_seed, room_x, room_y);
         return (CENTER_BOSS, boss_id, false);
     }
 
+    if center_roll < chest_cutoff {
+        if depth >= 3 {
+            let chest_roll = generate_room_hash(
+                season_seed ^ 0xA5A5_5A5A_F0F0_0F0F,
+                room_x,
+                room_y,
+            ) % ROOM_CENTER_ROLL_SIDES;
+            let gilded_cutoff =
+                DEPTH_THREE_PLUS_BASIC_CHEST_WEIGHT + DEPTH_THREE_PLUS_GILDED_CHEST_WEIGHT;
+            let sarcophagus_cutoff = gilded_cutoff + DEPTH_THREE_PLUS_SARCOPHAGUS_CHEST_WEIGHT;
+            if chest_roll < DEPTH_THREE_PLUS_BASIC_CHEST_WEIGHT {
+                return (CENTER_CHEST, 1, false);
+            }
+
+            if chest_roll < gilded_cutoff {
+                return (CENTER_GILDED_CHEST, 1, false);
+            }
+
+            if chest_roll < sarcophagus_cutoff {
+                return (CENTER_SARCOPHAGUS_CHEST, 1, false);
+            }
+
+            return (CENTER_SARCOPHAGUS_CHEST, 1, false);
+        }
+
+        return (CENTER_CHEST, 1, false);
+    }
+
+    if center_roll < empty_cutoff {
+        return (CENTER_EMPTY, 0, false);
+    }
+
     (CENTER_EMPTY, 0, false)
+}
+
+fn select_standard_boss_id(season_seed: u64, room_x: i8, room_y: i8) -> u16 {
+    // Linear coordinate mapping guarantees orthogonal neighbors always differ.
+    let season_offset = (season_seed % STANDARD_BOSS_VARIANTS as u64) as i16;
+    let linear_value = i16::from(room_x) + (i16::from(room_y) * 3) + season_offset;
+    let variant_index = linear_value.rem_euclid(STANDARD_BOSS_VARIANTS);
+    (variant_index as u16) + 1
 }
 
 pub fn initialize_discovered_room(
@@ -136,7 +193,10 @@ pub fn initialize_discovered_room(
         0
     };
 
-    room.has_chest = center_type == CENTER_CHEST || center_type == CENTER_BONE_CHEST;
+    room.has_chest = center_type == CENTER_CHEST
+        || center_type == CENTER_BONE_CHEST
+        || center_type == CENTER_GILDED_CHEST
+        || center_type == CENTER_SARCOPHAGUS_CHEST;
     room.forced_key_drop = forced_key_drop;
     room.center_type = center_type;
     room.center_id = center_id;
@@ -336,6 +396,9 @@ fn select_forced_key_chest_coords(season_seed: u64, depth: u32) -> Option<(i8, i
         for y in GlobalAccount::MIN_COORD..=GlobalAccount::MAX_COORD {
             let candidate_depth = calculate_depth(x, y) as i8;
             if candidate_depth == target_depth {
+                if is_bone_room(season_seed, x, y, depth) {
+                    continue;
+                }
                 ring_coords.push((x, y));
             }
         }
@@ -403,7 +466,12 @@ mod tests {
 
         let (forced_x, forced_y) = forced_coords.unwrap();
         assert_eq!(calculate_depth(forced_x, forced_y), depth);
+        assert!(!is_bone_room(seed, forced_x, forced_y, depth));
         assert!(is_forced_key_chest(seed, forced_x, forced_y, depth));
+        let (center_type, _center_id, forced_key_drop) =
+            generate_room_center(seed, forced_x, forced_y, depth);
+        assert_eq!(center_type, CENTER_CHEST);
+        assert!(forced_key_drop);
     }
 
     #[test]
@@ -487,6 +555,195 @@ mod tests {
                 );
                 if center_type == CENTER_BOSS {
                     assert_eq!(center_id, 11, "Bone room boss id should be 11");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn adjacent_standard_boss_ids_never_match() {
+        let seed = 884422u64;
+        for x in GlobalAccount::MIN_COORD..=GlobalAccount::MAX_COORD {
+            for y in GlobalAccount::MIN_COORD..=GlobalAccount::MAX_COORD {
+                let boss_id = select_standard_boss_id(seed, x, y);
+                let neighbors = [(x + 1, y), (x, y + 1)];
+                for (neighbor_x, neighbor_y) in neighbors {
+                    if !is_within_dungeon_bounds(neighbor_x, neighbor_y) {
+                        continue;
+                    }
+
+                    let neighbor_boss_id = select_standard_boss_id(seed, neighbor_x, neighbor_y);
+                    assert_ne!(
+                        boss_id, neighbor_boss_id,
+                        "Adjacent standard bosses matched at ({x},{y}) and ({neighbor_x},{neighbor_y})"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn no_gilded_or_sarcophagus_before_depth_three() {
+        let seed = 998877u64;
+        for x in GlobalAccount::MIN_COORD..=GlobalAccount::MAX_COORD {
+            for y in GlobalAccount::MIN_COORD..=GlobalAccount::MAX_COORD {
+                let depth = calculate_depth(x, y);
+                if depth != 2 {
+                    continue;
+                }
+
+                let (center_type, _, _) = generate_room_center(seed, x, y, depth);
+                assert_ne!(center_type, CENTER_GILDED_CHEST);
+                assert_ne!(center_type, CENTER_SARCOPHAGUS_CHEST);
+            }
+        }
+    }
+
+    #[test]
+    fn depth_three_plus_can_spawn_new_chest_types() {
+        let mut saw_gilded = false;
+        let mut saw_sarcophagus = false;
+        for seed in 1u64..=3000u64 {
+            for x in GlobalAccount::MIN_COORD..=GlobalAccount::MAX_COORD {
+                for y in GlobalAccount::MIN_COORD..=GlobalAccount::MAX_COORD {
+                    let depth = calculate_depth(x, y);
+                    if depth < 3 {
+                        continue;
+                    }
+
+                    let (center_type, _, forced_key_drop) = generate_room_center(seed, x, y, depth);
+                    if forced_key_drop || is_bone_room(seed, x, y, depth) {
+                        continue;
+                    }
+
+                    if center_type == CENTER_GILDED_CHEST {
+                        saw_gilded = true;
+                    }
+                    if center_type == CENTER_SARCOPHAGUS_CHEST {
+                        saw_sarcophagus = true;
+                    }
+                }
+            }
+
+            if saw_gilded && saw_sarcophagus {
+                break;
+            }
+        }
+
+        assert!(saw_gilded, "No gilded chest generated in searched seeds.");
+        assert!(
+            saw_sarcophagus,
+            "No sarcophagus chest generated in searched seeds."
+        );
+    }
+
+    #[test]
+    fn center_roll_distribution_paths_are_reachable() {
+        let mut saw_boss = false;
+        let mut saw_chest = false;
+        let mut saw_empty = false;
+
+        for seed in 1u64..=2000u64 {
+            for x in GlobalAccount::MIN_COORD..=GlobalAccount::MAX_COORD {
+                for y in GlobalAccount::MIN_COORD..=GlobalAccount::MAX_COORD {
+                    let depth = calculate_depth(x, y);
+                    if depth < 2 || is_bone_room(seed, x, y, depth) || is_forced_key_chest(seed, x, y, depth)
+                    {
+                        continue;
+                    }
+
+                    let (center_type, _, _) = generate_room_center(seed, x, y, depth);
+                    match center_type {
+                        CENTER_BOSS => saw_boss = true,
+                        CENTER_CHEST | CENTER_GILDED_CHEST | CENTER_SARCOPHAGUS_CHEST => {
+                            saw_chest = true
+                        }
+                        CENTER_EMPTY => saw_empty = true,
+                        _ => {}
+                    }
+                }
+            }
+
+            if saw_boss && saw_chest && saw_empty {
+                break;
+            }
+        }
+
+        assert!(saw_boss, "Boss path was not observed.");
+        assert!(saw_chest, "Chest path was not observed.");
+        assert!(saw_empty, "Empty path was not observed.");
+    }
+
+    #[test]
+    fn has_chest_true_for_all_chest_center_types() {
+        let seed = 11223344u64;
+        let created_by = Pubkey::default();
+        let created_slot = 42u64;
+        let bump = 1u8;
+        let entrance_direction = DIRECTION_NORTH;
+
+        for x in GlobalAccount::MIN_COORD..=GlobalAccount::MAX_COORD {
+            for y in GlobalAccount::MIN_COORD..=GlobalAccount::MAX_COORD {
+                let depth = calculate_depth(x, y);
+                if depth < 2 {
+                    continue;
+                }
+
+                let (center_type, _, _) = generate_room_center(seed, x, y, depth);
+                if center_type != CENTER_CHEST
+                    && center_type != CENTER_BONE_CHEST
+                    && center_type != CENTER_GILDED_CHEST
+                    && center_type != CENTER_SARCOPHAGUS_CHEST
+                {
+                    continue;
+                }
+
+                let mut room = RoomAccount {
+                    x: 0,
+                    y: 0,
+                    season_seed: 0,
+                    walls: [WALL_SOLID; 4],
+                    door_lock_kinds: [LOCK_KIND_NONE; 4],
+                    helper_counts: [0; 4],
+                    progress: [0; 4],
+                    start_slot: [0; 4],
+                    base_slots: [0; 4],
+                    total_staked: [0; 4],
+                    job_completed: [false; 4],
+                    bonus_per_helper: [0; 4],
+                    has_chest: false,
+                    forced_key_drop: false,
+                    center_type: CENTER_EMPTY,
+                    center_id: 0,
+                    boss_max_hp: 0,
+                    boss_current_hp: 0,
+                    boss_last_update_slot: 0,
+                    boss_total_dps: 0,
+                    boss_fighter_count: 0,
+                    boss_defeated: false,
+                    looted_count: 0,
+                    created_by: Pubkey::default(),
+                    created_slot: 0,
+                    bump: 0,
+                };
+
+                initialize_discovered_room(
+                    &mut room,
+                    seed,
+                    x,
+                    y,
+                    entrance_direction,
+                    created_by,
+                    created_slot,
+                    bump,
+                );
+
+                if room.center_type == CENTER_CHEST
+                    || room.center_type == CENTER_BONE_CHEST
+                    || room.center_type == CENTER_GILDED_CHEST
+                    || room.center_type == CENTER_SARCOPHAGUS_CHEST
+                {
+                    assert!(room.has_chest);
                 }
             }
         }

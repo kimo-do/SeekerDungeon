@@ -1717,7 +1717,7 @@ namespace SeekerDungeon.Solana
                 return TxResult.Fail("Center empty");
             }
 
-            if (room.CenterType == LGConfig.CENTER_CHEST || room.CenterType == LGConfig.CENTER_BONE_CHEST)
+            if (LGConfig.IsChestCenterType(room.CenterType))
             {
                 Log("Center action: chest loot.");
                 return await LootChest();

@@ -214,8 +214,11 @@ namespace SeekerDungeon.Dungeon
             }
 
             var animators = activeRoot.GetComponentsInChildren<Animator>(true);
-            var useAliveDeadVisualRoots = ResolveCombatAnimator()?.UsesAliveDeadVisualRoots ?? false;
-            var appliedDeadVisualToAnyAnimator = false;
+            var resolvedCombatAnimator = ResolveCombatAnimator(activeRoot);
+            var useAliveDeadVisualRoots = resolvedCombatAnimator?.UsesAliveDeadVisualRoots ?? false;
+            // If this boss variant uses explicit alive/dead roots, visual death is handled
+            // outside animator states/parameters.
+            var appliedDeadVisualToAnyAnimator = isDead && useAliveDeadVisualRoots;
             for (var index = 0; index < animators.Length; index += 1)
             {
                 var animator = animators[index];
@@ -837,7 +840,7 @@ namespace SeekerDungeon.Dungeon
 
         private void UpdateBossCombatAnimation(GameObject activeRoot, MonsterView monster, int fighterCount)
         {
-            var resolvedCombatAnimator = ResolveCombatAnimator();
+            var resolvedCombatAnimator = ResolveCombatAnimator(activeRoot);
             if (resolvedCombatAnimator == null)
             {
                 return;
@@ -849,8 +852,18 @@ namespace SeekerDungeon.Dungeon
             resolvedCombatAnimator.SetCombatActive(shouldAttack);
         }
 
-        private BossCombatAnimator ResolveCombatAnimator()
+        private BossCombatAnimator ResolveCombatAnimator(GameObject preferredRoot = null)
         {
+            if (preferredRoot != null)
+            {
+                var preferredAnimator = preferredRoot.GetComponentInChildren<BossCombatAnimator>(true);
+                if (preferredAnimator != null)
+                {
+                    combatAnimator = preferredAnimator;
+                    return combatAnimator;
+                }
+            }
+
             if (combatAnimator != null)
             {
                 return combatAnimator;

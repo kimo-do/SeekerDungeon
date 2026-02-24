@@ -66,6 +66,8 @@ namespace SeekerDungeon.Solana
         public const byte CENTER_CHEST = 1;
         public const byte CENTER_BOSS = 2;
         public const byte CENTER_BONE_CHEST = 3;
+        public const byte CENTER_GILDED_CHEST = 4;
+        public const byte CENTER_SARCOPHAGUS_CHEST = 5;
         
         // Token constants (9 decimals)
         public const int SKR_DECIMALS = 9;
@@ -273,6 +275,14 @@ namespace SeekerDungeon.Solana
                 WALL_ENTRANCE_STAIRS => "EntranceStairs",
                 _ => "Unknown"
             };
+        }
+
+        public static bool IsChestCenterType(byte centerType)
+        {
+            return centerType == CENTER_CHEST ||
+                   centerType == CENTER_BONE_CHEST ||
+                   centerType == CENTER_GILDED_CHEST ||
+                   centerType == CENTER_SARCOPHAGUS_CHEST;
         }
 
         /// <summary>

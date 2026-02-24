@@ -455,16 +455,14 @@ namespace SeekerDungeon.Dungeon
                     // Check if center is a chest/boss before the TX so we know if loot animation applies
                     var roomState = _lgManager.CurrentRoomState;
                     var wasChestCenterBeforeInteraction = roomState != null &&
-                                                         (roomState.CenterType == LGConfig.CENTER_CHEST ||
-                                                          roomState.CenterType == LGConfig.CENTER_BONE_CHEST);
+                                                         LGConfig.IsChestCenterType(roomState.CenterType);
                     var wasAliveBossCenterBeforeInteraction = roomState != null &&
                                                               roomState.CenterType == LGConfig.CENTER_BOSS &&
                                                               !roomState.BossDefeated;
                     var wasLocalBossFighterBeforeInteraction = dungeonManager != null &&
                                                                dungeonManager.IsLocalPlayerFightingBoss;
                     var isLootableCenter = roomState != null &&
-                        (roomState.CenterType == LGConfig.CENTER_CHEST ||
-                         roomState.CenterType == LGConfig.CENTER_BONE_CHEST ||
+                        (LGConfig.IsChestCenterType(roomState.CenterType) ||
                          (roomState.CenterType == LGConfig.CENTER_BOSS && roomState.BossDefeated));
 
                     {
@@ -472,6 +470,8 @@ namespace SeekerDungeon.Dungeon
                         var ctrType = roomState == null ? "unknown"
                             : roomState.CenterType == LGConfig.CENTER_CHEST ? "Chest"
                             : roomState.CenterType == LGConfig.CENTER_BONE_CHEST ? "BoneChest"
+                            : roomState.CenterType == LGConfig.CENTER_GILDED_CHEST ? "GildedChest"
+                            : roomState.CenterType == LGConfig.CENTER_SARCOPHAGUS_CHEST ? "SarcophagusChest"
                             : roomState.CenterType == LGConfig.CENTER_BOSS ? (roomState.BossDefeated ? "Boss(dead)" : "Boss(alive)")
                             : "Empty";
                         GameplayActionLog.CenterClicked(ctrRoomX, ctrRoomY, ctrType);
@@ -570,8 +570,7 @@ namespace SeekerDungeon.Dungeon
                         // Play chest open animation on the visual controller
                         var currentRoomAfterInteraction = _lgManager.CurrentRoomState;
                         var isChestCenterAfterInteraction = currentRoomAfterInteraction != null &&
-                                                            (currentRoomAfterInteraction.CenterType == LGConfig.CENTER_CHEST ||
-                                                             currentRoomAfterInteraction.CenterType == LGConfig.CENTER_BONE_CHEST);
+                                                            LGConfig.IsChestCenterType(currentRoomAfterInteraction.CenterType);
                         var roomLabel = currentRoomAfterInteraction != null
                             ? $"({currentRoomAfterInteraction.X},{currentRoomAfterInteraction.Y})"
                             : null;

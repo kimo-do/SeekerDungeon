@@ -745,10 +745,16 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
-            if (state.CenterType == LGConfig.CENTER_CHEST || state.CenterType == LGConfig.CENTER_BONE_CHEST)
+            if (LGConfig.IsChestCenterType(state.CenterType))
             {
                 var lootedCount = state.LootedCount;
-                var chestName = state.CenterType == LGConfig.CENTER_BONE_CHEST ? "Bone Chest" : "Chest";
+                var chestName = state.CenterType switch
+                {
+                    LGConfig.CENTER_BONE_CHEST => "Bone Chest",
+                    LGConfig.CENTER_GILDED_CHEST => "Gilded Chest",
+                    LGConfig.CENTER_SARCOPHAGUS_CHEST => "Sarcophagus Chest",
+                    _ => "Chest"
+                };
                 SetLabel(_chestLabel, $"Center: {chestName} ({lootedCount} looted)");
                 _btnLootChest.text = "Loot Center";
                 SetButtonEnabled(_btnLootChest, true);
@@ -789,6 +795,8 @@ namespace SeekerDungeon.Solana
                 LGConfig.CENTER_EMPTY => "Empty",
                 LGConfig.CENTER_CHEST => "Chest",
                 LGConfig.CENTER_BONE_CHEST => "Bone Chest",
+                LGConfig.CENTER_GILDED_CHEST => "Gilded Chest",
+                LGConfig.CENTER_SARCOPHAGUS_CHEST => "Sarcophagus Chest",
                 LGConfig.CENTER_BOSS => "Boss",
                 _ => "Unknown"
             };

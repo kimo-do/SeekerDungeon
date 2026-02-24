@@ -26,6 +26,8 @@ pub const CENTER_EMPTY: u8 = 0;
 pub const CENTER_CHEST: u8 = 1;
 pub const CENTER_BOSS: u8 = 2;
 pub const CENTER_BONE_CHEST: u8 = 3;
+pub const CENTER_GILDED_CHEST: u8 = 4;
+pub const CENTER_SARCOPHAGUS_CHEST: u8 = 5;
 
 /// Room account - one per coordinate pair per season
 /// PDA seeds: ["room", season_seed (8 bytes), x (1 byte), y (1 byte)]
@@ -184,6 +186,8 @@ impl RoomAccount {
             || center_type == CENTER_CHEST
             || center_type == CENTER_BOSS
             || center_type == CENTER_BONE_CHEST
+            || center_type == CENTER_GILDED_CHEST
+            || center_type == CENTER_SARCOPHAGUS_CHEST
     }
 
     pub fn boss_hp_for_depth(depth: u32, boss_id: u16) -> u64 {

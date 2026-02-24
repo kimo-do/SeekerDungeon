@@ -413,7 +413,10 @@ namespace SeekerDungeon.Dungeon
             {
                 centerLootVisualController.Apply(room);
             }
-            else if ((room.CenterType == RoomCenterType.Chest || room.CenterType == RoomCenterType.BoneChest) &&
+            else if ((room.CenterType == RoomCenterType.Chest ||
+                      room.CenterType == RoomCenterType.BoneChest ||
+                      room.CenterType == RoomCenterType.GildedChest ||
+                      room.CenterType == RoomCenterType.SarcophagusChest) &&
                      chestVisualController != null)
             {
                 chestVisualController.Apply(room);
@@ -461,6 +464,8 @@ namespace SeekerDungeon.Dungeon
                 RoomCenterType.Empty => centerEmptyVisualRoot,
                 RoomCenterType.Chest => centerChestVisualRoot,
                 RoomCenterType.BoneChest => centerChestVisualRoot,
+                RoomCenterType.GildedChest => centerChestVisualRoot,
+                RoomCenterType.SarcophagusChest => centerChestVisualRoot,
                 RoomCenterType.Boss => centerBossVisualRoot,
                 _ => centerFallbackVisualRoot
             };
