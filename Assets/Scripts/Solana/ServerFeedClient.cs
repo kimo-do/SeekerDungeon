@@ -50,6 +50,7 @@ namespace SeekerDungeon.Solana
         [SerializeField] private string publishUrl = string.Empty;
         [SerializeField] private string streamUrl = string.Empty;
         [SerializeField] private string pollUrl = string.Empty;
+        [SerializeField] private string publishToken = string.Empty;
 
         [Header("Receive")]
         [SerializeField] private int pollLimit = 20;
@@ -103,6 +104,11 @@ namespace SeekerDungeon.Solana
             if (string.IsNullOrWhiteSpace(pollUrl))
             {
                 pollUrl = _localSeekerIdentityConfig?.ServerFeedPollUrl?.Trim() ?? string.Empty;
+            }
+
+            if (string.IsNullOrWhiteSpace(publishToken))
+            {
+                publishToken = _localSeekerIdentityConfig?.ServerFeedPublishToken?.Trim() ?? string.Empty;
             }
         }
 
@@ -204,6 +210,11 @@ namespace SeekerDungeon.Solana
                 webRequest.uploadHandler = new UploadHandlerRaw(bodyBytes);
                 webRequest.downloadHandler = new DownloadHandlerBuffer();
                 webRequest.SetRequestHeader("Content-Type", "application/json");
+                if (!string.IsNullOrWhiteSpace(publishToken))
+                {
+                    webRequest.SetRequestHeader("X-Feed-Token", publishToken.Trim());
+                }
+
                 webRequest.timeout = 8;
                 await webRequest.SendWebRequest().ToUniTask();
 

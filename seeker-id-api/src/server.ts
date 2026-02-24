@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import { timingSafeEqual } from "node:crypto";
 import { loadConfig } from "./config.js";
 import { FeedService, parseFeedPublishPayload } from "./feed.js";
 import { SeekerIdService } from "./resolver.js";
@@ -29,6 +30,21 @@ const main = async (): Promise<void> => {
     return parsed;
   };
 
+  const isFeedTokenValid = (headerValue: string | string[] | undefined): boolean => {
+    if (!config.feedPublishToken) {
+      return true;
+    }
+
+    const providedToken = Array.isArray(headerValue) ? headerValue[0] ?? "" : headerValue ?? "";
+    const expectedBytes = Buffer.from(config.feedPublishToken, "utf8");
+    const providedBytes = Buffer.from(providedToken.trim(), "utf8");
+    if (expectedBytes.length !== providedBytes.length) {
+      return false;
+    }
+
+    return timingSafeEqual(expectedBytes, providedBytes);
+  };
+
   app.get("/healthz", async () => {
     return { ok: true, service: "seeker-id-api" };
   });
@@ -56,6 +72,13 @@ const main = async (): Promise<void> => {
 
   app.post("/feed/events", async (request, reply) => {
     try {
+      if (!isFeedTokenValid(request.headers["x-feed-token"])) {
+        reply.code(401);
+        return {
+          error: "Unauthorized feed publish."
+        };
+      }
+
       const payload = parseFeedPublishPayload(request.body);
       const event = feedService.publish(payload);
       return {

@@ -25,6 +25,7 @@ export type AppConfig = {
   feedPollLimitDefault: number;
   feedPollLimitMax: number;
   feedHeartbeatSeconds: number;
+  feedPublishToken: string;
 };
 
 export const loadConfig = (): AppConfig => {
@@ -43,6 +44,7 @@ export const loadConfig = (): AppConfig => {
   const feedPollLimitDefault = parseIntOrDefault(process.env.FEED_POLL_LIMIT_DEFAULT, 20);
   const feedPollLimitMax = parseIntOrDefault(process.env.FEED_POLL_LIMIT_MAX, 100);
   const feedHeartbeatSeconds = parseIntOrDefault(process.env.FEED_HEARTBEAT_SECONDS, 20);
+  const feedPublishToken = (process.env.FEED_PUBLISH_TOKEN ?? "").trim();
   const port = parseIntOrDefault(process.env.PORT, 3000);
   const logDebug = (process.env.LOG_DEBUG ?? "false").trim().toLowerCase() === "true";
 
@@ -59,6 +61,7 @@ export const loadConfig = (): AppConfig => {
     feedMaxEvents,
     feedPollLimitDefault,
     feedPollLimitMax,
-    feedHeartbeatSeconds
+    feedHeartbeatSeconds,
+    feedPublishToken
   };
 };

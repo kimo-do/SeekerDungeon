@@ -421,42 +421,42 @@
 
 .hud-feed-banner {
     position: absolute;
-    left: 0;
-    right: 0;
-    top: 94px;
-    align-items: center;
-    justify-content: center;
-    z-index: 65;
+    left: 24px;
+    top: 118px;
+    width: 460px;
+    max-width: 52%;
+    align-items: flex-start;
+    justify-content: flex-start;
+    z-index: 160;
     opacity: 0;
 }
 
 .hud-feed-banner-label {
-    min-width: 560px;
-    max-width: 86%;
-    min-height: 86px;
-    padding-left: 24px;
-    padding-right: 24px;
-    padding-top: 10px;
-    padding-bottom: 11px;
-    -unity-text-align: middle-center;
+    width: 100%;
+    min-height: 62px;
+    padding-left: 14px;
+    padding-right: 14px;
+    padding-top: 7px;
+    padding-bottom: 8px;
+    -unity-text-align: middle-left;
     white-space: normal;
-    font-size: 34px;
+    font-size: 28px;
     -unity-font-style: bold;
-    color: rgb(244, 233, 201);
-    background-color: rgba(15, 18, 25, 0.72);
-    border-top-left-radius: 14px;
-    border-top-right-radius: 14px;
-    border-bottom-left-radius: 14px;
-    border-bottom-right-radius: 14px;
-    border-top-width: 2px;
-    border-right-width: 2px;
-    border-bottom-width: 2px;
-    border-left-width: 2px;
-    border-top-color: rgba(160, 181, 220, 0.86);
-    border-right-color: rgba(160, 181, 220, 0.86);
-    border-bottom-color: rgba(91, 106, 137, 0.82);
-    border-left-color: rgba(160, 181, 220, 0.86);
-    -unity-text-outline-width: 1px;
+    color: rgb(246, 249, 255);
+    background-color: rgba(0, 0, 0, 0.64);
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.24);
+    border-right-color: rgba(255, 255, 255, 0.24);
+    border-bottom-color: rgba(255, 255, 255, 0.16);
+    border-left-color: rgba(255, 255, 255, 0.24);
+    -unity-text-outline-width: 0;
     -unity-text-outline-color: rgba(0, 0, 0, 0.82);
 }
 

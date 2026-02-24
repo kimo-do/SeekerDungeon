@@ -88,6 +88,7 @@ Feed poll response shape:
 - `FEED_POLL_LIMIT_DEFAULT` (default `20`)
 - `FEED_POLL_LIMIT_MAX` (default `100`)
 - `FEED_HEARTBEAT_SECONDS` (default `20`)
+- `FEED_PUBLISH_TOKEN` (optional; when set, `POST /feed/events` requires `X-Feed-Token` header match)
 
 ## Railway Deployment
 
@@ -107,6 +108,7 @@ Feed poll response shape:
 - Backend does not block gameplay; Unity should still keep short-wallet fallback.
 - Legacy fallback path (`enhanced_history`/`rpc_scan`) remains for resilience if primary lookup fails.
 - Feed endpoints are offchain UX helpers and intentionally spoofable in this jam-safe version.
+- Optional low-friction hardening: set `FEED_PUBLISH_TOKEN` and send matching `X-Feed-Token` from Unity.
 - `GET /feed/stream` emits SSE frames with:
   - `event: feed`
   - `id: <eventId>`
