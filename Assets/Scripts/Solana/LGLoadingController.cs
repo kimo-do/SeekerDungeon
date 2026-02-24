@@ -1,4 +1,3 @@
-using System;
 using Cysharp.Threading.Tasks;
 using SeekerDungeon;
 using UnityEngine;
@@ -24,7 +23,6 @@ namespace SeekerDungeon.Solana
         [SerializeField] private bool allowAutoConnectOnDeviceBuilds = false;
         [SerializeField] private bool requireManualConnectOnDevice = true;
         [SerializeField] private WalletLoginMode autoConnectMode = WalletLoginMode.Auto;
-        [SerializeField] private float walletAdapterConnectTimeoutSeconds = 20f;
 
         [Header("Debug")]
         [SerializeField] private bool logDebugMessages = true;
@@ -176,24 +174,7 @@ namespace SeekerDungeon.Solana
                 return false;
             }
 
-            if (mode != WalletLoginMode.WalletAdapter || walletAdapterConnectTimeoutSeconds <= 0f)
-            {
-                return await walletSessionManager.ConnectAsync(mode);
-            }
-
-            try
-            {
-                return await walletSessionManager
-                    .ConnectAsync(mode)
-                    .Timeout(TimeSpan.FromSeconds(walletAdapterConnectTimeoutSeconds));
-            }
-            catch (TimeoutException)
-            {
-                walletSessionManager.ClearWalletConnectIntent();
-                walletSessionManager.Disconnect();
-                LogError("Wallet adapter connect timed out. User can retry.");
-                return false;
-            }
+            return await walletSessionManager.ConnectAsync(mode);
         }
 
         private void HandleWalletConnectionChanged(bool isConnected)

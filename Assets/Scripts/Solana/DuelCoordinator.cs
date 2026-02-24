@@ -1021,6 +1021,8 @@ namespace SeekerDungeon.Solana
                     var firstTarget = firstIsChallenger ? opponentPlayer : challengerPlayer;
                     var secondTarget = firstIsChallenger ? challengerPlayer : opponentPlayer;
 
+                    firstAttacker.EnsureFallbackWieldedItem(ItemId.BronzePickaxe);
+                    firstTarget.EnsureFallbackWieldedItem(ItemId.BronzePickaxe);
                     var firstSwingBaseline = GetObservedSwingCountForActor(firstAttacker);
                     firstAttacker.TriggerBossAttackOnce();
                     await WaitForAttackImpactWindowAsync(
@@ -1052,6 +1054,8 @@ namespace SeekerDungeon.Solana
                     challengerPlayer.SetCombatHealth((ushort)challengerHp, maxHp, true);
                     opponentPlayer.SetCombatHealth((ushort)opponentHp, maxHp, true);
 
+                    secondAttacker.EnsureFallbackWieldedItem(ItemId.BronzePickaxe);
+                    secondTarget.EnsureFallbackWieldedItem(ItemId.BronzePickaxe);
                     var secondSwingBaseline = GetObservedSwingCountForActor(secondAttacker);
                     secondAttacker.TriggerBossAttackOnce();
                     await WaitForAttackImpactWindowAsync(

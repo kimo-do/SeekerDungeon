@@ -1150,9 +1150,9 @@ namespace SeekerDungeon.Dungeon
             }
 
             _isLocalPlayerFightingBoss = snapshot?.LocalPlayerFightingBoss ?? false;
+            _roomController?.ApplySnapshot(snapshot);
             UpdateLocalPlayerPlacement(snapshot);
             TryReleaseGameplayDoorsReadyHold(snapshot);
-            _roomController?.ApplySnapshot(snapshot);
             OnRoomSnapshotUpdated?.Invoke(snapshot);
 
             Log($"Snapshot updated room=({snapshot.Room.X},{snapshot.Room.Y}) N={snapshot.DoorOccupants[RoomDirection.North].Count} S={snapshot.DoorOccupants[RoomDirection.South].Count} E={snapshot.DoorOccupants[RoomDirection.East].Count} W={snapshot.DoorOccupants[RoomDirection.West].Count} B={snapshot.BossOccupants.Count} I={snapshot.IdleOccupants.Count}");
@@ -1609,6 +1609,12 @@ namespace SeekerDungeon.Dungeon
         private void ApplyLocalPlayerWieldedState(OccupantActivity activity)
         {
             if (localPlayerController == null)
+            {
+                return;
+            }
+
+            var localWalletKey = ResolveLocalWalletKey();
+            if (DuelVisualLockRegistry.IsLocked(localWalletKey))
             {
                 return;
             }

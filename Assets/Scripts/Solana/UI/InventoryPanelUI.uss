@@ -12,6 +12,7 @@
 
 /* Main panel */
 .inventory-panel {
+    position: relative;
     width: 84%;
     max-width: 1280px;
     min-width: 640px;
@@ -38,9 +39,10 @@
 /* Header */
 .inventory-header {
     flex-direction: row;
-    justify-content: space-between;
+    justify-content: flex-start;
     align-items: center;
     margin-bottom: 14px;
+    padding-right: 92px;
     padding-bottom: 12px;
     border-bottom-width: 2px;
     border-bottom-color: rgba(105, 115, 136, 0.45);
@@ -50,9 +52,14 @@
     font-size: 44px;
     -unity-font-style: bold;
     color: rgb(243, 248, 255);
+    pointer-events: none;
 }
 
 .inventory-close-button {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    z-index: 1000;
     width: 68px;
     height: 68px;
     font-size: 30px;

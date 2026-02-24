@@ -293,6 +293,7 @@
 }
 
 .vault-card {
+    position: relative;
     width: 94%;
     max-width: 1160px;
     max-height: 92%;
@@ -311,7 +312,8 @@
 .vault-header {
     flex-direction: row;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
+    padding-right: 132px;
     margin-bottom: 12px;
 }
 
@@ -324,6 +326,10 @@
 }
 
 .vault-close-button {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 1000;
     width: 120px;
     min-width: 120px;
     height: 120px;
@@ -752,6 +758,7 @@
 }
 
 .modal-card {
+    position: relative;
     width: 86%;
     max-width: 760px;
     min-width: 320px;
@@ -950,6 +957,7 @@
     position: absolute;
     top: 8px;
     right: 8px;
+    z-index: 1000;
     width: 120px;
     min-width: 120px;
     height: 120px;

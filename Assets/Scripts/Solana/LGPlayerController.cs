@@ -28,6 +28,8 @@ namespace SeekerDungeon.Solana
 
     public sealed class LGPlayerController : MonoBehaviour
     {
+        private const string MenuOnlyDrinkVisualName = "Drink";
+
         [Header("Skin Mapping")]
         [SerializeField] private List<CharacterRigBindings> skinRigs = new();
         [SerializeField] private SpriteRenderer skinSpriteRenderer;
@@ -393,6 +395,7 @@ namespace SeekerDungeon.Solana
             foreach (var entry in wieldableItems)
             {
                 if (entry?.visual == null) continue;
+                if (IsMenuOnlyWieldVisual(entry.visual)) continue;
 
                 entry.visual.SetActive(false);
 
@@ -437,7 +440,7 @@ namespace SeekerDungeon.Solana
             _activeWieldedVisual = null;
             foreach (var entry in wieldableItems)
             {
-                if (entry?.visual != null)
+                if (entry?.visual != null && !IsMenuOnlyWieldVisual(entry.visual))
                 {
                     entry.visual.SetActive(false);
                 }
@@ -446,13 +449,20 @@ namespace SeekerDungeon.Solana
 
         public bool EnsureFallbackWieldedItem(ItemId fallbackItemId = ItemId.BronzePickaxe)
         {
-            if (_activeWieldedVisual != null && _activeWieldedVisual.activeSelf)
+            if (HasVisibleWieldedItem())
             {
                 return false;
             }
 
             ShowWieldedItem(fallbackItemId);
             return true;
+        }
+
+        public bool HasVisibleWieldedItem()
+        {
+            return _activeWieldedVisual != null &&
+                   _activeWieldedVisual.activeSelf &&
+                   !IsMenuOnlyWieldVisual(_activeWieldedVisual);
         }
 
         public void SetMiningAnimationState(bool isMining)
@@ -537,6 +547,23 @@ namespace SeekerDungeon.Solana
                 ? absoluteX
                 : -absoluteX;
             transform.localScale = localScale;
+        }
+
+        public Animator ResolveActiveLeftArmAnimator()
+        {
+            var leftArm = _activeRigBindings != null ? _activeRigBindings.LeftArm : null;
+            if (leftArm == null)
+            {
+                return null;
+            }
+
+            var directAnimator = leftArm.GetComponent<Animator>();
+            if (directAnimator != null)
+            {
+                return directAnimator;
+            }
+
+            return leftArm.GetComponentInChildren<Animator>(true);
         }
 
         private void PlaySkinSwitchAnimation()
@@ -804,6 +831,12 @@ namespace SeekerDungeon.Solana
                 return;
             }
 
+            if (IsMenuOnlyWieldVisual(_activeWieldedVisual))
+            {
+                _activeWieldedVisual = null;
+                return;
+            }
+
             var hand = ResolveActiveWeaponHand();
             if (hand == null)
             {
@@ -828,6 +861,12 @@ namespace SeekerDungeon.Solana
             }
 
             return null;
+        }
+
+        private static bool IsMenuOnlyWieldVisual(GameObject visual)
+        {
+            return visual != null &&
+                   string.Equals(visual.name, MenuOnlyDrinkVisualName, StringComparison.OrdinalIgnoreCase);
         }
 
         private void ApplyAnimatorJobState()

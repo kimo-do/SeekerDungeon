@@ -182,8 +182,13 @@ namespace SeekerDungeon.Dungeon
 
                     if (dungeonInputController != null)
                     {
+                        var pendingSummary = DungeonExtractionSummaryStore.PeekPending();
+                        var treatAsDeath = pendingSummary == null ||
+                            pendingSummary.RunEndReason == DungeonRunEndReason.Death;
                         _handledOutOfDungeonExit = true;
-                        await dungeonInputController.HandleDeathExitAlreadyAppliedAsync("auto_loop_player_out_of_dungeon");
+                        await dungeonInputController.HandleOutOfDungeonExitAlreadyAppliedAsync(
+                            treatAsDeath,
+                            "auto_loop_player_out_of_dungeon");
                     }
                 }
 

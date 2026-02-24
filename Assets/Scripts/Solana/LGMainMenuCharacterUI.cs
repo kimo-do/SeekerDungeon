@@ -34,6 +34,7 @@ namespace SeekerDungeon.Solana
         [SerializeField] private ItemRegistry itemRegistry;
         [SerializeField] private Animator drinkAnimator;
         [SerializeField] private string drinkParameterName = "drink";
+        [SerializeField] private bool logDrinkDebugMessages;
         [SerializeField] private float firstDrinkDelaySeconds = 2f;
         [SerializeField] private float drinkIntervalMinSeconds = 8f;
         [SerializeField] private float drinkIntervalMaxSeconds = 15f;
@@ -1297,6 +1298,12 @@ namespace SeekerDungeon.Solana
             }
 
             _drinkLoopStarted = true;
+            if (logDrinkDebugMessages)
+            {
+                Debug.Log(
+                    $"[LGMainMenuCharacterUI] Drink loop started (firstDelay={firstDrinkDelaySeconds:F2}s, " +
+                    $"interval=[{drinkIntervalMinSeconds:F2},{drinkIntervalMaxSeconds:F2}]s, param='{drinkParameterName}').");
+            }
             DrinkLoopAsync().Forget();
         }
 
@@ -1308,6 +1315,11 @@ namespace SeekerDungeon.Solana
 
             while (!_stopDrinkLoop && isActiveAndEnabled)
             {
+                if (logDrinkDebugMessages)
+                {
+                    Debug.Log("[LGMainMenuCharacterUI] Drink loop tick.");
+                }
+
                 TriggerDrinkParameter();
 
                 var min = Mathf.Max(0.1f, drinkIntervalMinSeconds);
@@ -1321,9 +1333,15 @@ namespace SeekerDungeon.Solana
 
         private void TriggerDrinkParameter()
         {
-            var animator = drinkAnimator;
+            var animator = ResolveDrinkAnimator();
             if (animator == null || string.IsNullOrWhiteSpace(drinkParameterName))
             {
+                if (logDrinkDebugMessages)
+                {
+                    Debug.LogWarning(
+                        $"[LGMainMenuCharacterUI] Drink skipped. Animator missing={animator == null}, " +
+                        $"parameterName='{drinkParameterName}'.");
+                }
                 return;
             }
 
@@ -1331,23 +1349,76 @@ namespace SeekerDungeon.Solana
             for (var index = 0; index < parameters.Length; index += 1)
             {
                 var parameter = parameters[index];
-                if (!string.Equals(parameter.name, drinkParameterName, StringComparison.Ordinal))
+                if (!string.Equals(parameter.name, drinkParameterName, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
 
                 if (parameter.type == AnimatorControllerParameterType.Trigger)
                 {
-                    animator.SetTrigger(drinkParameterName);
+                    animator.SetTrigger(parameter.name);
+                    if (logDrinkDebugMessages)
+                    {
+                        Debug.Log(
+                            $"[LGMainMenuCharacterUI] Drink trigger fired on animator '{animator.name}' " +
+                            $"parameter '{parameter.name}' (type Trigger).");
+                    }
                 }
                 else if (parameter.type == AnimatorControllerParameterType.Bool)
                 {
-                    animator.SetBool(drinkParameterName, true);
-                    animator.SetBool(drinkParameterName, false);
+                    animator.SetBool(parameter.name, true);
+                    animator.SetBool(parameter.name, false);
+                    if (logDrinkDebugMessages)
+                    {
+                        Debug.Log(
+                            $"[LGMainMenuCharacterUI] Drink toggled on animator '{animator.name}' " +
+                            $"parameter '{parameter.name}' (type Bool).");
+                    }
+                }
+                else if (logDrinkDebugMessages)
+                {
+                    Debug.LogWarning(
+                        $"[LGMainMenuCharacterUI] Drink parameter '{parameter.name}' on animator '{animator.name}' " +
+                        $"has unsupported type '{parameter.type}'.");
                 }
 
                 return;
             }
+
+            if (logDrinkDebugMessages)
+            {
+                var availableParams = parameters == null || parameters.Length == 0
+                    ? "<none>"
+                    : string.Join(", ", Array.ConvertAll(parameters, p => $"{p.name}:{p.type}"));
+                Debug.LogWarning(
+                    $"[LGMainMenuCharacterUI] Parameter '{drinkParameterName}' not found on animator '{animator.name}'. " +
+                    $"Available: {availableParams}.");
+            }
+        }
+
+        private Animator ResolveDrinkAnimator()
+        {
+            var previewController = characterManager != null ? characterManager.PreviewPlayerController : null;
+            if (previewController != null)
+            {
+                var activeLeftArmAnimator = previewController.ResolveActiveLeftArmAnimator();
+                if (activeLeftArmAnimator != null)
+                {
+                    if (logDrinkDebugMessages)
+                    {
+                        Debug.Log(
+                            $"[LGMainMenuCharacterUI] Using active left-arm animator '{activeLeftArmAnimator.name}'.");
+                    }
+                    return activeLeftArmAnimator;
+                }
+            }
+
+            if (logDrinkDebugMessages && drinkAnimator != null)
+            {
+                Debug.Log($"[LGMainMenuCharacterUI] Falling back to legacy drink animator '{drinkAnimator.name}'.");
+            }
+
+            return drinkAnimator;
         }
 
         private void TryShowPendingExtractionSummary()

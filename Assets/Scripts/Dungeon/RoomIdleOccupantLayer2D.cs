@@ -8,6 +8,7 @@ namespace SeekerDungeon.Dungeon
     public sealed class RoomIdleOccupantLayer2D : MonoBehaviour
     {
         [SerializeField] private List<BoxCollider2D> spawnZones = new();
+        [SerializeField] private BoxCollider2D centerSpawnZone;
         [SerializeField] private GameObject occupantVisualPrefab;
         [SerializeField] private Transform visualSpawnRoot;
         [Header("Presence")]
@@ -28,6 +29,7 @@ namespace SeekerDungeon.Dungeon
         private readonly HashSet<string> _usedKeys = new(StringComparer.Ordinal);
         private readonly List<Vector2> _reservedPositions = new();
         private bool _suppressSpawnPop;
+        private bool _includeCenterSpawnZone;
 
         public void SetVisualSpawnRoot(Transform spawnRoot)
         {
@@ -40,6 +42,15 @@ namespace SeekerDungeon.Dungeon
             if (logOccupantDebug)
             {
                 Debug.Log($"[OccDbg][IdleLayer:{name}] suppressSpawnPop={_suppressSpawnPop}");
+            }
+        }
+
+        public void SetIncludeCenterSpawnZone(bool includeCenterSpawnZone)
+        {
+            _includeCenterSpawnZone = includeCenterSpawnZone;
+            if (logOccupantDebug)
+            {
+                Debug.Log($"[OccDbg][IdleLayer:{name}] includeCenterSpawnZone={_includeCenterSpawnZone}");
             }
         }
 
@@ -354,7 +365,7 @@ namespace SeekerDungeon.Dungeon
 
         private List<BoxCollider2D> GetAvailableZones()
         {
-            var zones = new List<BoxCollider2D>(spawnZones.Count);
+            var zones = new List<BoxCollider2D>(spawnZones.Count + 1);
             for (var i = 0; i < spawnZones.Count; i += 1)
             {
                 var zone = spawnZones[i];
@@ -364,6 +375,15 @@ namespace SeekerDungeon.Dungeon
                 }
 
                 zones.Add(zone);
+            }
+
+            if (_includeCenterSpawnZone &&
+                centerSpawnZone != null &&
+                centerSpawnZone.gameObject.activeInHierarchy &&
+                centerSpawnZone.enabled &&
+                !zones.Contains(centerSpawnZone))
+            {
+                zones.Add(centerSpawnZone);
             }
 
             return zones;

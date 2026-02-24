@@ -64,6 +64,19 @@ namespace SeekerDungeon.Solana
 
         private static readonly Dictionary<string, CacheEntry> MemoryCache = new();
 
+        public static void ClearCachedForWallet(string walletKey)
+        {
+            if (string.IsNullOrWhiteSpace(walletKey))
+            {
+                return;
+            }
+
+            MemoryCache.Remove(walletKey);
+            PlayerPrefs.DeleteKey(GetPersistentCacheKey(walletKey));
+            PlayerPrefs.DeleteKey(GetPersistentBackendStickyCacheKey(walletKey));
+            PlayerPrefs.Save();
+        }
+
         public static async UniTask<string> TryResolveSkrForWalletAsync(
             PublicKey walletPublicKey,
             string mainnetRpcUrl = DefaultMainnetRpcUrl,

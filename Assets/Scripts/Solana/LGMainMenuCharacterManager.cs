@@ -965,6 +965,7 @@ namespace SeekerDungeon.Solana
                     return;
                 }
 
+                ClearWalletScopedLocalStateAfterAccountReset();
                 await lgManager.FetchPlayerState();
                 await lgManager.FetchPlayerProfile();
                 await lgManager.FetchStorage();
@@ -1726,6 +1727,18 @@ namespace SeekerDungeon.Solana
                     sceneLoadController.ClearTransitionText();
                 }
             }
+        }
+
+        private void ClearWalletScopedLocalStateAfterAccountReset()
+        {
+            var walletKey = Web3.Wallet?.Account?.PublicKey?.Key;
+            if (!string.IsNullOrWhiteSpace(walletKey))
+            {
+                DungeonRunResumeStore.ClearRun(walletKey);
+                SeekerIdentityResolver.ClearCachedForWallet(walletKey);
+            }
+
+            walletSessionManager?.ClearWalletConnectIntent();
         }
 
         private string PickEnterDungeonTransitionText()

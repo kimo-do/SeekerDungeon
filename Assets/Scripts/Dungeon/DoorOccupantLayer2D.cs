@@ -105,24 +105,22 @@ namespace SeekerDungeon.Dungeon
                 return false;
             }
 
+            var occupiedSlotIndices = GatherOccupiedSlotIndices();
+
             if (_hasLocalOccupantInThisDoor &&
+                !occupiedSlotIndices.Contains(LocalReservedSlotIndex) &&
                 TryGetSlotPlacement(LocalReservedSlotIndex, out worldPosition, out facingDirection))
-            {
-                return true;
-            }
-
-            var occupiedVisibleCount = _activeByOccupantKey.Count;
-            var preferredIndex = occupiedVisibleCount >= visualSlots.Length
-                ? 0
-                : Mathf.Clamp(occupiedVisibleCount, 0, visualSlots.Length - 1);
-
-            if (TryGetSlotPlacement(preferredIndex, out worldPosition, out facingDirection))
             {
                 return true;
             }
 
             for (var index = 0; index < visualSlots.Length; index += 1)
             {
+                if (occupiedSlotIndices.Contains(index))
+                {
+                    continue;
+                }
+
                 if (TryGetSlotPlacement(index, out worldPosition, out facingDirection))
                 {
                     return true;
@@ -130,6 +128,33 @@ namespace SeekerDungeon.Dungeon
             }
 
             return false;
+        }
+
+        private HashSet<int> GatherOccupiedSlotIndices()
+        {
+            var occupiedSlotIndices = new HashSet<int>();
+            if (_slotByOccupantKey.Count == 0)
+            {
+                return occupiedSlotIndices;
+            }
+
+            foreach (var entry in _slotByOccupantKey)
+            {
+                if (!_activeByOccupantKey.ContainsKey(entry.Key))
+                {
+                    continue;
+                }
+
+                var slotIndex = entry.Value;
+                if (slotIndex < 0 || slotIndex >= visualSlots.Length)
+                {
+                    continue;
+                }
+
+                occupiedSlotIndices.Add(slotIndex);
+            }
+
+            return occupiedSlotIndices;
         }
 
         public void SetOccupants(IReadOnlyList<DungeonOccupantVisual> occupants)

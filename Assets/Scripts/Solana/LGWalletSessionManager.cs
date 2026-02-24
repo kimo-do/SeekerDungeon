@@ -130,6 +130,7 @@ namespace SeekerDungeon.Solana
         [SerializeField] private bool requireManualConnectOnDevice = true;
         [SerializeField] private WalletLoginMode startupLoginMode = WalletLoginMode.Auto;
         [SerializeField] private bool autoUseEditorDevWallet = true;
+        [SerializeField] private float walletAdapterLoginTimeoutSeconds = 20f;
         [SerializeField] private string editorDevWalletPassword = "seeker-dev-wallet";
         [SerializeField] private bool useEditorWalletSlots = true;
         [SerializeField] private string editorWalletPasswordPrefix = "seeker-dev-wallet-slot-";
@@ -1296,10 +1297,33 @@ namespace SeekerDungeon.Solana
             // Defensive reset: after manual disconnect some devices keep a stale MWA state
             // that can prevent the next prompt from opening.
             ResetWalletAdapterConnectionState();
-            var account = await Web3.Instance.LoginWalletAdapter();
+            Account account;
+            if (walletAdapterLoginTimeoutSeconds > 0f)
+            {
+                try
+                {
+                    account = await Web3.Instance
+                        .LoginWalletAdapter()
+                        .AsUniTask()
+                        .Timeout(TimeSpan.FromSeconds(walletAdapterLoginTimeoutSeconds));
+                }
+                catch (TimeoutException)
+                {
+                    ResetWalletAdapterConnectionState();
+                    throw new InvalidOperationException(
+                        "Wallet adapter login timed out or was dismissed. Tap Connect to try again.");
+                }
+            }
+            else
+            {
+                account = await Web3.Instance.LoginWalletAdapter();
+            }
+
             if (account == null)
             {
-                throw new InvalidOperationException("Wallet adapter login returned null.");
+                ResetWalletAdapterConnectionState();
+                throw new InvalidOperationException(
+                    "Wallet adapter login was dismissed. Tap Connect to try again.");
             }
         }
 
@@ -1376,11 +1400,12 @@ namespace SeekerDungeon.Solana
             TransactionInstruction instruction,
             IList<Account> signers,
             string traceTag = null,
-            bool stopAfterWalletAdapterFailure = false)
+            bool stopAfterWalletAdapterFailure = false,
+            bool suppressUserErrors = false)
         {
             if (instruction == null)
             {
-                EmitError($"{BuildTracePrefix(traceTag)}Cannot send null instruction.");
+                EmitErrorOrStatus($"{BuildTracePrefix(traceTag)}Cannot send null instruction.", suppressUserErrors);
                 return null;
             }
 
@@ -1388,32 +1413,34 @@ namespace SeekerDungeon.Solana
                 new List<TransactionInstruction> { instruction },
                 signers,
                 traceTag,
-                stopAfterWalletAdapterFailure);
+                stopAfterWalletAdapterFailure,
+                suppressUserErrors);
         }
 
         private async UniTask<string> SendInstructionsSignedByLocalAccounts(
             IList<TransactionInstruction> instructions,
             IList<Account> signers,
             string traceTag = null,
-            bool stopAfterWalletAdapterFailure = false)
+            bool stopAfterWalletAdapterFailure = false,
+            bool suppressUserErrors = false)
         {
             var tracePrefix = BuildTracePrefix(traceTag);
             if (signers == null || signers.Count == 0)
             {
-                EmitError($"{tracePrefix}Cannot send transaction without signers.");
+                EmitErrorOrStatus($"{tracePrefix}Cannot send transaction without signers.", suppressUserErrors);
                 return null;
             }
 
             if (instructions == null || instructions.Count == 0)
             {
-                EmitError($"{tracePrefix}Cannot send transaction without instructions.");
+                EmitErrorOrStatus($"{tracePrefix}Cannot send transaction without instructions.", suppressUserErrors);
                 return null;
             }
 
             var rpcCandidates = GetRpcCandidates();
             if (rpcCandidates.Count == 0)
             {
-                EmitError($"{tracePrefix}RPC client not available.");
+                EmitErrorOrStatus($"{tracePrefix}RPC client not available.", suppressUserErrors);
                 return null;
             }
 
@@ -1434,7 +1461,9 @@ namespace SeekerDungeon.Solana
 
                     if (stopAfterWalletAdapterFailure)
                     {
-                        EmitError($"{tracePrefix}Wallet adapter failed. Skipping local RPC fallback (stopAfterWalletAdapterFailure=true).");
+                        EmitErrorOrStatus(
+                            $"{tracePrefix}Wallet adapter failed. Skipping local RPC fallback (stopAfterWalletAdapterFailure=true).",
+                            suppressUserErrors);
                         return null;
                     }
                     EmitStatus($"{tracePrefix}Wallet adapter failed but stopAfterWalletAdapterFailure=false, trying local RPC fallback...");
@@ -1452,8 +1481,9 @@ namespace SeekerDungeon.Solana
                         var latestBlockHash = await rpcCandidate.GetLatestBlockHashAsync(commitment);
                         if (!latestBlockHash.WasSuccessful || latestBlockHash.Result?.Value == null)
                         {
-                            EmitError(
-                                $"{tracePrefix}[{rpcLabel}] Failed to get latest blockhash (attempt {attempt}/{MaxTransientSendAttemptsPerRpc}) endpoint={endpoint}: {latestBlockHash.Reason}");
+                            EmitErrorOrStatus(
+                                $"{tracePrefix}[{rpcLabel}] Failed to get latest blockhash (attempt {attempt}/{MaxTransientSendAttemptsPerRpc}) endpoint={endpoint}: {latestBlockHash.Reason}",
+                                suppressUserErrors);
                             break;
                         }
 
@@ -1490,8 +1520,9 @@ namespace SeekerDungeon.Solana
                         }
                         else
                         {
-                            EmitError(
-                                $"{tracePrefix}[{rpcLabel}] Transaction failed (attempt {attempt}/{MaxTransientSendAttemptsPerRpc}) endpoint={endpoint}: {reason} class={ClassifyFailureReason(reason)}");
+                            EmitErrorOrStatus(
+                                $"{tracePrefix}[{rpcLabel}] Transaction failed (attempt {attempt}/{MaxTransientSendAttemptsPerRpc}) endpoint={endpoint}: {reason} class={ClassifyFailureReason(reason)}",
+                                suppressUserErrors);
                         }
                         if (sendResult.ServerErrorCode != 0)
                         {
@@ -1515,7 +1546,7 @@ namespace SeekerDungeon.Solana
                                 }
                                 else
                                 {
-                                    EmitError($"{tracePrefix}{rawProbeMessage}");
+                                    EmitErrorOrStatus($"{tracePrefix}{rawProbeMessage}", suppressUserErrors);
                                 }
                             }
 
@@ -1543,7 +1574,9 @@ namespace SeekerDungeon.Solana
 
                 if (!string.IsNullOrWhiteSpace(lastFailure))
                 {
-                    EmitError($"{tracePrefix}Transaction failed after retry attempts: {lastFailure} class={ClassifyFailureReason(lastFailure)}");
+                    EmitErrorOrStatus(
+                        $"{tracePrefix}Transaction failed after retry attempts: {lastFailure} class={ClassifyFailureReason(lastFailure)}",
+                        suppressUserErrors);
                 }
 
                 return null;
@@ -2336,21 +2369,33 @@ namespace SeekerDungeon.Solana
                 return null;
             }
 
+            var suppressUserErrors = string.Equals(traceTag, "disconnect", StringComparison.OrdinalIgnoreCase);
             var rpc = GetRpcClient();
             if (rpc == null)
             {
-                EmitError($"{BuildTracePrefix(traceTag)}RPC unavailable while fetching session signer balance.");
+                EmitErrorOrStatus($"{BuildTracePrefix(traceTag)}RPC unavailable while fetching session signer balance.", suppressUserErrors);
                 return null;
             }
 
             var result = await rpc.GetBalanceAsync(signer, commitment);
             if (!result.WasSuccessful || result.Result == null)
             {
-                EmitError($"{BuildTracePrefix(traceTag)}Failed to fetch session signer balance: {result.Reason}");
+                EmitErrorOrStatus($"{BuildTracePrefix(traceTag)}Failed to fetch session signer balance: {result.Reason}", suppressUserErrors);
                 return null;
             }
 
             return result.Result.Value;
+        }
+
+        private void EmitErrorOrStatus(string message, bool suppressUserErrors)
+        {
+            if (suppressUserErrors)
+            {
+                EmitStatus(message);
+                return;
+            }
+
+            EmitError(message);
         }
 
         private async UniTask<bool> SweepSessionSignerLamportsAsync(PublicKey destination, string traceTag = null)
@@ -2377,14 +2422,19 @@ namespace SeekerDungeon.Solana
                 _sessionSignerAccount.PublicKey,
                 destination,
                 sweepAmount);
+            var suppressUserErrors = string.Equals(traceTag, "disconnect", StringComparison.OrdinalIgnoreCase);
 
             var sweepSig = await SendInstructionSignedByLocalAccounts(
                 transferIx,
                 new List<Account> { _sessionSignerAccount },
-                traceTag);
+                traceTag,
+                stopAfterWalletAdapterFailure: false,
+                suppressUserErrors: suppressUserErrors);
             if (string.IsNullOrWhiteSpace(sweepSig))
             {
-                EmitError($"{BuildTracePrefix(traceTag)}Failed to sweep session signer SOL back to player.");
+                EmitErrorOrStatus(
+                    $"{BuildTracePrefix(traceTag)}Failed to sweep session signer SOL back to player.",
+                    suppressUserErrors);
                 return false;
             }
 

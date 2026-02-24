@@ -35,6 +35,11 @@ namespace SeekerDungeon.Solana
 
         public static bool HasPendingSummary => _pendingSummary != null;
 
+        public static DungeonExtractionSummary PeekPending()
+        {
+            return _pendingSummary;
+        }
+
         public static void SetPending(DungeonExtractionSummary summary)
         {
             _pendingSummary = summary;

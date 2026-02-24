@@ -864,6 +864,13 @@ namespace SeekerDungeon.Dungeon
         /// </summary>
         public async UniTask HandleDeathExitAlreadyAppliedAsync(string sourceTag = "unknown")
         {
+            await HandleOutOfDungeonExitAlreadyAppliedAsync(true, sourceTag);
+        }
+
+        public async UniTask HandleOutOfDungeonExitAlreadyAppliedAsync(
+            bool treatAsDeath,
+            string sourceTag = "unknown")
+        {
             if (_isHandlingDeathExitAlreadyApplied)
             {
                 return;
@@ -875,7 +882,7 @@ namespace SeekerDungeon.Dungeon
                 var sceneLoadController = SceneLoadController.GetOrCreate();
                 if (sceneLoadController != null)
                 {
-                    sceneLoadController.SetTransitionText("You died...");
+                    sceneLoadController.SetTransitionText(treatAsDeath ? "You died..." : "Ending run...");
                     await sceneLoadController.FadeToBlackAsync();
                 }
 
@@ -883,7 +890,7 @@ namespace SeekerDungeon.Dungeon
 
                 // Ensure main menu can still show a death-run panel even when
                 // death resolution happened inside TickBossFight on-chain.
-                if (!DungeonExtractionSummaryStore.HasPendingSummary)
+                if (treatAsDeath && !DungeonExtractionSummaryStore.HasPendingSummary)
                 {
                     var totalScoreAfterRun = _lgManager.CurrentPlayerState?.TotalScore ?? 0UL;
                     DungeonExtractionSummaryStore.SetPending(new DungeonExtractionSummary
@@ -896,7 +903,9 @@ namespace SeekerDungeon.Dungeon
                     });
                 }
 
-                Debug.Log($"[DungeonInput] Death exit already applied on-chain ({sourceTag}). Loading menu.");
+                Debug.Log(
+                    $"[DungeonInput] Out-of-dungeon transition already applied on-chain " +
+                    $"(source={sourceTag}, treatAsDeath={treatAsDeath}). Loading menu.");
                 await LoadExitSceneAsync();
             }
             finally

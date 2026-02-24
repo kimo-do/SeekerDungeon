@@ -144,6 +144,13 @@ namespace SeekerDungeon.Dungeon
                 }
             }
 
+            if (idleOccupantLayer != null)
+            {
+                var includeCenterSpawnZone = snapshot.Room.CenterType != RoomCenterType.Boss &&
+                                             !snapshot.Room.HasChest();
+                idleOccupantLayer.SetIncludeCenterSpawnZone(includeCenterSpawnZone);
+            }
+
             SetIdleOccupants(snapshot.IdleOccupants);
 
             ApplyCenterState(snapshot.Room, snapshot.BossOccupants);
@@ -350,6 +357,10 @@ namespace SeekerDungeon.Dungeon
             SetDoorOccupants(RoomDirection.South, Array.Empty<DungeonOccupantVisual>());
             SetDoorOccupants(RoomDirection.East, Array.Empty<DungeonOccupantVisual>());
             SetDoorOccupants(RoomDirection.West, Array.Empty<DungeonOccupantVisual>());
+            if (idleOccupantLayer != null)
+            {
+                idleOccupantLayer.SetIncludeCenterSpawnZone(false);
+            }
             SetIdleOccupants(Array.Empty<DungeonOccupantVisual>());
             SetBossOccupants(Array.Empty<DungeonOccupantVisual>());
             SetAllDoorTimersVisible(false);
