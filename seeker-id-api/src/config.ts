@@ -21,6 +21,10 @@ export type AppConfig = {
   maxTransactionsPerLookup: number;
   requestTimeoutMs: number;
   logDebug: boolean;
+  feedMaxEvents: number;
+  feedPollLimitDefault: number;
+  feedPollLimitMax: number;
+  feedHeartbeatSeconds: number;
 };
 
 export const loadConfig = (): AppConfig => {
@@ -35,6 +39,10 @@ export const loadConfig = (): AppConfig => {
   const maxSignatureScan = parseIntOrDefault(process.env.MAX_SIGNATURE_SCAN, 120);
   const maxTransactionsPerLookup = parseIntOrDefault(process.env.MAX_TRANSACTIONS_PER_LOOKUP, 120);
   const requestTimeoutMs = parseIntOrDefault(process.env.REQUEST_TIMEOUT_MS, 5000);
+  const feedMaxEvents = parseIntOrDefault(process.env.FEED_MAX_EVENTS, 200);
+  const feedPollLimitDefault = parseIntOrDefault(process.env.FEED_POLL_LIMIT_DEFAULT, 20);
+  const feedPollLimitMax = parseIntOrDefault(process.env.FEED_POLL_LIMIT_MAX, 100);
+  const feedHeartbeatSeconds = parseIntOrDefault(process.env.FEED_HEARTBEAT_SECONDS, 20);
   const port = parseIntOrDefault(process.env.PORT, 3000);
   const logDebug = (process.env.LOG_DEBUG ?? "false").trim().toLowerCase() === "true";
 
@@ -47,6 +55,10 @@ export const loadConfig = (): AppConfig => {
     maxSignatureScan,
     maxTransactionsPerLookup,
     requestTimeoutMs,
-    logDebug
+    logDebug,
+    feedMaxEvents,
+    feedPollLimitDefault,
+    feedPollLimitMax,
+    feedHeartbeatSeconds
   };
 };

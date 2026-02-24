@@ -37,6 +37,7 @@ namespace SeekerDungeon.Dungeon
         private bool _pressedOverUi;
         private bool _isHandlingDeathExitAlreadyApplied;
         private bool? _lastObservedInDungeon;
+        private ServerFeedClient _serverFeedClient;
 
         public event Action<string, string> OnRemoteOccupantTapped;
 
@@ -72,6 +73,8 @@ namespace SeekerDungeon.Dungeon
             {
                 gameHudUI = UnityEngine.Object.FindFirstObjectByType<SeekerDungeon.Solana.LGGameHudUI>();
             }
+
+            _serverFeedClient = ServerFeedClient.Instance ?? UnityEngine.Object.FindFirstObjectByType<ServerFeedClient>();
         }
 
         private void OnEnable()
@@ -569,6 +572,9 @@ namespace SeekerDungeon.Dungeon
                         var isChestCenterAfterInteraction = currentRoomAfterInteraction != null &&
                                                             (currentRoomAfterInteraction.CenterType == LGConfig.CENTER_CHEST ||
                                                              currentRoomAfterInteraction.CenterType == LGConfig.CENTER_BONE_CHEST);
+                        var roomLabel = currentRoomAfterInteraction != null
+                            ? $"({currentRoomAfterInteraction.X},{currentRoomAfterInteraction.Y})"
+                            : null;
                         var alreadyLootedError = !centerResult.Success &&
                                                  !string.IsNullOrWhiteSpace(centerResult.Error) &&
                                                  centerResult.Error.IndexOf("AlreadyLooted", System.StringComparison.OrdinalIgnoreCase) >= 0;
@@ -598,6 +604,31 @@ namespace SeekerDungeon.Dungeon
                                 capturedLootResult,
                                 center.InteractWorldPosition,
                                 slotPosFunc);
+                        }
+
+                        if (centerResult.Success)
+                        {
+                            TryResolveServerFeedClient();
+                            if (_serverFeedClient != null)
+                            {
+                                var chestInteraction = wasChestCenterBeforeInteraction || isChestCenterAfterInteraction;
+                                if (chestInteraction)
+                                {
+                                    _serverFeedClient.PublishChestOpened(roomLabel);
+                                    TryPublishChestLoot(capturedLootResult, roomLabel);
+                                }
+
+                                var bossDefeatJustHappened = roomState != null &&
+                                                             currentRoomAfterInteraction != null &&
+                                                             roomState.CenterType == LGConfig.CENTER_BOSS &&
+                                                             !roomState.BossDefeated &&
+                                                             currentRoomAfterInteraction.CenterType == LGConfig.CENTER_BOSS &&
+                                                             currentRoomAfterInteraction.BossDefeated;
+                                if (bossDefeatJustHappened)
+                                {
+                                    _serverFeedClient.PublishBossDefeated(roomLabel);
+                                }
+                            }
                         }
                     }
                     finally
@@ -781,6 +812,11 @@ namespace SeekerDungeon.Dungeon
             }
 
             GameAudioManager.Instance?.PlayWorld(WorldSfxId.StairsExit, transform.position);
+            TryResolveServerFeedClient();
+            if (_serverFeedClient != null)
+            {
+                _serverFeedClient.PublishExtracted();
+            }
             await _lgManager.RefreshAllState();
             var playerAfterExit = _lgManager?.CurrentPlayerState;
             Debug.Log(
@@ -1112,6 +1148,34 @@ namespace SeekerDungeon.Dungeon
 
             var withSpaces = Regex.Replace(value.Trim(), "([a-z])([A-Z])", "$1 $2");
             return withSpaces.Replace("_", " ");
+        }
+
+        private void TryResolveServerFeedClient()
+        {
+            if (_serverFeedClient != null)
+            {
+                return;
+            }
+
+            _serverFeedClient = ServerFeedClient.Instance ?? UnityEngine.Object.FindFirstObjectByType<ServerFeedClient>();
+        }
+
+        private void TryPublishChestLoot(SeekerDungeon.Solana.LootResult lootResult, string roomLabel)
+        {
+            if (_serverFeedClient == null || lootResult?.Items == null || lootResult.Items.Count == 0)
+            {
+                return;
+            }
+
+            var firstItem = lootResult.Items[0];
+            if (firstItem == null)
+            {
+                return;
+            }
+
+            var itemName = LGConfig.GetItemDisplayName(firstItem.ItemId);
+            var itemRarity = string.Empty;
+            _serverFeedClient.PublishChestLoot(itemName, itemRarity, roomLabel);
         }
     }
 }

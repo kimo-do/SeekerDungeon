@@ -22,6 +22,7 @@ namespace SeekerDungeon.Solana
 
         [SerializeField] private LGManager manager;
         [SerializeField] private LGGameHudUI hud;
+        [SerializeField] private ServerFeedClient serverFeedClient;
         [SerializeField] private DungeonInputController dungeonInputController;
         [SerializeField] private DungeonManager dungeonManager;
         [SerializeField] private float normalPollSeconds = 8f;
@@ -122,6 +123,11 @@ namespace SeekerDungeon.Solana
             if (dungeonManager == null)
             {
                 dungeonManager = FindFirstObjectByType<DungeonManager>();
+            }
+
+            if (serverFeedClient == null)
+            {
+                serverFeedClient = ServerFeedClient.Instance ?? FindFirstObjectByType<ServerFeedClient>();
             }
 
             gameplayCamera ??= ResolveGameplayCamera();
@@ -1363,11 +1369,38 @@ namespace SeekerDungeon.Solana
             {
                 hud.ShowDuelResultModal("YOU WON", "Victory. The duel payout has been awarded.");
                 GameAudioManager.Instance?.PlayStinger(StingerSfxId.DuelVictory);
+                TryPublishDuelWin(localWallet, challenge);
                 return;
             }
 
             hud.ShowDuelResultModal("YOU LOST", "Defeat. Better luck next duel.");
             GameAudioManager.Instance?.PlayStinger(StingerSfxId.DuelDefeat);
+        }
+
+        private void TryPublishDuelWin(PublicKey localWallet, DuelChallengeView challenge)
+        {
+            if (challenge == null || localWallet == null)
+            {
+                return;
+            }
+
+            if (serverFeedClient == null)
+            {
+                serverFeedClient = ServerFeedClient.Instance ?? FindFirstObjectByType<ServerFeedClient>();
+            }
+
+            if (serverFeedClient == null)
+            {
+                return;
+            }
+
+            var challengerIsLocal = string.Equals(challenge.Challenger?.Key, localWallet.Key, StringComparison.Ordinal);
+            var opponentWallet = challengerIsLocal ? challenge.Opponent : challenge.Challenger;
+            var opponentNameSnapshot = challengerIsLocal
+                ? challenge.OpponentDisplayNameSnapshot
+                : challenge.ChallengerDisplayNameSnapshot;
+            var opponentName = GetReplayDisplayName(opponentNameSnapshot, opponentWallet);
+            serverFeedClient.PublishDuelWon(opponentName);
         }
 
         private LGPlayerController ResolveLocalPlayerController()

@@ -6,6 +6,9 @@ Small backend service for resolving wallet -> `.skr` display names with cache-fi
 
 - `GET /healthz`
 - `GET /seeker-id/resolve?wallet=<pubkey>`
+- `POST /feed/events`
+- `GET /feed/stream`
+- `GET /feed/events?afterId=<id>&limit=<n>`
 
 Response shape:
 
@@ -15,6 +18,50 @@ Response shape:
   "seekerId": "asynkimo.skr",
   "source": "tldparser",
   "updatedAtUnix": 1739220000
+}
+```
+
+Feed publish request shape:
+
+```json
+{
+  "type": "chest_opened",
+  "actorDisplayName": "asynkimo.skr",
+  "targetDisplayName": "optional-opponent.skr",
+  "itemName": "Legendary Crown",
+  "itemRarity": "legendary",
+  "roomLabel": "(10,12)",
+  "unixTime": 1739980000,
+  "clientEventId": "local-123"
+}
+```
+
+Feed publish response shape:
+
+```json
+{
+  "ok": true,
+  "event": {
+    "id": 142,
+    "type": "chest_loot",
+    "message": "asynkimo.skr received Legendary Crown",
+    "createdAtUnix": 1739980002
+  }
+}
+```
+
+Feed poll response shape:
+
+```json
+{
+  "events": [
+    {
+      "id": 142,
+      "type": "chest_loot",
+      "message": "asynkimo.skr received Legendary Crown",
+      "createdAtUnix": 1739980002
+    }
+  ]
 }
 ```
 
@@ -37,6 +84,10 @@ Response shape:
 - `MAX_TRANSACTIONS_PER_LOOKUP` (default `120`, hard cap per request)
 - `REQUEST_TIMEOUT_MS` (default `5000`)
 - `LOG_DEBUG` (`true` or `false`)
+- `FEED_MAX_EVENTS` (default `200`)
+- `FEED_POLL_LIMIT_DEFAULT` (default `20`)
+- `FEED_POLL_LIMIT_MAX` (default `100`)
+- `FEED_HEARTBEAT_SECONDS` (default `20`)
 
 ## Railway Deployment
 
@@ -55,3 +106,8 @@ Response shape:
 - `source=tldparser` means the result came from `@onsol/tldparser` reverse lookup (primary path).
 - Backend does not block gameplay; Unity should still keep short-wallet fallback.
 - Legacy fallback path (`enhanced_history`/`rpc_scan`) remains for resilience if primary lookup fails.
+- Feed endpoints are offchain UX helpers and intentionally spoofable in this jam-safe version.
+- `GET /feed/stream` emits SSE frames with:
+  - `event: feed`
+  - `id: <eventId>`
+  - `data: <json event>`

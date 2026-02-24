@@ -10,6 +10,9 @@
                 <ui:Label name="hud-player-health-label" text="--/--" class="hud-player-health-label"/>
             </ui:VisualElement>
         </ui:VisualElement>
+        <ui:VisualElement name="hud-feed-banner" picking-mode="Ignore" class="hud-feed-banner" style="display: none; opacity: 0;">
+            <ui:Label name="hud-feed-banner-label" text="" class="hud-feed-banner-label"/>
+        </ui:VisualElement>
         <ui:VisualElement name="hud-top-right-actions" class="top-right-actions">
             <ui:VisualElement name="wallet-pill-stack" class="wallet-pill-stack">
                 <ui:VisualElement name="wallet-sol-pill" class="wallet-pill" style="background-image: url(&quot;project://database/Assets/Sprites/pill_shaped_ui_elements.png?fileID=-5465383454656379642&amp;guid=bba72545d6bcacf4a9f10aaed00c848b&amp;type=3#pill_shaped_ui_elements (1) (1)_0&quot;); -unity-background-scale-mode: scale-to-fit;">

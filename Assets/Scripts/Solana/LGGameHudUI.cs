@@ -136,6 +136,7 @@ namespace SeekerDungeon.Solana
         private VisualElement _root;
         private TxIndicatorVisualController _txIndicatorController;
         private HudCenterToastVisualController _centerToastController;
+        private HudTopFeedBannerVisualController _topFeedBannerController;
 
         private readonly Dictionary<ItemId, VisualElement> _slotsByItemId = new();
         private ItemId _tooltipItemId = ItemId.None;
@@ -388,6 +389,8 @@ namespace SeekerDungeon.Solana
             _txIndicatorController.Bind(_root);
             _centerToastController ??= new HudCenterToastVisualController();
             _centerToastController.Bind(_root);
+            _topFeedBannerController ??= new HudTopFeedBannerVisualController();
+            _topFeedBannerController.Bind(_root);
 
             RefreshHudAsync().Forget();
             RefreshLoopAsync(this.GetCancellationTokenOnDestroy()).Forget();
@@ -462,6 +465,8 @@ namespace SeekerDungeon.Solana
             _txIndicatorController = null;
             _centerToastController?.Dispose();
             _centerToastController = null;
+            _topFeedBannerController?.Dispose();
+            _topFeedBannerController = null;
 
             HideExitConfirmModal();
             HideSessionFeeModal();
@@ -476,6 +481,7 @@ namespace SeekerDungeon.Solana
         {
             _txIndicatorController?.Tick(Time.unscaledDeltaTime);
             _centerToastController?.Tick(Time.unscaledDeltaTime);
+            _topFeedBannerController?.Tick(Time.unscaledDeltaTime);
             if (Time.realtimeSinceStartup - _lastDuelExpiryVisualRefreshRealtime >= 0.12f)
             {
                 _lastDuelExpiryVisualRefreshRealtime = Time.realtimeSinceStartup;
@@ -497,6 +503,21 @@ namespace SeekerDungeon.Solana
             }
 
             _centerToastController.Show(message, holdSeconds);
+        }
+
+        public void ShowServerFeedMessage(string message, float holdSeconds = 2.5f)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return;
+            }
+
+            if (_topFeedBannerController == null)
+            {
+                return;
+            }
+
+            _topFeedBannerController.Show(message, holdSeconds);
         }
 
         private async UniTaskVoid RefreshLoopAsync(System.Threading.CancellationToken cancellationToken)
