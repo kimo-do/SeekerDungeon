@@ -1,130 +1,128 @@
 # Loot Goblins
 
-<div align="center">
-  <strong>A shared onchain dungeon crawler built for Solana Seeker.</strong>
-  <br/>
-  <sub>Working title for the current build track.</sub>
-</div>
+Shared onchain dungeon crawler for Solana Seeker.
 
 <p align="center">
   <img src="Docs/media/loot-goblins-splash.png" alt="Loot Goblins splash artwork" width="100%" />
 </p>
 
-<br/>
-
-## Table of Contents
-- [What Is Loot Goblins?](#what-is-loot-goblins)
-- [Gameplay at a Glance](#gameplay-at-a-glance)
-- [Core Game Loop](#core-game-loop)
-- [Built for Seeker + SKR](#built-for-seeker--skr)
-- [Tech Stack](#tech-stack)
-- [Art Asset Pipeline](#art-asset-pipeline)
-- [Architecture](#architecture)
-- [Repository Structure](#repository-structure)
-- [Current Status](#current-status)
-
 ## What Is Loot Goblins?
-**Loot Goblins** is a mobile-first, shared dungeon game where every player contributes to the same evolving world.
 
-You enter a room, team up with other players to clear rubble, open deeper paths, fight bosses, and collect loot. The dungeon state is onchain, so progress is persistent, visible, and shared across all players.
+Loot Goblins is a mobile-first, shared dungeon crawler where players cooperate in a single evolving world state on Solana.
 
-This project is designed for fast, readable play sessions (5-15 minutes) while still giving meaningful onchain ownership and progression.
+Runs are short and readable, but progression is persistent and verifiable:
+- rooms and progression are onchain
+- player participation is recorded through program-owned accounts
+- seasonal resets create a repeatable race for depth and rewards
 
-## Gameplay at a Glance
-| Pillar | Experience |
-|---|---|
-| Shared world | Everyone plays in the same season and contributes to global depth |
-| Co-op progression | Multiple helpers speed up door-clearing jobs |
-| Onchain persistence | Rooms, jobs, loot, and player state are program-owned accounts |
-| Session-friendly | Quick runs, clear goals, mobile-first interactions |
-| Seasonal rhythm | New seasons reset progression and restart the dungeon race |
+The design target is Seeker-native gameplay: quick sessions, clear interactions, and meaningful onchain actions instead of passive wallet gating.
 
-## Core Game Loop
+## What This Repo Contains
+
+- Unity client/game project (`Assets/`, `ProjectSettings/`, `Packages/`)
+- Solana Anchor program and dev tooling (`solana-program/`)
+- Optional offchain Seeker ID/feed helper API (`seeker-id-api/`)
+- Design/implementation notes (`Docs/`)
+
+## Gameplay Summary
+
+Players share one evolving dungeon state on Solana devnet:
+
 1. Spawn into the current room.
 2. Move through open doors or join a rubble-clearing job.
-3. Stake SKR to participate in jobs and earn completion rewards.
-4. Clear routes, unlock deeper rooms, and raise global depth.
-5. Loot chests or join boss fights in center encounters.
-6. Repeat, optimize loadout, and push further each season.
+3. Stake SKR to help clear doors (`join_job`) and optionally tip to speed progress (`boost_job`).
+4. Claim rewards (`claim_job_reward`) or abandon early (`abandon_job`, partial refund/slash).
+5. Loot room centers (chests/bosses), improve loadout, and push global depth each season.
 
 ## Built for Seeker + SKR
-### Seeker-first design
-- Mobile wallet flow is designed around Solana Mobile / Seed Vault patterns.
-- Gameplay actions are structured for tap-driven, short-session play.
-- The game loop favors frequent lightweight interactions over long desktop sessions.
 
-### SKR as real in-game utility
-- `join_job`: players stake SKR to help clear rubble doors.
-- `boost_job`: players can tip SKR to accelerate progress.
-- `claim_job_reward`: helpers recover stake plus reward share on completion.
-- `abandon_job`: early exits refund partially with a slash to the pool.
+SKR is used as active game utility:
+- `join_job`: stake to help clear rubble doors
+- `boost_job`: tip to accelerate progress
+- `claim_job_reward`: recover stake plus reward share
+- `abandon_job`: partial refund with slash to the pool
 
-The intent is utility, not passive token gating: SKR is used to coordinate cooperation, incentives, and pace.
+This creates cooperative incentives while keeping each action tied to gameplay outcomes.
 
 ## Tech Stack
-### Client (Game)
+
 | Layer | Choice |
 |---|---|
-| Engine | Unity `6000.3.6+` |
-| Language | C# |
-| UI | Unity UI Toolkit |
-| Solana integration | Solana Unity SDK |
-| Generated client | Codama-generated C# client bindings |
-| Platform target | Solana Seeker / Android |
+| Game client | Unity `6000.3.6f1`, C#, UI Toolkit |
+| Solana integration | Solana Unity SDK + generated C# client (`Assets/Scripts/Solana/Generated/LGClient.cs`) |
+| Onchain program | Solana + Anchor `0.32.1` (Rust) |
+| Solana scripts/tests | TypeScript (`tsx`, Anchor test runner, npm scripts) |
+| Optional backend | Node/TypeScript service in `seeker-id-api/` |
+| Active network | Devnet |
 
-### Backend (Onchain)
-| Layer | Choice |
-|---|---|
-| Chain | Solana |
-| Program framework | Anchor `0.32.1` |
-| Program language | Rust |
-| Client/testing scripts | TypeScript (`tsx`, Anchor TS) |
-| Token model | SPL token flows for SKR staking/rewards |
-| Environment | Devnet-first iteration |
+## Art and Audio Pipeline
 
-## Art Asset Pipeline
-- Gameplay art starts in `spritecook.ai`, my self-built AI sprite generator (concept sprites, variations, and style exploration).
-- I then curate and import selected outputs into Unity under `Assets/` for in-game use.
-- Final integration (slicing, pivots, animation setup, and UI placement) is done in the Unity project.
+- Visual assets are ideated and generated in **SpriteCook** (`spritecook.ai`) for style exploration and rapid variation.
+- Selected sprites are curated and integrated in Unity (`Assets/`) with final slicing, pivots, animation, and UI composition done in-editor.
+- Audio FX and music are created with **ElevenLabs.io**, then edited/mixed for in-game use.
 
-## Architecture
-```text
-Unity Client (C# + UI Toolkit)
-    |
-    | Solana Unity SDK + generated client
-    v
-Anchor Program (Rust)
-    |
-    | Program-owned accounts (PDAs)
-    v
-Global / Player / Room / Inventory / Presence / BossFight / HelperStake
-```
+## Repository Layout
 
-### Main onchain entities
-- `Global`: season config, depth, prize pool, mint info.
-- `Player`: room position, jobs, equipment progress stats.
-- `PlayerProfile`: skin + display identity.
-- `Room`: walls, jobs, chest/boss center logic, looter tracking.
-- `Inventory`: onchain item stacks.
-- `RoomPresence`: scalable room occupancy + live activity state.
-- `HelperStake` / `BossFight`: per-player participation records.
-
-## Repository Structure
 ```text
 .
-|-- Assets/                  # Unity game client
-|-- Docs/                    # Design docs and implementation notes
-|-- solana-program/          # Anchor program, tests, scripts, IDL/codama config
-|-- scripts/                 # Project-level helper scripts
-`-- README.md                # You are here
+|-- Assets/                  # Unity game and Solana integration scripts
+|-- Docs/                    # Design notes, implementation docs, dev guides
+|-- seeker-id-api/           # Optional display-name/feed helper API
+|-- solana-program/          # Anchor program, tests, scripts, IDL
+|-- scripts/                 # Root helper scripts (Unity/client generation)
+`-- README.md
 ```
 
-## Current Status
-- Core room traversal, job flow, chest/boss logic, and inventory paths are implemented onchain.
-- Unity side includes typed wrappers and integration points for movement, jobs, center interactions, and presence rendering.
-- Current network target is **Solana devnet** for active iteration.
+## Solana Workflow (Windows + WSL)
 
-For deeper implementation details:
-- `Docs/current-game-state-and-logic.md`
-- `Docs/initialimplementationplan.md`
-- `solana-program/README.md`
+Use the `solana-program/scripts/wsl` helpers for Solana work.
+
+```powershell
+# Build Anchor program
+wsl -d Ubuntu -- bash /mnt/e/Github2/SeekerDungeon/solana-program/scripts/wsl/build.sh
+
+# Run commands inside solana-program with Solana/Anchor PATH configured
+wsl -d Ubuntu -- bash /mnt/e/Github2/SeekerDungeon/solana-program/scripts/wsl/run.sh "npm install"
+wsl -d Ubuntu -- bash /mnt/e/Github2/SeekerDungeon/solana-program/scripts/wsl/run.sh "npm test"
+```
+
+Important project convention:
+- Use `npm` (not `yarn`) in `solana-program/`.
+- Before finishing Solana changes, run `npm test`.
+- If session auth flow changed, also run `npm run smoke-session-join-job`.
+
+## Unity + IDL Regeneration
+
+When program accounts/instructions/events change:
+
+1. Build the Anchor program (refreshes IDL).
+2. Regenerate Unity client from IDL:
+   - `powershell ./scripts/generate-unity-client.ps1`
+3. If required, update wrappers in `Assets/Scripts/Solana/LGDomainModels.cs`.
+
+## Optional Seeker ID API
+
+`seeker-id-api/` is an optional service for:
+- wallet -> `.skr` display name resolution
+- lightweight offchain feed endpoints for UX
+
+Run locally:
+
+```powershell
+cd seeker-id-api
+npm install
+npm run dev
+```
+
+See `seeker-id-api/README.md` for env vars and Railway deployment notes.
+
+## Current Status
+
+- Onchain systems include room traversal, helper-stake job flow, chest/boss interactions, and inventory/storage accounts.
+- Unity integration includes generated client bindings plus domain wrappers for game-facing use.
+- Development and smoke testing are currently devnet-first.
+
+## Key References
+
+- `solana-program/README.md` (program-specific details)
+- `Docs/wsl-solana-commands.md` (WSL command patterns)
