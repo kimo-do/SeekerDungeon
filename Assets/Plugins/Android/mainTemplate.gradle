@@ -1,5 +1,6 @@
 apply plugin: 'com.android.library'
 apply from: '../shared/keepUnitySymbols.gradle'
+apply from: '../shared/common.gradle'
 **APPLY_PLUGINS**
 
 dependencies {
@@ -12,19 +13,19 @@ dependencies {
     implementation 'com.google.guava:guava:33.5.0-android'
     implementation 'com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava'
     // [Solana.Unity-SDK] End Dependencies
-**DEPS**
-}
+**DEPS**}
 
 android {
-    ndkVersion "**NDKVERSION**"
-    namespace "**NAMESPACE**"
+    namespace "com.unity3d.player"
     ndkPath "**NDKPATH**"
+    ndkVersion "**NDKVERSION**"
+
     compileSdk **APIVERSION**
-    buildToolsVersion '**BUILDTOOLS**'
+    buildToolsVersion = "**BUILDTOOLS**"
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_11
-        targetCompatibility JavaVersion.VERSION_11
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
 
     defaultConfig {
@@ -46,26 +47,12 @@ android {
 
     androidResources {
         noCompress = **BUILTIN_NOCOMPRESS** + unityStreamingAssets.tokenize(', ')
-        ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~"
+        ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~"
     }**PACKAGING**
+}
 **IL_CPP_BUILD_SETUP**
 **SOURCE_BUILD_SETUP**
 **EXTERNAL_SOURCES**
-
-    buildTypes {
-        debug {
-            minifyEnabled **MINIFY_DEBUG**
-            
-            proguardFiles getDefaultProguardFile('proguard-android.txt')**SIGNCONFIG**
-            jniDebuggable true
-        }
-        release {
-            minifyEnabled **MINIFY_RELEASE**
-            
-            proguardFiles getDefaultProguardFile('proguard-android.txt')**SIGNCONFIG**
-        }
-    }
-}
 
 **REPOSITORIES**
 **IL_CPP_PREFERENCES**
