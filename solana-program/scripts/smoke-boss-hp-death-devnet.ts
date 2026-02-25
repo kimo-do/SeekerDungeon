@@ -5,11 +5,17 @@ import { SystemProgram } from "@solana/web3.js";
 
 const CENTER_BOSS = 2;
 const WALL_OPEN = 2;
-const START_ROOM_X = 5;
-const START_ROOM_Y = 5;
+const START_ROOM_X = 10;
+const START_ROOM_Y = 10;
 const MAX_BOSS_SEARCH_STEPS = 40;
 const DAMAGE_SLOT_STEP = 150;
 const SLOT_POLL_MS = 1000;
+const TOKEN_PROGRAM_ID = new anchor.web3.PublicKey(
+  "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+);
+const ASSOCIATED_TOKEN_PROGRAM_ID = new anchor.web3.PublicKey(
+  "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+);
 
 type PlayerAccount = Awaited<
   ReturnType<Program<Chaindepth>["account"]["playerAccount"]["fetch"]>
@@ -106,6 +112,16 @@ const deriveRoomPresencePda = function (
   )[0];
 };
 
+const deriveAta = function (
+  mint: anchor.web3.PublicKey,
+  owner: anchor.web3.PublicKey,
+): anchor.web3.PublicKey {
+  return anchor.web3.PublicKey.findProgramAddressSync(
+    [owner.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), mint.toBuffer()],
+    ASSOCIATED_TOKEN_PROGRAM_ID,
+  )[0];
+};
+
 const deriveBossFightPda = function (
   programId: anchor.web3.PublicKey,
   room: anchor.web3.PublicKey,
@@ -163,6 +179,7 @@ async function main(): Promise<void> {
   const playerPda = derivePlayerPda(program.programId, walletPubkey);
   const profilePda = deriveProfilePda(program.programId, walletPubkey);
   const inventoryPda = deriveInventoryPda(program.programId, walletPubkey);
+  const playerTokenAccount = deriveAta(global.skrMint, walletPubkey);
 
   console.log("=== Devnet Boss HP + Death Smoke Test ===");
   console.log("Wallet:", walletPubkey.toBase58());
@@ -184,6 +201,11 @@ async function main(): Promise<void> {
           START_ROOM_Y,
           walletPubkey,
         ),
+        signupFaucet: deriveAta(global.skrMint, globalPda),
+        playerTokenAccount,
+        skrMint: global.skrMint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })
       .rpc();

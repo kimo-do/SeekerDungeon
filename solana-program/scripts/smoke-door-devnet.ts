@@ -39,6 +39,35 @@ const derivePlayerPda = function (
   )[0];
 };
 
+const deriveProfilePda = function (
+  programId: anchor.web3.PublicKey,
+  player: anchor.web3.PublicKey,
+): anchor.web3.PublicKey {
+  return anchor.web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("profile"), player.toBuffer()],
+    programId,
+  )[0];
+};
+
+const deriveRoomPresencePda = function (
+  programId: anchor.web3.PublicKey,
+  seasonSeed: anchor.BN,
+  x: number,
+  y: number,
+  player: anchor.web3.PublicKey,
+): anchor.web3.PublicKey {
+  return anchor.web3.PublicKey.findProgramAddressSync(
+    [
+      Buffer.from("presence"),
+      seasonSeed.toArrayLike(Buffer, "le", 8),
+      Buffer.from([x & 0xff]),
+      Buffer.from([y & 0xff]),
+      player.toBuffer(),
+    ],
+    programId,
+  )[0];
+};
+
 const deriveRoomPda = function (
   programId: anchor.web3.PublicKey,
   seasonSeed: anchor.BN,
@@ -103,6 +132,15 @@ async function main(): Promise<void> {
 
   const globalAccount = await program.account.globalAccount.fetch(globalPda);
   const playerPda = derivePlayerPda(program.programId, walletPubkey);
+  const profilePda = deriveProfilePda(program.programId, walletPubkey);
+  const roomPresencePda = deriveRoomPresencePda(
+    program.programId,
+    globalAccount.seasonSeed,
+    10,
+    10,
+    walletPubkey,
+  );
+  const playerTokenAccount = deriveAta(globalAccount.skrMint, walletPubkey);
 
   console.log("=== Devnet Door Smoke Test ===");
   console.log("Wallet:", walletPubkey.toBase58());
@@ -117,6 +155,13 @@ async function main(): Promise<void> {
         player: walletPubkey,
         global: globalPda,
         playerAccount: playerPda,
+        profile: profilePda,
+        roomPresence: roomPresencePda,
+        signupFaucet: deriveAta(globalAccount.skrMint, globalPda),
+        playerTokenAccount,
+        skrMint: globalAccount.skrMint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })
       .rpc();
@@ -153,8 +198,6 @@ async function main(): Promise<void> {
     direction,
     walletPubkey,
   );
-  const playerTokenAccount = deriveAta(globalAccount.skrMint, walletPubkey);
-
   const connection = provider.connection;
   let latestRoom = roomAccount;
   let helperStakeExists = (await connection.getAccountInfo(helperStakePda)) !== null;

@@ -272,6 +272,13 @@ async function main(): Promise<void> {
   const playerPda = derivePlayerPda(program.programId, walletPubkey);
   const profilePda = deriveProfilePda(program.programId, walletPubkey);
   const playerTokenAccount = deriveAta(globalAccount.skrMint, walletPubkey);
+  const startRoomPresencePda = deriveRoomPresencePda(
+    program.programId,
+    globalAccount.seasonSeed,
+    10,
+    10,
+    walletPubkey,
+  );
 
   console.log("=== Devnet Room Routing Smoke Test ===");
   console.log("Wallet:", walletPubkey.toBase58());
@@ -287,13 +294,12 @@ async function main(): Promise<void> {
         global: globalPda,
         playerAccount: playerPda,
         profile: profilePda,
-        roomPresence: deriveRoomPresencePda(
-          program.programId,
-          globalAccount.seasonSeed,
-          5,
-          5,
-          walletPubkey,
-        ),
+        roomPresence: startRoomPresencePda,
+        signupFaucet: deriveAta(globalAccount.skrMint, globalPda),
+        playerTokenAccount,
+        skrMint: globalAccount.skrMint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })
       .rpc();
@@ -509,4 +515,3 @@ main().catch((thrownObject: unknown) => {
   console.error("Room routing smoke failed:", error.message);
   process.exit(1);
 });
-

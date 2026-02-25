@@ -11,6 +11,7 @@
     "force-reset-season": "npx tsx scripts/force-reset-season.ts",
     "check-state": "npx tsx scripts/check-state.ts",
     "mint-tokens": "npx tsx scripts/mint-test-tokens.ts",
+    "fund-signup-faucet": "npx tsx scripts/fund-signup-faucet-devnet.ts",
     "reset-player-only": "npx tsx scripts/reset-player-only-devnet.ts",
     "reset-player-and-fund": "npx tsx scripts/reset-player-and-fund-devnet.ts",
     "grant-self-item": "npx tsx scripts/grant-self-item-devnet.ts",

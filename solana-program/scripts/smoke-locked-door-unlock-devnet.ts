@@ -34,8 +34,8 @@ const SESSION_DURATION_SECONDS = 3_600;
 const SKELETON_KEY_ITEM_ID = 214;
 const BOOST_TIP_FOR_INSTANT_COMPLETE = 10_000_000;
 const MAX_EXPLORATION_STEPS = 60;
-const START_ROOM_X = 5;
-const START_ROOM_Y = 5;
+const START_ROOM_X = 10;
+const START_ROOM_Y = 10;
 
 type PlayerAccount = Awaited<
   ReturnType<Program<Chaindepth>["account"]["playerAccount"]["fetch"]>
@@ -427,6 +427,11 @@ async function main(): Promise<void> {
             START_ROOM_Y,
             walletPubkey,
           ),
+          signupFaucet: deriveAta(globalAccount.skrMint, globalPda),
+          playerTokenAccount,
+          skrMint: globalAccount.skrMint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
         })
         .rpc();

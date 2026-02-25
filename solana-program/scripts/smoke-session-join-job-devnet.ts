@@ -19,8 +19,8 @@ const SESSION_JOIN_JOB_BIT = 1 << 7;
 const SESSION_FUNDING_LAMPORTS = 200_000_000;
 const SESSION_DURATION_SLOTS = 5_000;
 const SESSION_DURATION_SECONDS = 3_600;
-const START_ROOM_X = 5;
-const START_ROOM_Y = 5;
+const START_ROOM_X = 10;
+const START_ROOM_Y = 10;
 const MAX_ROOM_SEARCH_STEPS = 24;
 
 type ActiveJob = {
@@ -227,6 +227,7 @@ async function main(): Promise<void> {
   const globalAccount = await program.account.globalAccount.fetch(globalPda);
   const playerPda = derivePlayerPda(program.programId, walletPubkey);
   const profilePda = deriveProfilePda(program.programId, walletPubkey);
+  const playerTokenAccount = deriveAta(globalAccount.skrMint, walletPubkey);
   const startRoomPresencePda = deriveRoomPresencePda(
     program.programId,
     globalAccount.seasonSeed,
@@ -250,6 +251,11 @@ async function main(): Promise<void> {
         playerAccount: playerPda,
         profile: profilePda,
         roomPresence: startRoomPresencePda,
+        signupFaucet: deriveAta(globalAccount.skrMint, globalPda),
+        playerTokenAccount,
+        skrMint: globalAccount.skrMint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })
       .rpc();
@@ -274,8 +280,6 @@ async function main(): Promise<void> {
     walletPubkey,
     sessionKeypair.publicKey,
   );
-  const playerTokenAccount = deriveAta(globalAccount.skrMint, walletPubkey);
-
   const connection = provider.connection;
   const sessionBalance = await connection.getBalance(sessionKeypair.publicKey);
   if (sessionBalance < SESSION_FUNDING_LAMPORTS) {

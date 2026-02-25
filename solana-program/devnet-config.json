@@ -5,5 +5,6 @@
   "prizePoolPda": "5AuvdfSKKUsroC74RwVJ25jyhX5erMr8VCNLmj3EXQVg",
   "seasonSeed": "10895528802946980019",
   "network": "devnet",
-  "rpcUrl": "https://api.devnet.solana.com"
+  "rpcUrl": "https://api.devnet.solana.com",
+  "signupFaucet": "2E32teEDrFQPHwehGPH4yJS4jTrzSdS2BPeCg2qk21to"
 }

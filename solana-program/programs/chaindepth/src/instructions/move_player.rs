@@ -1,4 +1,6 @@
 use anchor_lang::prelude::*;
+use anchor_spl::associated_token::AssociatedToken;
+use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
 use crate::errors::ChainDepthError;
 use crate::events::PlayerMoved;
@@ -8,6 +10,8 @@ use crate::state::{
     session_instruction_bits, GlobalAccount, PlayerAccount, PlayerProfile, RoomAccount,
     RoomPresence, SessionAuthority, LOCK_KIND_NONE, WALL_OPEN,
 };
+
+const SIGNUP_BONUS_SKR: u64 = 50;
 
 #[derive(Accounts)]
 #[instruction(new_x: i8, new_y: i8)]
@@ -313,6 +317,13 @@ pub struct InitPlayer<'info> {
     pub global: Account<'info, GlobalAccount>,
 
     #[account(
+        mut,
+        associated_token::mint = skr_mint,
+        associated_token::authority = global
+    )]
+    pub signup_faucet: Account<'info, TokenAccount>,
+
+    #[account(
         init,
         payer = player,
         space = 8 + PlayerAccount::INIT_SPACE,
@@ -345,6 +356,19 @@ pub struct InitPlayer<'info> {
     )]
     pub room_presence: Account<'info, RoomPresence>,
 
+    #[account(
+        init_if_needed,
+        payer = player,
+        associated_token::mint = skr_mint,
+        associated_token::authority = player
+    )]
+    pub player_token_account: Account<'info, TokenAccount>,
+
+    #[account(constraint = skr_mint.key() == global.skr_mint)]
+    pub skr_mint: Account<'info, Mint>,
+
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
 }
 
@@ -390,6 +414,21 @@ pub fn init_player_handler(ctx: Context<InitPlayer>) -> Result<()> {
     room_presence.is_current = true;
     room_presence.bump = ctx.bumps.room_presence;
 
+    let signup_bonus_amount = checked_token_amount(SIGNUP_BONUS_SKR, ctx.accounts.skr_mint.decimals)?;
+    let global_bump_seed = [ctx.accounts.global.bump];
+    let global_signer_seeds: &[&[u8]] = &[GlobalAccount::SEED_PREFIX, &global_bump_seed];
+    let signer_seeds = [global_signer_seeds];
+    let transfer_context = CpiContext::new_with_signer(
+        ctx.accounts.token_program.to_account_info(),
+        Transfer {
+            from: ctx.accounts.signup_faucet.to_account_info(),
+            to: ctx.accounts.player_token_account.to_account_info(),
+            authority: ctx.accounts.global.to_account_info(),
+        },
+        &signer_seeds,
+    );
+    token::transfer(transfer_context, signup_bonus_amount)?;
+
     emit!(PlayerMoved {
         player: ctx.accounts.player.key(),
         from_x: 0,
@@ -399,6 +438,15 @@ pub fn init_player_handler(ctx: Context<InitPlayer>) -> Result<()> {
     });
 
     Ok(())
+}
+
+fn checked_token_amount(whole_tokens: u64, decimals: u8) -> Result<u64> {
+    let decimals_factor = 10_u64
+        .checked_pow(decimals as u32)
+        .ok_or(ChainDepthError::Overflow)?;
+    whole_tokens
+        .checked_mul(decimals_factor)
+        .ok_or(ChainDepthError::Overflow.into())
 }
 
 fn upsert_presence(

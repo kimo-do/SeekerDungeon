@@ -14,6 +14,9 @@ import { START_X, START_Y } from "./constants";
 const DEFAULT_QUEUE = new anchor.web3.PublicKey(
   "Cuj97ggrhhidhbu39TijNVqE74xvKJ69gDervRUXAxGh",
 );
+const ASSOCIATED_TOKEN_PROGRAM_ID = new anchor.web3.PublicKey(
+  "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+);
 const DEFAULT_PUBKEY = new anchor.web3.PublicKey("11111111111111111111111111111111");
 const START_ROOM_X = START_X;
 const START_ROOM_Y = START_Y;
@@ -214,6 +217,11 @@ async function main(): Promise<void> {
       playerAccount: challengerPlayerPda,
       profile: challengerProfilePda,
       roomPresence: challengerPresencePda,
+      signupFaucet: getAssociatedTokenAddressSync(global.skrMint, globalPda, true),
+      playerTokenAccount: challengerTokenAccount,
+      skrMint: global.skrMint,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
       systemProgram: SystemProgram.programId,
     })
     .signers([challenger])
@@ -227,6 +235,11 @@ async function main(): Promise<void> {
       playerAccount: opponentPlayerPda,
       profile: opponentProfilePda,
       roomPresence: opponentPresencePda,
+      signupFaucet: getAssociatedTokenAddressSync(global.skrMint, globalPda, true),
+      playerTokenAccount: opponentTokenAccount,
+      skrMint: global.skrMint,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
       systemProgram: SystemProgram.programId,
     })
     .signers([opponent])

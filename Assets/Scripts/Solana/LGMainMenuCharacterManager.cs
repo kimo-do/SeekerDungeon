@@ -1676,19 +1676,29 @@ namespace SeekerDungeon.Solana
                 return false;
             }
 
-            return
-                _solBalanceValue < minimumSolForCharacterCreate ||
-                _skrBalanceValue < minimumSkrForCharacterCreate;
+            var hasRequiredSol = _solBalanceValue >= minimumSolForCharacterCreate;
+            var requiresSkrForCreate = LGConfig.IsMainnetRuntime;
+            var hasRequiredSkr = !requiresSkrForCreate || _skrBalanceValue >= minimumSkrForCharacterCreate;
+            return !hasRequiredSol || !hasRequiredSkr;
         }
 
         private void ShowLowBalanceModal()
         {
             _showLowBalanceModal = true;
+            if (LGConfig.IsMainnetRuntime)
+            {
+                _lowBalanceModalMessage =
+                    $"Your SOL and SKR balances are too low for character setup.\n\n" +
+                    $"SOL: {_solBalanceText} / min {minimumSolForCharacterCreate:F3}\n" +
+                    $"SKR: {_skrBalanceText} / min {minimumSkrForCharacterCreate:F3}\n\n" +
+                    "Please send more SOL and SKR to your connected wallet, then try again.";
+                return;
+            }
+
             _lowBalanceModalMessage =
-                $"Your SOL and SKR balances are too low for character setup.\n\n" +
-                $"SOL: {_solBalanceText} / min {minimumSolForCharacterCreate:F3}\n" +
-                $"SKR: {_skrBalanceText} / min {minimumSkrForCharacterCreate:F3}\n\n" +
-                "Please send more SOL and SKR to your connected wallet, then try again.";
+                $"Your SOL balance is too low for character setup.\n\n" +
+                $"SOL: {_solBalanceText} / min {minimumSolForCharacterCreate:F3}\n\n" +
+                "On devnet, SKR is granted on signup. Add SOL to continue.";
         }
 
         private static bool IsMissingTokenAccountReason(string reason)

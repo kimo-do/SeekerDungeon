@@ -2071,6 +2071,15 @@ namespace SeekerDungeon.Solana
                     LGConfig.START_Y,
                     Web3.Wallet.Account.PublicKey
                 );
+                var signupFaucet = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(
+                    _globalPda,
+                    CurrentGlobalState.SkrMint
+                );
+                var playerTokenAccount = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(
+                    Web3.Wallet.Account.PublicKey,
+                    CurrentGlobalState.SkrMint
+                );
+                var associatedTokenProgram = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 
                 // Use generated instruction builder
                 var instruction = ChaindepthProgram.InitPlayer(
@@ -2078,9 +2087,14 @@ namespace SeekerDungeon.Solana
                     {
                         Player = Web3.Wallet.Account.PublicKey,
                         Global = _globalPda,
+                        SignupFaucet = signupFaucet,
                         PlayerAccount = playerPda,
                         Profile = profilePda,
                         RoomPresence = roomPresencePda,
+                        PlayerTokenAccount = playerTokenAccount,
+                        SkrMint = CurrentGlobalState.SkrMint,
+                        TokenProgram = TokenProgram.ProgramIdKey,
+                        AssociatedTokenProgram = associatedTokenProgram,
                         SystemProgram = SystemProgram.ProgramIdKey
                     },
                     _programId
